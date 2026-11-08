@@ -98,6 +98,8 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 /opt/violet/violet update
 ```
 
+- 서버가 GitHub에 연결되지 않을 때(중국 본토에서 흔함): 관리 화면의 「설정 → 버전 업데이트 → 다운로드 소스」에서 어디서 받을지 고릅니다. 기본값 「자동」은 먼저 GitHub에 연결하고, 안 되면 내장 GitHub 미러를 차례로 시도합니다. 미러로 받은 새 버전은 릴리스 서명이 있을 때만 설치됩니다. 자세한 내용은 [violet/INSTALL.md](violet/INSTALL.md#updates).
+
 ## 제거
 
 아래 명령은 Violet을 완전히 삭제합니다. **되돌릴 수 없습니다.** 삭제되는 것:

@@ -98,6 +98,8 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 /opt/violet/violet update
 ```
 
+- サーバーから GitHub に接続できない場合（中国本土でよくあります）：管理画面の「設定 → バージョン更新 → ダウンロード元」で取得先を選べます。既定の「自動」はまず GitHub に接続し、つながらなければ内蔵の GitHub ミラーを順に試します。ミラー経由で取得した新バージョンは、リリース署名がある場合にのみインストールされます。詳しくは [violet/INSTALL.md](violet/INSTALL.md#updates)。
+
 ## アンインストール
 
 次のコマンドで Violet を完全に削除します。**元には戻せません。** 削除されるもの：

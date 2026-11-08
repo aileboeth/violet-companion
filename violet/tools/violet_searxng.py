@@ -84,6 +84,39 @@ def _fetch(url: str, limit: int, report: Callable[[int, int], None] | None = Non
     return b"".join(chunks)
 
 
+def _tool(name: str) -> Any:
+    import importlib
+    try:
+        return importlib.import_module(name)              # run as a script: <app>/tools is on sys.path
+    except ImportError:
+        return importlib.import_module(f"tools.{name}")
+
+
+def _download_source(fetch: Callable[..., bytes], progress: Progress | None,
+                     sources: list | None) -> tuple[bytes, str]:
+    """SearXNG's source archive from the first source that works (Violet 0.7.59): (bytes, the source's label)."""
+    src_mod = _tool("violet_sources")
+    candidates = [s for s in (sources or [src_mod.GITHUB]) if s.key != "custom"] or [src_mod.GITHUB]
+
+    def attempt(source: Any) -> bytes:
+        label = "GitHub" if source.direct else source.label
+        _say(progress, 5, f"下载 SearXNG 源码（{label}）")
+        last = [-1]
+
+        def report(got: int, total: int) -> None:          # 5 % -> 30 %
+            pct = 5 + int(25 * got / total) if total else min(29, 5 + got // (1024 * 1024))
+            if progress is not None and pct >= last[0] + 2:
+                last[0] = pct
+                progress(pct, f"下载 SearXNG 源码（{label}）：{got / 1048576:.1f}"
+                         + (f" / {total / 1048576:.1f}" if total else "") + " MB")
+        return fetch(source.url(SOURCE_URL), MAX_SOURCE, report=report)
+    try:
+        data, source = src_mod.first(candidates, attempt)
+    except src_mod.SourcesFailed as exc:
+        raise SearxngError(f"下载 SearXNG 源码失败：{exc}") from None
+    return data, source.label
+
+
 def _stream(cmd: list[str], on_line: Callable[[str], None], env: dict | None = None) -> tuple[int, str]:
     """Run cmd, calling on_line for every output line; (exit code, the last lines)."""
     tail: list[str] = []
@@ -319,9 +352,10 @@ def install(layout: Any, state: dict[str, Any], *, python: Path, port_free: Call
             stream: Callable[..., tuple[int, str]] = _stream, progress: Progress | None = None,
             unit_path: Path = UNIT_PATH, wait: float = HEALTH_WAIT, rng: random.Random | None = None,
             check_health: Callable[[int], bool] = health,
-            search: Callable[[int], dict[str, Any]] = test_search) -> dict[str, Any]:
+            search: Callable[[int], dict[str, Any]] = test_search, sources: list | None = None) -> dict[str, Any]:
     """Returns the result; updates `state` (install.json) -- the caller saves it. A reinstall replaces the program and
-    keeps the port and secret."""
+    keeps the port and secret. `sources`: GitHub and the built-in mirrors (tools/violet_sources.py; the caller never
+    passes the page's own address -- nothing can check this download)."""
     if not shutil.which("systemctl") and run is subprocess.run:
         raise SearxngError("这台服务器没有 systemd，联网搜索需要手动部署（见 deploy/searxng/README.zh-CN.md）")
     if unit_path.exists() and MARK not in unit_path.read_text(encoding="utf-8", errors="replace"):
@@ -333,15 +367,7 @@ def install(layout: Any, state: dict[str, Any], *, python: Path, port_free: Call
     port = int(previous.get("port") or 0) or _pick_port(port_free, rng)
     if unit_path.exists():
         run(["systemctl", "stop", f"{UNIT_NAME}.service"], capture_output=True)    # a reinstall: free its port
-    _say(progress, 5, "下载 SearXNG 源码（GitHub）")
-    last = [-1]
-
-    def report(got: int, total: int) -> None:          # 5 % -> 30 %
-        pct = 5 + int(25 * got / total) if total else min(29, 5 + got // (1024 * 1024))
-        if progress is not None and pct >= last[0] + 2:
-            last[0] = pct
-            progress(pct, f"下载 SearXNG 源码：{got / 1048576:.1f}" + (f" / {total / 1048576:.1f}" if total else "") + " MB")
-    data = fetch(SOURCE_URL, MAX_SOURCE, report=report)
+    data, source = _download_source(fetch, progress, sources)
     digest = hashlib.sha256(data).hexdigest()
     _say(progress, 31, "解压")
     work = base / "work"
@@ -416,7 +442,10 @@ def install(layout: Any, state: dict[str, Any], *, python: Path, port_free: Call
     notes += [tested["note"], *more]
     url = f"http://127.0.0.1:{port}"
     state["searxng"] = {"managed": True, "port": port, "installed_at": int(time.time()), "source_sha256": digest,
+                        "source": source,
                         "server": "granian" if granian else "searx.webapp", "secret_kept": True, "engines": engines}
+    if source != "GitHub":
+        notes.append(f"SearXNG 源码来自{source}（SHA-256 {digest[:16]}…）")
     _say(progress, 98, "交给 Violet")
     _export(layout, state, tested)
     return {"ok": True, "installed": True, "url": url, "port": port, "healthy": True,

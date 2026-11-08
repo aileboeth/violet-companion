@@ -42,10 +42,12 @@
     const when = u.published_at ? `，发布于 ${fmt(u.published_at.slice(0, 10))}` : "";
     const auto = u.auto || {};
     let pillArgs, text;
-    if (u.error) { pillArgs = ["无法检查", "warn"]; text = `当前版本 ${u.current}。${u.error}`; }
+    // 0.7.59: where the answer came from (GitHub or a mirror; a mirror's release is always signature-checked)
+    const via = u.latest && u.source ? ` 查询来源：${u.source}${u.signed ? "（发布签名已核对）" : ""}。` : "";
+    if (u.error) { pillArgs = ["无法检查", "warn"]; text = `当前版本 ${u.current}。${u.error}。服务器连不上 GitHub 时，可以在“设置 → 版本更新 → 下载来源”换成加速站。`; }
     else if (!u.latest && !u.enabled) { pillArgs = ["未检查", ""]; text = `当前版本 ${u.current}。手动检查模式：点“检查更新”查询。`; }
-    else if (u.newer) { pillArgs = ["有新版本", "ok"]; text = `当前版本 ${u.current}，最新版本 ${u.latest}${when}。`; }
-    else { pillArgs = ["已是最新", ""]; text = `当前版本 ${u.current}，最新发布 ${u.latest || "无"}${when}。`; }
+    else if (u.newer) { pillArgs = ["有新版本", "ok"]; text = `当前版本 ${u.current}，最新版本 ${u.latest}${when}。${via}`; }
+    else { pillArgs = ["已是最新", ""]; text = `当前版本 ${u.current}，最新发布 ${u.latest || "无"}${when}。${via}`; }
     if (auto.requested) text += " 已提交更新，服务器正在升级，完成后 Violet 会自动重启。";
     $("#update-pill").replaceChildren(pill(...pillArgs));
     // replaceChildren(null) would insert the text "null": only real nodes

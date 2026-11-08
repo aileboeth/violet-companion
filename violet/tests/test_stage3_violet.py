@@ -388,7 +388,7 @@ def test_a_failed_release_is_not_retried_automatically_for_a_day(tmp_path):
 def test_auto_update_records_a_failed_check(tmp_path, monkeypatch):
     layout = _layout(tmp_path)
 
-    def broken(state):
+    def broken(state, layout=None):
         raise inst.InstallError("查询最新版本失败（网络不通或被拦截）：URLError")
     monkeypatch.setattr(inst, "release_for", broken)
     with pytest.raises(inst.InstallError):
@@ -466,7 +466,8 @@ def test_the_violet_command_of_a_root_install_elevates_itself():
 def test_one_command_for_root_without_sudo_and_for_sudo_users():
     """Debian minimal: root, no sudo. Ubuntu: a user with sudo. The documented command has no sudo in it."""
     sh = (PROJECT / "install.sh").read_text(encoding="utf-8")
-    assert "--user-install" in sh and 'sudo bash "$script" "$command" "$@"' in sh and "su -" in sh
+    assert "--user-install" in sh and 'sudo bash "$script" "$command" ${carry[@]+"${carry[@]}"} "$@"' in sh
+    assert "su -" in sh and 'carry=("--release-base=$release_base")' in sh   # 0.7.59: a mirror survives sudo
     assert sh.index("! is_root") < sh.index("find_python || true")       # elevate before anything is installed
     import tools.make_release as mr
     assert '| bash"' in (PROJECT / "tools" / "make_release.py").read_text(encoding="utf-8") and mr

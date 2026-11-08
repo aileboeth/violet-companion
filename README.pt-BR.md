@@ -98,6 +98,8 @@ Mais detalhes (modos de acesso, firewall, comandos de manutenção) em [violet/I
 /opt/violet/violet update
 ```
 
+- Se o servidor não consegue acessar o GitHub (comum na China continental): em Configurações → Atualizações → Origem do download você escolhe de onde baixar. O padrão, Automático, tenta primeiro o GitHub e depois os espelhos do GitHub embutidos. Uma versão nova baixada por um espelho só é instalada se tiver a assinatura da versão. Detalhes em [violet/INSTALL.md](violet/INSTALL.md#updates).
+
 ## Desinstalação
 
 O comando abaixo remove o Violet por completo. **Não dá para desfazer.** Ele apaga:

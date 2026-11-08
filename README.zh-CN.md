@@ -98,7 +98,7 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 /opt/violet/violet update
 ```
 
-- 服务器连不上 GitHub 时，自动更新和这条命令都会失败，改用 [GitHub 加速地址](#国内服务器github-加速地址) 里的更新命令。
+- 服务器连不上 GitHub 时：后台“设置 → 版本更新 → 下载来源”决定从哪里下载，默认“自动”（先连 GitHub，连不上依次试内置的加速站）。见下面的 [GitHub 加速地址](#国内服务器github-加速地址)。
 
 ## 卸载
 
@@ -117,16 +117,24 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 
 ## 国内服务器：GitHub 加速地址
 
-国内服务器经常连不上 GitHub，这时在 GitHub 地址前面加上一个加速站的地址再下载。
+国内服务器经常连不上 GitHub。加速站是放在 GitHub 地址前面的一段地址，经它下载就能绕过去。Violet 内置了两个：
 
 | 加速站 | 说明 |
 |---|---|
-| `https://p.jackyu.cn/` | 推荐，HTTPS |
-| `http://8.217.135.233:9999/` | 备用，下载更快，但是明文 HTTP |
+| `https://p.jackyu.cn/` | HTTPS，有时比较慢 |
+| `http://8.217.135.233:9999/` | 明文 HTTP，通常更快 |
 
-2026-11-08 在国内网络（中国移动）实测，这两个都能用，下载的文件和 GitHub 上的完全一致（SHA-256 相同）。加速站是别人提供的免费服务，不归本项目管，随时可能失效；能直接连上 GitHub 时请用上面的官方命令。
+2026-11-08 在国内网络（中国移动）实测，这两个都能用，下载的文件和 GitHub 上的完全一致（SHA-256 相同）。加速站是别人提供的免费服务，不归本项目管，随时可能失效。
 
-先执行这一行，设置下载地址（每次打开新的终端都要先执行一次；换备用站时把 `https://p.jackyu.cn/` 换成 `http://8.217.135.233:9999/`）：
+**已经装好 0.7.59 或更新的版本**：什么都不用做。后台“设置 → 版本更新 → 下载来源”默认是“自动”：先连 GitHub，连不上就依次试这两个加速站。也可以固定用其中一个，或者填你自己的加速地址。下面这些都按这个设置下载：检查新版本、自动更新、“立即更新”、`/opt/violet/violet update`，以及一键安装手机中继、联网搜索和语音。后台“开始”页的“版本与更新”会显示这次是从哪里查到的。
+
+加速站改不了程序：
+
+- 经加速站下载的 Violet 新版本必须带有发布签名（GitHub 打包时自动签的），安装脚本和程序包都必须和签名里记录的 SHA-256 一致，否则不安装。
+- 手机中继也必须带有 Violet MCP 的发布签名；语音的源码必须和程序里记录的 SHA-256 一致。
+- 联网搜索（SearXNG）的源码没法校验，所以只从 GitHub 和这两个内置加速站下载，不用你填的自定义地址。
+
+**还没安装，或者还是 0.7.58 及更早的版本**：用下面的命令安装或者更新一次。先执行这一行，设置下载地址（每次打开新的终端都要先执行一次；想换另一个加速站，就把 `https://p.jackyu.cn/` 换成 `http://8.217.135.233:9999/`）：
 
 ```bash
 G=https://p.jackyu.cn/https://github.com/aileboeth/violet-companion/releases/latest/download
@@ -159,10 +167,7 @@ curl -fsSL $G/install.sh | VIOLET_RELEASE_BASE=$G bash -s -- uninstall --purge -
 注意：
 
 - 命令里的 `VIOLET_RELEASE_BASE=$G` 不能省。安装脚本会再下载一个程序包，有了它才从加速站下载，没有它还是去 GitHub 下载。
-- 以普通用户运行时，把 `| VIOLET_RELEASE_BASE=$G bash` 改成 `| sudo VIOLET_RELEASE_BASE=$G bash`（sudo 不会带上这个设置）。
-- 后台的自动更新、“立即更新”按钮和 `/opt/violet/violet update` 还是直接连 GitHub（查询最新版本用的是 GitHub API，加速站不支持）。连不上时用上面的更新命令。
-- 后台“一键安装中继”和“一键安装联网搜索”也是从 GitHub 下载的，国内服务器可能装不上。
-- 程序包的 SHA-256 校验文件也是从同一个加速站下载的，只能发现下载出错，不能防止加速站改动文件内容。
+- 这几条命令没有签名校验：安装脚本是从加速站下载后直接运行的，只能相信加速站。装好以后的更新才会核对签名。能直接连上 GitHub 时请用上面的官方命令。
 
 ## 当前状态
 

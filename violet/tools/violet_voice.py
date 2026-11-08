@@ -22,6 +22,7 @@ What it puts where:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
@@ -44,6 +45,10 @@ COSYVOICE_SHA = "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc"
 MATCHA_SHA = "dd9105b34bf2be2230f4aa1e4769fb586a3c824e"
 SOURCES = {"src": f"https://github.com/FunAudioLLM/CosyVoice/archive/{COSYVOICE_SHA}.tar.gz",
            "matcha": f"https://github.com/shivammehta25/Matcha-TTS/archive/{MATCHA_SHA}.tar.gz"}
+# 0.7.59: the archives of those commits (downloaded 2026-11-08 from github.com and through both built-in mirrors --
+# the same bytes). A copy from a mirror must match; github.com itself is trusted as before.
+SOURCE_SHA256 = {"src": "10c587f0853db27667a64a0a2dc0788b1c782cdab223682691db78702082a550",
+                 "matcha": "59c43afae79110e4057eaa43f45b5558b556435da8fc85eab83f0c819ba3358d"}
 MODEL_ID = "FunAudioLLM/Fun-CosyVoice3-0.5B-2512"
 MODEL_DIR = "Fun-CosyVoice3-0.5B"
 MODEL_SKIP = ["llm.rl.pt", "flow.decoder.estimator.fp32.onnx", "speech_tokenizer_v3.batch.onnx"]
@@ -132,6 +137,45 @@ def _fetch(url: str, target: Path, timeout: float = 120.0) -> None:
     req = urllib.request.Request(url, headers={"User-Agent": "violet-installer"})
     with urllib.request.urlopen(req, timeout=timeout) as resp, open(target, "wb") as fh:   # noqa: S310 -- fixed URLs
         shutil.copyfileobj(resp, fh, 1 << 20)
+
+
+def _tool(name: str) -> Any:
+    import importlib
+    try:
+        return importlib.import_module(name)              # run as a script: <app>/tools is on sys.path
+    except ImportError:
+        return importlib.import_module(f"tools.{name}")
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _download_sources(work: Path, fetch: Callable[[str, Path], None], progress: Progress | None,
+                      sources: list | None) -> str:
+    """Both source archives into ``work``, from the first source that works for each (Violet 0.7.59). A mirror's
+    copy must have the SHA-256 in SOURCE_SHA256. Returns the label of the source used last."""
+    src_mod = _tool("violet_sources")
+    label = "GitHub"
+    for name, url in SOURCES.items():
+        target = work / f"{name}.tar.gz"
+
+        def attempt(source: Any, name: str = name, url: str = url, target: Path = target) -> None:
+            _say(progress, 7, "下载 CosyVoice 源码（" + ("GitHub" if source.direct else source.label) + "）")
+            fetch(source.url(url), target)
+            if not source.direct and _sha256(target) != SOURCE_SHA256[name]:
+                target.unlink(missing_ok=True)
+                raise VoiceError("下载的源码和记录的 SHA-256 不一致")
+        try:
+            _result, used = src_mod.first(list(sources or [src_mod.GITHUB]), attempt)
+        except src_mod.SourcesFailed as exc:
+            raise VoiceError(f"下载源码失败：{exc}") from None
+        label = used.label
+    return label
 
 
 def _stream(cmd: list[str], on_line: Callable[[str], None], env: dict | None = None) -> tuple[int, str]:
@@ -242,7 +286,7 @@ def install(layout: Any, state: dict[str, Any], *, python: Path, app: Path, port
             fetch: Callable[[str, Path], None] = _fetch, progress: Progress | None = None,
             unit_path: Path = UNIT_PATH, wait: float = HEALTH_WAIT,
             check_health: Callable[[int], dict[str, Any] | None] = health, checks: Callable[[Path], list[str]] = check,
-            ) -> dict[str, Any]:
+            sources: list | None = None) -> dict[str, Any]:
     if not shutil.which("systemctl") and run is subprocess.run:
         raise VoiceError("这台服务器没有 systemd，语音要手动部署")
     if unit_path.exists() and MARK not in unit_path.read_text(encoding="utf-8", errors="replace"):
@@ -280,11 +324,7 @@ def install(layout: Any, state: dict[str, Any], *, python: Path, app: Path, port
     work = base / "download"
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
-    try:
-        for name, url in SOURCES.items():
-            fetch(url, work / f"{name}.tar.gz")
-    except OSError as exc:
-        raise VoiceError(f"下载源码失败（GitHub 连不上？）：{exc}") from None
+    from_where = _download_sources(work, fetch, progress, sources)
     _unpack(work / "src.tar.gz", base / "src")
     _unpack(work / "matcha.tar.gz", base / "src" / "third_party" / "Matcha-TTS")
     shutil.rmtree(work, ignore_errors=True)
@@ -364,7 +404,7 @@ def install(layout: Any, state: dict[str, Any], *, python: Path, app: Path, port
     if info is None:
         raise VoiceError(f"语音服务 {wait:.0f} 秒内没有启动：journalctl -u {UNIT_NAME} -n 40")
     state["voice"] = {"managed": True, "port": port, "installed_at": int(time.time()), "model": MODEL_ID,
-                      "cosyvoice": COSYVOICE_SHA}
+                      "cosyvoice": COSYVOICE_SHA, "source": from_where}
     _say(progress, 98, "交给 Violet")
     _export(layout, state)
     return {"ok": True, "installed": True, "url": f"http://127.0.0.1:{port}", "port": port,

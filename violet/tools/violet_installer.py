@@ -163,27 +163,88 @@ def is_newer(latest: str | None, current: str | None) -> bool:
     return a is not None and b is not None and a > b
 
 
-def latest_release(repo: str | None = None, opener: Callable[..., Any] | None = None, timeout: float = 10.0) -> dict:
-    """The newest published release of the repository: {tag, version, url, published_at, notes, install_url}.
-    Unauthenticated GitHub API (60 requests an hour per address -- callers cache it); system proxies apply."""
-    repo = repo or update_repo()
-    request = urllib.request.Request(f"https://api.github.com/repos/{repo}/releases/latest",
-                                     headers={"Accept": "application/vnd.github+json", "User-Agent": "violet-updater"})
+def _tool(name: str) -> Any:
+    """A sibling module of tools/ (run as a script <app>/tools is on sys.path; in tests it is the package)."""
+    import importlib
     try:
-        with (opener or urllib.request.urlopen)(request, timeout=timeout) as response:
-            data = json.loads(response.read(1_000_000).decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            raise InstallError(f"{repo} 还没有发布任何版本") from None
-        raise InstallError(f"查询最新版本失败：GitHub 返回 {exc.code}") from None
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise InstallError(f"查询最新版本失败（网络不通或被拦截）：{exc.__class__.__name__}") from None
-    tag = str(data.get("tag_name") or "")
-    if not version_key(tag):
-        raise InstallError(f"最新发布的标签 {tag!r} 不是版本号")
-    return {"tag": tag, "version": tag.lstrip("vV"), "url": str(data.get("html_url") or ""),
-            "published_at": data.get("published_at"), "notes": str(data.get("body") or "")[:4000],
-            "install_url": f"https://github.com/{repo}/releases/download/{tag}/install.sh"}
+        return importlib.import_module(name)
+    except ImportError:
+        return importlib.import_module(f"tools.{name}")
+
+
+def _get(url: str, limit: int, opener: Callable[..., Any] | None, timeout: float) -> bytes:
+    request = urllib.request.Request(url, headers={"User-Agent": "violet-updater"})
+    with (opener or urllib.request.urlopen)(request, timeout=timeout) as response:
+        body = response.read(limit + 1)
+    if len(body) > limit:
+        raise InstallError("返回的内容太大")
+    return body
+
+
+_SHA = re.compile(r"^[0-9a-f]{64}$")
+
+
+def latest_release(repo: str | None = None, opener: Callable[..., Any] | None = None, timeout: float = 15.0,
+                   sources: list | None = None) -> dict:
+    """The newest published release: {tag, version, url, published_at, notes, install_url, release_base, source,
+    signed, sha256}.
+
+    0.7.59: read from the release's own release.json (``releases/latest/download/release.json`` -- no GitHub API, so
+    no 60-requests-an-hour limit, and GitHub mirrors can serve it), through ``sources`` in order (tools/
+    violet_sources.py; default GitHub only). release.json.sig is checked with the release key (tools/violet_sign.py):
+      * through a mirror a valid signature is REQUIRED (the mirror is somebody else's server, and the root update
+        service runs what it downloads), and install.sh / violet.tar.gz must then match the SHA-256 in it;
+      * from github.com itself an unsigned release is accepted (releases before 0.7.59; forks have no key), a
+        present but wrong signature is not.
+    Forks (``repo`` is not the official one) can only be checked against github.com."""
+    sign, src_mod = _tool("violet_sign"), _tool("violet_sources")
+    repo = repo or update_repo()
+    official = repo == UPDATE_REPO
+    candidates = list(sources or [src_mod.GITHUB])
+    if not official:
+        candidates = [s for s in candidates if s.direct] or [src_mod.GITHUB]
+
+    def attempt(source: Any) -> dict:
+        meta_url = source.url(f"https://github.com/{repo}/releases/latest/download/release.json")
+        try:
+            body = _get(meta_url, 200_000, opener, timeout)
+        except urllib.error.HTTPError as exc:
+            raise InstallError(f"{repo} 还没有发布任何版本" if exc.code == 404 else f"返回错误 {exc.code}") from None
+        try:
+            sig: bytes | None = _get(meta_url + ".sig", 4096, opener, timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+            sig = None
+        signed = official and sig is not None and sign.check(sign.VIOLET_RELEASE_KEY, body, sig)
+        if official and sig is not None and not signed:
+            raise InstallError("release.json 的签名不对（文件可能被改动过），不使用")
+        if not source.direct and not signed:
+            raise InstallError("这个版本没有签名，经加速站下载的版本必须有签名才能安装（0.7.59 起的版本才有）")
+        try:
+            data = json.loads(body.decode("utf-8"))
+        except (UnicodeError, ValueError):
+            raise InstallError("release.json 不是 JSON") from None
+        version = str(data.get("version") or "") if isinstance(data, dict) else ""
+        if not version_key(version):
+            raise InstallError(f"最新发布的版本号 {version!r} 不规范")
+        tag = "v" + version
+        base = str(data.get("base") or "").rstrip("/")
+        if base != f"https://github.com/{repo}/releases/download/{tag}":
+            raise InstallError("release.json 里的下载地址和版本不符，不使用")
+        digests = data.get("sha256") if isinstance(data.get("sha256"), dict) else {}
+        if signed and not all(_SHA.match(str(digests.get(n) or "")) for n in ("install.sh", "violet.tar.gz")):
+            raise InstallError("签名的 release.json 里没有安装文件的 SHA-256")
+        return {"tag": tag, "version": version, "url": f"https://github.com/{repo}/releases/tag/{tag}",
+                "published_at": data.get("built_at"), "notes": str(data.get("notes") or "")[:4000],
+                "install_url": source.url(base + "/install.sh"), "release_base": source.url(base),
+                "source": source.label, "signed": bool(signed),
+                "sha256": {n: digests[n] for n in ("install.sh", "violet.tar.gz")} if signed else {}}
+    try:
+        release, _source = src_mod.first(candidates, attempt)
+    except src_mod.SourcesFailed as exc:
+        raise InstallError(f"查询最新版本失败：{exc}") from None
+    return release
 
 
 def feed_url_checked(url: str) -> str:
@@ -211,12 +272,35 @@ def feed_release(url: str, opener: Callable[..., Any] | None = None, timeout: fl
             "install_url": base + "/install.sh"}
 
 
-def release_for(state: dict) -> dict:
+def release_for(state: dict, layout: "Layout | None" = None) -> dict:
     """The newest release for this installation: its own feed if the installer was given one, else GitHub (the
-    repository given at install time, else the official one). Only root-owned install.json decides this."""
+    repository given at install time, else the official one) through the page's download source (0.7.59). Only
+    root-owned install.json decides WHAT is installed; the download source only decides where it comes from, and a
+    mirror's files must carry the release signature."""
     if state.get("update_feed"):
         return feed_release(state["update_feed"])
-    return latest_release(state.get("update_repo") or update_repo())
+    return latest_release(state.get("update_repo") or update_repo(),
+                          sources=download_sources(layout) if layout is not None else None)
+
+
+def download_sources(layout: "Layout", allow_custom: bool = True) -> list:
+    """The page's "下载来源" (settings.json, else the configuration file). Read as root from files Violet's account
+    owns: only one of the fixed choices and a checked http(s) prefix are taken (tools/violet_sources.py)."""
+    src_mod = _tool("violet_sources")
+    values: dict = {}
+    env = _env(layout)
+    for key in (src_mod.SETTING, src_mod.CUSTOM_SETTING):
+        if key in env:
+            values[key] = env[key]
+    raw = _read_small(layout.data / "control" / "settings.json")
+    try:
+        saved = (json.loads(raw.decode("utf-8")).get("values") or {}) if raw else {}
+    except (ValueError, AttributeError):
+        saved = {}
+    for key in (src_mod.SETTING, src_mod.CUSTOM_SETTING):
+        if isinstance(saved, dict) and isinstance(saved.get(key), str):
+            values[key] = saved[key]
+    return src_mod.from_values(values, allow_custom=allow_custom)
 
 
 def repo_checked(repo: str) -> str:
@@ -1821,10 +1905,10 @@ def update(opts: Options, check_only: bool = False, release: dict | None = None,
     if not state:
         raise InstallError(f"{layout.root} 没有安装 Violet")
     current = state.get("version") or source_version(layout.app)
-    rel = release or release_for(state)
+    rel = release or release_for(state, layout)
     newer = is_newer(rel["version"], current)
     result = {"ok": True, "current": current, "latest": rel["version"], "newer": newer, "release_url": rel["url"],
-              "published_at": rel.get("published_at")}
+              "published_at": rel.get("published_at"), "source": rel.get("source")}
     if check_only or not newer:
         return {**result, "updated": False}
     if (os.name == "nt") if windows is None else windows:
@@ -1835,11 +1919,22 @@ def update(opts: Options, check_only: bool = False, release: dict | None = None,
     work = Path(tempfile.mkdtemp(prefix="violet-update-"))
     try:
         script = work / "install.sh"
-        progress(10, f"下载 {rel['version']} 的安装脚本")
+        where = f"（{rel['source']}）" if rel.get("source") and rel.get("source") != "GitHub" else ""
+        progress(10, f"下载 {rel['version']} 的安装脚本{where}")
         download(rel["install_url"], script)
-        opts.log(f"  升级 {current} → {rel['version']}…")
-        progress(15, f"下载并校验 {rel['version']}")
-        env = {**os.environ, "VIOLET_PROGRESS_FILE": str(progress.path)} if progress.path else None
+        extra: dict[str, str] = {}
+        if rel.get("signed"):
+            # 0.7.59: what runs as root must be exactly what the release key signed
+            if hashlib.sha256(script.read_bytes()).hexdigest() != rel["sha256"]["install.sh"]:
+                raise InstallError(f"下载的安装脚本和发布签名里的不一致{where}，没有升级")
+            extra["VIOLET_EXPECT_SHA256"] = rel["sha256"]["violet.tar.gz"]
+        if rel.get("release_base"):
+            extra["VIOLET_RELEASE_BASE"] = rel["release_base"]          # the program from the same source
+        if progress.path:
+            extra["VIOLET_PROGRESS_FILE"] = str(progress.path)
+        opts.log(f"  升级 {current} → {rel['version']}{where}…")
+        progress(15, f"下载并校验 {rel['version']}{where}")
+        env = {**os.environ, **extra} if extra else None
         done = run(["bash", str(script), "upgrade", "--root", str(layout.root), "--json"], capture_output=True,
                    text=True, encoding="utf-8", **({"env": env} if env else {}))
     finally:
@@ -1933,7 +2028,7 @@ def auto_update(opts: Options, release: dict | None = None, now: Callable[[], fl
     progress = Progress(progress_path(layout, "update"), state.get("user"), task="update")
     progress(5, "检查新版本")
     try:
-        rel = release or release_for(state)
+        rel = release or release_for(state, layout)
     except InstallError as exc:
         record_auto_update(layout, last_result="error", last_message=str(exc), requested=request)
         progress.failed(str(exc))
@@ -2225,7 +2320,7 @@ def mcp_relay(opts: Options, action: str, run: Callable[..., Any] = subprocess.r
         if action == "install":
             result = relay.install(layout, state, run=run, port_free=port_free, port=opts.port,
                                    open_port=lambda p: open_port_everywhere(p, run), public_ip=public_ip,
-                                   progress=progress)
+                                   progress=progress, sources=download_sources(layout))
             save_state(layout, state)
         elif action == "set-port":
             result = relay.set_port(layout, state, run=run, port_free=port_free, port=opts.port,
@@ -2271,8 +2366,9 @@ def searxng_command(opts: Options, action: str, run: Callable[..., Any] = subpro
         raise InstallError("联网搜索要以 root 在 Linux 上安装（/opt/violet/violet 会自动切换到 root）")
     try:
         if action == "install":
+            # nothing can check SearXNG's source: GitHub and the built-in mirrors only, never the page's own address
             result = mod.install(layout, state, python=venv_python(layout), port_free=port_free, run=run,
-                                 progress=progress)
+                                 progress=progress, sources=download_sources(layout, allow_custom=False))
             save_state(layout, state)
         elif action == "uninstall":
             result = {"ok": True, "removed": mod.uninstall(layout, state, run=run)}
@@ -2316,7 +2412,7 @@ def voice_command(opts: Options, action: str, run: Callable[..., Any] = subproce
     try:
         if action == "install":
             result = mod.install(layout, state, python=venv_python(layout), app=layout.app, port_free=port_free,
-                                 run=run, progress=progress)
+                                 run=run, progress=progress, sources=download_sources(layout))
             save_state(layout, state)
         elif action == "uninstall":
             result = {"ok": True, "removed": mod.uninstall(layout, state, run=run)}

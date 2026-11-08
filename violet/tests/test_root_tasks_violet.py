@@ -165,6 +165,9 @@ def test_relay_install_reports_increasing_progress(tmp_path, monkeypatch):
     monkeypatch.setattr(relay, "health", lambda port, **kw: {"ok": True})
 
     def fetch(url, limit, report=None):
+        if url.endswith(".sig"):
+            import urllib.error
+            raise urllib.error.HTTPError(url, 404, "nf", {}, None)
         if url.endswith("SHA256SUMS.txt"):
             return f"{hashlib.sha256(binary).hexdigest()} *violet-mcp-relay-1.2.0-linux-amd64\n".encode()
         for got in (1024, 2048, 3072, len(binary)):

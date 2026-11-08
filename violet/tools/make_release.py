@@ -9,7 +9,10 @@ Output (upload all of it to the address given as --base):
   violet.tar.gz           the program (folder violet/): tracked files of "violet" at HEAD, without
                                tests, local data, .env, databases or reports
   violet.tar.gz.sha256    its SHA-256 (install.sh refuses an archive that does not match)
-  SHA256SUMS, release.json     checksums of everything; version, commit, build time
+  SHA256SUMS, release.json     checksums of everything; version, commit, build time, the SHA-256 of install.sh and
+                               the archive, the release commit's first line
+  release.json.sig             with --sign-key-env (0.7.59): its Ed25519 signature (tools/violet_sign.py) -- updates
+                               through a GitHub mirror need it
 
 No secret is ever packaged: the archive is checked for .env, *.db, credentials, keys and signing material, and the
 build fails if one is found.
@@ -18,6 +21,7 @@ build fails if one is found.
 from __future__ import annotations
 
 import argparse
+import base64
 import datetime
 import fnmatch
 import hashlib
@@ -89,7 +93,16 @@ def _commit() -> str:
         return ""
 
 
-def build(base: str, out: Path, worktree: bool = False, ref: str = "HEAD") -> dict:
+def _subject() -> str:
+    """The release commit's first line (the update dialog shows it as the release notes)."""
+    try:
+        return subprocess.run(["git", "-C", str(REPO), "log", "-1", "--format=%s"], capture_output=True, text=True,
+                              encoding="utf-8", check=True).stdout.strip()[:2000]
+    except (OSError, subprocess.CalledProcessError):
+        return ""
+
+
+def build(base: str, out: Path, worktree: bool = False, ref: str = "HEAD", sign_key: str | None = None) -> dict:
     if not base.startswith(("https://", "http://127.0.0.1", "http://localhost")):
         raise SystemExit("--base must be an https:// address (http only for 127.0.0.1 tests)")
     base = base.rstrip("/")
@@ -116,10 +129,26 @@ def build(base: str, out: Path, worktree: bool = False, ref: str = "HEAD") -> di
     (out / "install.sh").write_bytes(installer.replace(PLACEHOLDER, base).encode("utf-8"))
     meta = {"version": version, "commit": "" if worktree else _commit(), "worktree": worktree, "base": base,
             "built_at": datetime.datetime.now().isoformat(timespec="seconds"), "files": len(files),
-            "install_command": f"curl -fsSL {base}/install.sh | bash"}
-    (out / "release.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
-    sums = [f"{hashlib.sha256((out / n).read_bytes()).hexdigest()}  {n}"
-            for n in ("install.sh", "violet.tar.gz", "violet.tar.gz.sha256", "release.json")]
+            "install_command": f"curl -fsSL {base}/install.sh | bash",
+            # 0.7.59: what the root update service checks before running anything (through the signature below)
+            "sha256": {"install.sh": hashlib.sha256((out / "install.sh").read_bytes()).hexdigest(),
+                       "violet.tar.gz": digest},
+            "notes": "" if worktree else _subject()}
+    body = json.dumps(meta, ensure_ascii=False, indent=1).encode("utf-8")
+    (out / "release.json").write_bytes(body)
+    names = ["install.sh", "violet.tar.gz", "violet.tar.gz.sha256", "release.json"]
+    if sign_key is not None:
+        try:
+            import violet_sign                          # run as a script: tools/ is on sys.path
+        except ImportError:
+            from tools import violet_sign
+        sig =violet_sign.signature_text(violet_sign.seed_from_text(sign_key), body)
+        public = base64.b64encode(violet_sign.public_key(violet_sign.seed_from_text(sign_key))).decode("ascii")
+        if public != violet_sign.VIOLET_RELEASE_KEY and not worktree:
+            raise SystemExit("the signing key is not the one whose public half is in tools/violet_sign.py")
+        (out / "release.json.sig").write_text(sig, encoding="ascii")
+        names.append("release.json.sig")
+    sums = [f"{hashlib.sha256((out / n).read_bytes()).hexdigest()}  {n}" for n in names]
     (out / "SHA256SUMS").write_text("\n".join(sums) + "\n", encoding="utf-8")
     return meta
 
@@ -130,8 +159,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--worktree", action="store_true", help="package the working tree (tests) instead of git")
     parser.add_argument("--ref", default="HEAD")
+    parser.add_argument("--sign-key-env", help="sign release.json with the Ed25519 seed (hex) in this variable "
+                                               "(release.yml: the secret VIOLET_RELEASE_SIGNING_KEY)")
     args = parser.parse_args(argv)
-    meta = build(args.base, args.out, worktree=args.worktree, ref=args.ref)
+    key = None
+    if args.sign_key_env:
+        key = os.environ.get(args.sign_key_env, "").strip()
+        if not key:
+            raise SystemExit(f"{args.sign_key_env} is empty: add the repository secret before publishing a release "
+                             "(Settings -> Secrets and variables -> Actions)")
+    meta = build(args.base, args.out, worktree=args.worktree, ref=args.ref, sign_key=key)
     print(json.dumps(meta, ensure_ascii=False, indent=1))
     return 0
 

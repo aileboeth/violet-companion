@@ -89,9 +89,20 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 
 升级（以及重新运行安装做修复）前做的备份：成功并通过健康检查后**自动删除**，不占硬盘；失败时保留在 `backups/`，用来恢复。自己用 `violet backup` 做的备份不会被自动删除。想在升级后还能退回旧数据，升级前先执行一次 `/opt/violet/violet backup`。
 
-自动更新靠安装时注册的 root 定时任务（`violet-update.timer`），只有 root + systemd 的安装才有（一行命令安装就是这种）。Violet 自己以普通用户 `violet` 运行，它只能“请求更新到官方最新版”，不能指定下载地址。在后台点“立即更新”会弹出进度条（检查、下载校验、备份、安装依赖、重启、健康检查）；升级期间 Violet 会重启一次，弹窗等它回来后显示结果。其他安装方式在页面上给出命令：`/opt/violet/violet update`。
+自动更新靠安装时注册的 root 定时任务（`violet-update.timer`），只有 root + systemd 的安装才有（一行命令安装就是这种）。Violet 自己以普通用户 `violet` 运行，它只能“请求更新到官方最新版”，不能决定装什么（后台可以选下载来源，但经加速站下载的版本必须带有官方的发布签名，见下文）。在后台点“立即更新”会弹出进度条（检查、下载校验、备份、安装依赖、重启、健康检查）；升级期间 Violet 会重启一次，弹窗等它回来后显示结果。其他安装方式在页面上给出命令：`/opt/violet/violet update`。
 
-检查更新用的是 GitHub API（`api.github.com`），GitHub 加速站不支持它，所以服务器连不上 GitHub 时自动更新会一直失败。这种情况用 README 里的 [加速更新命令](../README.zh-CN.md#国内服务器github-加速地址)（`install.sh upgrade`，同样先备份、失败自动退回）。
+**下载来源**（0.7.59 起，“设置 → 版本更新 → 下载来源”）：检查新版本、自动更新、“立即更新”、`violet update`，以及一键安装手机中继、联网搜索、语音，都按这里的设置下载。
+
+| 选项 | 效果 |
+|---|---|
+| 自动（默认） | 先连 GitHub，连不上依次试内置加速站 `https://p.jackyu.cn/`、`http://8.217.135.233:9999/` |
+| 只用 GitHub | 不用加速站 |
+| 只用某一个内置加速站 | 只从它下载 |
+| 自定义加速地址 | 填在“自定义加速地址”里，例如 `https://gh.example.com/`（下载时放在 GitHub 地址前面） |
+
+检查新版本读的是发布里的 `release.json`，不再调用 GitHub API，所以加速站也能用，也没有每小时 60 次的限制。经加速站下载时：`release.json` 必须带有发布签名（`release.json.sig`，GitHub Actions 打包时用仓库密钥 `VIOLET_RELEASE_SIGNING_KEY` 签名，公钥写在 `tools/violet_sign.py`），安装脚本和程序包必须和签名里记录的 SHA-256 一致，否则不安装；手机中继必须带有 Violet MCP 的签名（`SHA256SUMS.txt.sig`）；语音的源码必须和 `tools/violet_voice.py` 里记录的 SHA-256 一致；联网搜索的源码没法校验，所以只用 GitHub 和内置加速站，从不用自定义地址（这个设置由 Violet 的服务账号写入，而安装以 root 运行）。直接从 github.com 下载时，0.7.58 及更早没有签名的版本也照常接受。
+
+还是 0.7.58 及更早的版本、或者还没装时，没有这个设置：用 README 里的 [加速命令](../README.zh-CN.md#国内服务器github-加速地址) 安装或更新一次（`install.sh upgrade`，同样先备份、失败自动退回）。`install.sh` 也可以用 `--release-base=<地址>` 指定程序包从哪里下载，效果和环境变量 `VIOLET_RELEASE_BASE` 一样，而且通过 sudo 重新运行时也会保留。
 
 改用自己的分支发布：安装时加 `--update-repo 你的用户名/仓库名`。
 

@@ -98,6 +98,8 @@ Plus de détails (modes d'accès, pare-feu, commandes de maintenance) dans [viol
 /opt/violet/violet update
 ```
 
+- Si le serveur n'arrive pas à joindre GitHub (fréquent en Chine continentale) : Réglages → Mises à jour → Source de téléchargement indique d'où télécharger. Par défaut, Automatique essaie d'abord GitHub, puis les miroirs GitHub intégrés. Une nouvelle version téléchargée via un miroir n'est installée que si elle porte la signature de publication. Détails dans [violet/INSTALL.md](violet/INSTALL.md#updates).
+
 ## Désinstallation
 
 La commande ci-dessous supprime complètement Violet. **C'est irréversible.** Elle supprime :

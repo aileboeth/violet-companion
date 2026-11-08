@@ -69,6 +69,9 @@ def _downloads(binary: bytes, digest: str | None = None):
 
     def fetch(url, limit, report=None):
         asked.append(url)
+        if url.endswith(".sig"):                                 # Violet MCP 1.4.3 and older: not signed
+            import urllib.error
+            raise urllib.error.HTTPError(url, 404, "nf", {}, None)
         if url.endswith("SHA256SUMS.txt"):
             return f"{digest or hashlib.sha256(binary).hexdigest()} *violet-mcp-relay-1.2.0-linux-amd64\n".encode()
         assert url.endswith("violet-mcp-relay-1.2.0-linux-amd64")
@@ -176,6 +179,63 @@ def test_a_download_that_does_not_match_its_checksum_is_not_installed(tmp_path):
         relay.install(layout, {}, run=Runs(), fetch=fetch, port_free=lambda p, h: True, unit_path=unit,
                       machine="x86_64", wait=0)
     assert not unit.exists() and not (layout.root / "mcp-relay" / "violet-mcp-relay").exists()
+
+
+def _signed_relay(monkeypatch, binary: bytes, *, signed: bool = True, tamper: bool = False):
+    """A mirror serving Violet MCP's files; SHA256SUMS.txt signed with a test key (0.7.59)."""
+    import base64
+    import urllib.error
+    sign = relay._tool("violet_sign")
+    seed = bytes(range(32, 64))
+    monkeypatch.setattr(sign, "MCP_RELAY_KEY", base64.b64encode(sign.public_key(seed)).decode())
+    sums = f"{hashlib.sha256(binary).hexdigest()} *violet-mcp-relay-1.2.0-linux-amd64\n".encode()
+    asked = []
+
+    def fetch(url, limit, report=None):
+        asked.append(url)
+        if url.endswith(".sig"):
+            if not signed:
+                raise urllib.error.HTTPError(url, 404, "nf", {}, None)
+            return sign.signature_text(seed, sums + (b"x" if tamper else b"")).encode()
+        if url.endswith("SHA256SUMS.txt"):
+            return sums
+        return binary
+    return fetch, asked
+
+
+def test_through_a_mirror_the_relay_needs_violet_mcps_signature(tmp_path, monkeypatch):
+    from tools import violet_sources as vs
+    monkeypatch.setattr(relay, "health", lambda port, **kw: {"ok": True})
+    mirror = [vs.BUILT_IN[0]]
+    for signed, tamper, message in ((False, False, "必须有签名"), (True, True, "签名不对")):
+        layout, unit = Layout(tmp_path / f"v{signed}{tamper}"), tmp_path / f"r{signed}{tamper}.service"
+        fetch, _ = _signed_relay(monkeypatch, b"\x7fELF relay", signed=signed, tamper=tamper)
+        with pytest.raises(relay.RelayError, match=message):
+            relay.install(layout, {}, run=Runs(), fetch=fetch, port_free=lambda p, h: True, unit_path=unit,
+                          machine="x86_64", wait=0, sources=mirror)
+        assert not unit.exists()
+    layout, unit, state = Layout(tmp_path / "ok"), tmp_path / "ok.service", {}
+    fetch, asked = _signed_relay(monkeypatch, b"\x7fELF relay")
+    result = relay.install(layout, state, run=Runs(), fetch=fetch, port_free=lambda p, h: True, unit_path=unit,
+                           machine="x86_64", wait=0, sources=mirror)
+    assert all(url.startswith("https://p.jackyu.cn/https://github.com/aileboeth/violet-mcp/") for url in asked)
+    assert state["mcp_relay"]["source"] == "加速站 p.jackyu.cn" and any("p.jackyu.cn" in n for n in result["notes"])
+
+
+def test_when_github_is_unreachable_the_next_source_is_used(tmp_path, monkeypatch):
+    import urllib.error
+    from tools import violet_sources as vs
+    monkeypatch.setattr(relay, "health", lambda port, **kw: {"ok": True})
+    inner, _ = _signed_relay(monkeypatch, b"\x7fELF relay")
+
+    def fetch(url, limit, report=None):
+        if url.startswith("https://github.com/"):
+            raise urllib.error.URLError("timed out")
+        return inner(url, limit, report)
+    state = {}
+    relay.install(Layout(tmp_path / "v"), state, run=Runs(), fetch=fetch, port_free=lambda p, h: True,
+                  unit_path=tmp_path / "r.service", machine="x86_64", wait=0, sources=vs.sources("auto"))
+    assert state["mcp_relay"]["source"] == "加速站 p.jackyu.cn"
 
 
 def test_a_hand_deployed_relay_is_used_as_it_is(tmp_path, monkeypatch):

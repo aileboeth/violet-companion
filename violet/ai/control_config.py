@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from ai.settings import ENV_PATH, PROJECT_ROOT
+from tools import violet_sources as _sources
 
 logger = logging.getLogger("violet.control")
 
@@ -379,6 +380,15 @@ SETTINGS: list[Setting] = [
             "自动更新：发现新版本就在服务器上自动升级（先备份，失败自动退回）；只提醒：自动检查，升级要你点“立即更新”"
             "或执行命令；手动：只在你点“检查更新”时才查", "auto",
             choices=(("auto", "自动更新"), ("notify", "自动检查，只提醒"), ("manual", "手动检查"))),
+    # 0.7.59 (user 2026-11-08: 更新检查、一键安装中继在国内也能直接用): tools/violet_sources.py
+    Setting(_sources.SETTING, "下载来源", "updates", "choice", "now",
+            "检查和下载新版本、一键安装手机中继 / 联网搜索 / 语音时从哪里下载。服务器在国内、连不上 GitHub 时用加速站"
+            "（别人提供的免费 GitHub 加速服务）。经加速站下载的 Violet 新版本和手机中继必须带有发布签名、语音源码必须和"
+            "记录的校验值一致，否则不安装，所以加速站改不了程序；联网搜索的源码没法校验，只用 GitHub 和内置的两个加速站",
+            "auto", choices=_sources.CHOICES),
+    Setting(_sources.CUSTOM_SETTING, "自定义加速地址", "updates", "url", "now",
+            "“下载来源”选“只用自定义加速地址”时用：放在 GitHub 地址前面的那一段，例如 https://gh.example.com/"
+            "（下载时变成 https://gh.example.com/https://github.com/…）", "", optional=True),
 ]
 BY_KEY = {s.key: s for s in SETTINGS}
 # 2026-10-30 (user: "很多开关，现在给我的感觉就是很冗余"): the settings most people change; the page shows them first in
@@ -468,6 +478,11 @@ def validate(key: str, value: Any) -> Any:
         if not re.match(r"^https?://[^\s/?#@]+(/[^\s?#@]*)?$", value) or len(value) > 300:
             # no query string and no user:password@ -- a credential must never end up in the change history
             raise ValueError("请填写 http:// 或 https:// 开头的地址，不带查询参数，也不能在地址里写用户名或密码")
+        if key == _sources.CUSTOM_SETTING:
+            checked = _sources.custom_checked(value)
+            if not checked:
+                raise ValueError("请填写加速站的地址，例如 https://gh.example.com/（不是 github.com 本身）")
+            return checked
         return value.rstrip("/")
     if s.kind == "model":
         value = str(value).strip()

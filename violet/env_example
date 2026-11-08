@@ -55,6 +55,11 @@ VIOLET_STARTUP_MESSAGE=Violet Online.
 VIOLET_UPDATE_MODE=auto
 # 0.2.0 的旧开关，仍然认：0 = manual（没有设置 VIOLET_UPDATE_MODE 时才看它）
 # VIOLET_UPDATE_CHECK=1
+# 下载来源（0.7.59，后台“设置 → 版本更新”里改）：更新、一键安装手机中继 / 联网搜索 / 语音从哪里下载。
+# auto（默认：先 GitHub，连不上依次试内置加速站）| github | jackyu（p.jackyu.cn）| ip8217（8.217.135.233:9999）
+# | custom（用 VIOLET_DOWNLOAD_MIRROR，例如 https://gh.example.com/）。经加速站下载的新版本必须带有发布签名。
+VIOLET_DOWNLOAD_SOURCE=auto
+# VIOLET_DOWNLOAD_MIRROR=
 # 用自己的分支发布时：安装时加 --update-repo owner/repo（记在 root 才能改的 install.json 里；
 # 检查更新、violet update 和自动更新都用它）。不在这个文件里设置：服务账号能改这个文件，不能让它决定 root 安装什么。
 # 进程崩溃后，重启时只补回复这么多秒以内收到、尚未处理的消息；更早的只入库不回复。

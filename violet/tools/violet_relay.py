@@ -33,6 +33,7 @@ import shlex
 import shutil
 import subprocess
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable
@@ -164,6 +165,58 @@ def release_url(name: str, repo: str = RELAY_REPO) -> str:
     return f"https://github.com/{repo}/releases/latest/download/{name}"
 
 
+def _tool(name: str) -> Any:
+    import importlib
+    try:
+        return importlib.import_module(name)              # run as a script: <app>/tools is on sys.path
+    except ImportError:
+        return importlib.import_module(f"tools.{name}")
+
+
+def _download_relay(arch: str, fetch: Callable[..., bytes], progress: Callable[[int, str], None] | None,
+                    sources: list | None) -> tuple[str, bytes, str]:
+    """(file name, the binary, the source's label), from the first source that works (Violet 0.7.59).
+    SHA256SUMS.txt.sig (Violet MCP's relay key, tools/violet_sign.py MCP_RELAY_KEY) is required through a mirror;
+    from github.com a release without it is accepted (Violet MCP 1.4.3 and older), a wrong one is not."""
+    sign, src_mod = _tool("violet_sign"), _tool("violet_sources")
+
+    def attempt(source: Any) -> tuple[str, bytes]:
+        where = "" if source.direct else f"（{source.label}）"
+        _say(progress, 10, f"下载校验清单 SHA256SUMS.txt{where}")
+        raw = fetch(source.url(release_url("SHA256SUMS.txt")), 65536)
+        try:
+            sig: bytes | None = fetch(source.url(release_url("SHA256SUMS.txt.sig")), 4096)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+            sig = None
+        signed = sig is not None and sign.check(sign.MCP_RELAY_KEY, raw, sig)
+        if sig is not None and not signed:
+            raise RelayError("SHA256SUMS.txt 的签名不对（文件可能被改动过）")
+        if not source.direct and not signed:
+            raise RelayError("这个 Violet MCP 版本没有签名，经加速站下载必须有签名（Violet MCP 1.4.4 起才有）")
+        name, digest = pick_asset(parse_sums(raw.decode("utf-8", "replace")), arch)
+        _say(progress, 15, f"下载 {name}{where}")
+        last = [-1]
+
+        def report(got: int, total: int) -> None:      # 15 % -> 80 % while downloading, at most every 2 %
+            percent = 15 + int(65 * got / total) if total else 15
+            if progress is not None and percent >= last[0] + 2:
+                last[0] = percent
+                progress(percent, f"下载 {name}{where}：{got / 1048576:.1f} / {total / 1048576:.1f} MB" if total
+                         else f"下载 {name}{where}：{got / 1048576:.1f} MB")
+        data = fetch(source.url(release_url(name)), MAX_BINARY, report=report)
+        _say(progress, 82, "校验 SHA-256")
+        if hashlib.sha256(data).hexdigest() != digest:
+            raise RelayError(f"{name} 的 SHA-256 和发布里的 SHA256SUMS.txt 不一致")
+        return name, data
+    try:
+        (name, data), source = src_mod.first(list(sources or [src_mod.GITHUB]), attempt)
+    except src_mod.SourcesFailed as exc:
+        raise RelayError(f"下载中继失败，没有安装：{exc}") from None
+    return name, data, source.label
+
+
 def health(client_port: int, host: str = "127.0.0.1", timeout: float = 2.0) -> dict[str, Any] | None:
     try:
         req = urllib.request.Request(f"http://{host}:{client_port}/health")
@@ -220,9 +273,10 @@ def install(layout: Any, state: dict[str, Any], *, run: Callable[..., Any] = sub
             unit_path: Path = UNIT_PATH, machine: str | None = None, wait: float = HEALTH_WAIT,
             public_ip: Callable[[], str | None] | None = None, port: int | None = None,
             rng: random.Random | None = None,
-            progress: Callable[[int, str], None] | None = None) -> dict[str, Any]:
+            progress: Callable[[int, str], None] | None = None, sources: list | None = None) -> dict[str, Any]:
     """Returns the result; updates `state` (install.json) -- the caller saves it. `port`: the device port (else a
-    random free one). `progress(percent, step)` for the Control Center's dialog; `fetch(url, limit, report=...)`."""
+    random free one). `progress(percent, step)` for the Control Center's dialog; `fetch(url, limit, report=...)`;
+    `sources`: where to download from (tools/violet_sources.py; default GitHub only)."""
     if not shutil.which("systemctl") and run is subprocess.run:
         raise RelayError("这台服务器没有 systemd，中继需要手动部署（见 Violet MCP 的 DEPLOY_RELAY.md）")
     notes: list[str] = []
@@ -239,22 +293,7 @@ def install(layout: Any, state: dict[str, Any], *, run: Callable[..., Any] = sub
         _say(progress, 5, "选择空闲端口")
         device_port = _device_port(port, "0.0.0.0", free, set(), rng)       # before downloading: a bad --port stops here
         client_port = _first_free(CLIENT_PORTS, "127.0.0.1", free, {device_port})
-        _say(progress, 10, "下载校验清单（SHA256SUMS.txt）")
-        sums = parse_sums(fetch(release_url("SHA256SUMS.txt"), 65536).decode("utf-8", "replace"))
-        name, digest = pick_asset(sums, arch)
-        _say(progress, 15, f"下载 {name}")
-        last = [-1]
-
-        def report(got: int, total: int) -> None:      # 15 % -> 80 % while downloading, at most every 2 %
-            percent = 15 + int(65 * got / total) if total else 15
-            if progress is not None and percent >= last[0] + 2:
-                last[0] = percent
-                progress(percent, f"下载 {name}：{got / 1048576:.1f} / {total / 1048576:.1f} MB" if total
-                         else f"下载 {name}：{got / 1048576:.1f} MB")
-        data = fetch(release_url(name), MAX_BINARY, report=report)
-        _say(progress, 82, "校验 SHA-256")
-        if hashlib.sha256(data).hexdigest() != digest:
-            raise RelayError(f"{name} 的 SHA-256 和发布里的 SHA256SUMS.txt 不一致，没有安装")
+        name, data, source = _download_relay(arch, fetch, progress, sources)
         _say(progress, 85, "注册并启动中继服务")
         folder = layout.root / "mcp-relay"
         folder.mkdir(parents=True, exist_ok=True)
@@ -271,8 +310,8 @@ def install(layout: Any, state: dict[str, Any], *, run: Callable[..., Any] = sub
             raise RelayError("中继服务启动失败：" + (getattr(done, "stderr", "") or "")[-400:] +
                              f"\n查看原因：journalctl -u {UNIT_NAME} -n 30")
         state["mcp_relay"] = {"managed": True, "asset": name, "device_port": device_port, "client_port": client_port,
-                              "installed_at": int(time.time())}
-        notes.append(f"已安装 {name}")
+                              "installed_at": int(time.time()), "source": source}
+        notes.append(f"已安装 {name}（下载来源：{source}）")
         info = parse_unit(unit_path.read_text(encoding="utf-8"))
     _say(progress, 90, "等待中继就绪")
     ok = _wait_healthy(info["client_port"], wait)

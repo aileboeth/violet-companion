@@ -98,6 +98,8 @@ Mehr Details (Zugriffsmodi, Firewall, Wartungsbefehle) in [violet/INSTALL.md](vi
 /opt/violet/violet update
 ```
 
+- Wenn der Server GitHub nicht erreicht (in Festlandchina häufig): Unter Einstellungen → Versionsupdates → Downloadquelle legst du fest, woher heruntergeladen wird. Die Voreinstellung „Automatisch“ versucht zuerst GitHub und dann nacheinander die eingebauten GitHub-Mirrors. Eine über einen Mirror geladene neue Version wird nur installiert, wenn sie die Release-Signatur trägt. Details in [violet/INSTALL.md](violet/INSTALL.md#updates).
+
 ## Deinstallation
 
 Der folgende Befehl entfernt Violet vollständig. **Das lässt sich nicht rückgängig machen.** Er löscht:

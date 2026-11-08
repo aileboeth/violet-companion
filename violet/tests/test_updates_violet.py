@@ -48,33 +48,126 @@ class _Response(io.BytesIO):
         return False
 
 
-def test_latest_release_reads_the_tag_and_builds_the_installer_address():
-    seen = {}
+SEED = bytes(range(32))                                    # a test key; the real one is only on GitHub
+OFFICIAL = inst.UPDATE_REPO
+MIRROR = "https://mirror.example/"
 
+
+@pytest.fixture()
+def keys(monkeypatch):
+    """The release key replaced by the test key (the module object the installer itself uses)."""
+    import base64
+    sign = inst._tool("violet_sign")
+    monkeypatch.setattr(sign, "VIOLET_RELEASE_KEY", base64.b64encode(sign.public_key(SEED)).decode())
+    return sign
+
+
+def _meta(version="0.3.1", repo=OFFICIAL, **extra):
+    meta = {"version": version, "base": f"https://github.com/{repo}/releases/download/v{version}",
+            "built_at": "2026-11-08T10:00:00", "notes": "Violet 0.3.1: 说明",
+            "sha256": {"install.sh": "a" * 64, "violet.tar.gz": "b" * 64}, **extra}
+    return json.dumps(meta).encode()
+
+
+def _opener(files, seen=None):
+    """urlopen stand-in: files maps a URL to bytes or an exception; anything else is a 404."""
     def opener(request, timeout):
-        seen["url"], seen["agent"] = request.full_url, request.get_header("User-agent")
-        return _Response(json.dumps({"tag_name": "v0.3.1", "html_url": "https://github.com/o/r/releases/tag/v0.3.1",
-                                     "published_at": "2026-11-02T00:00:00Z", "body": "说明"}).encode())
-    rel = inst.latest_release("o/r", opener=opener)
-    assert seen["url"] == "https://api.github.com/repos/o/r/releases/latest" and seen["agent"]
-    assert rel["version"] == "0.3.1" and rel["install_url"] == "https://github.com/o/r/releases/download/v0.3.1/install.sh"
+        if seen is not None:
+            seen.append(request.full_url)
+        assert request.get_header("User-agent")
+        value = files.get(request.full_url)
+        if isinstance(value, BaseException):
+            raise value
+        if value is None:
+            raise urllib.error.HTTPError(request.full_url, 404, "nf", {}, None)
+        return _Response(value)
+    return opener
 
 
-@pytest.mark.parametrize("problem,message", [
-    (urllib.error.HTTPError("u", 404, "nf", {}, None), "还没有发布"),
-    (urllib.error.HTTPError("u", 403, "rate", {}, None), "GitHub 返回 403"),
-    (urllib.error.URLError("down"), "网络不通"),
-])
-def test_latest_release_failures_are_explained(problem, message):
-    def opener(request, timeout):
-        raise problem
-    with pytest.raises(inst.InstallError, match=message):
-        inst.latest_release("o/r", opener=opener)
+def _latest(repo=OFFICIAL, prefix=""):
+    return f"{prefix}https://github.com/{repo}/releases/latest/download/release.json"
 
 
-def test_a_tag_that_is_not_a_version_is_refused():
-    with pytest.raises(inst.InstallError, match="不是版本号"):
-        inst.latest_release("o/r", opener=lambda r, timeout: _Response(b'{"tag_name": "nightly"}'))
+def _src(*keys):
+    from tools import violet_sources as vs
+    out = []
+    for key in keys:
+        out.append(vs.GITHUB if key == "github" else vs.Source("custom", MIRROR, "自定义加速地址 mirror.example"))
+    return out
+
+
+def test_an_unsigned_release_from_github_itself_is_accepted(keys):
+    seen = []
+    rel = inst.latest_release(OFFICIAL, opener=_opener({_latest(): _meta()}, seen))
+    assert seen == [_latest(), _latest() + ".sig"]                         # release.json, not the GitHub API
+    assert rel["version"] == "0.3.1" and rel["signed"] is False and rel["sha256"] == {}
+    assert rel["install_url"] == f"https://github.com/{OFFICIAL}/releases/download/v0.3.1/install.sh"
+    assert rel["url"] == f"https://github.com/{OFFICIAL}/releases/tag/v0.3.1" and rel["notes"].startswith("Violet")
+
+
+def test_a_signed_release_carries_the_checked_hashes(keys):
+    body = _meta()
+    rel = inst.latest_release(OFFICIAL, opener=_opener({_latest(): body, _latest() + ".sig":
+                                                         keys.signature_text(SEED, body).encode()}))
+    assert rel["signed"] is True and rel["sha256"] == {"install.sh": "a" * 64, "violet.tar.gz": "b" * 64}
+
+
+def test_a_wrong_signature_is_refused_even_from_github(keys):
+    body = _meta()
+    with pytest.raises(inst.InstallError, match="签名不对"):
+        inst.latest_release(OFFICIAL, opener=_opener({_latest(): body, _latest() + ".sig":
+                                                      keys.signature_text(SEED, body + b" ").encode()}))
+
+
+def test_a_mirror_needs_the_signature_and_then_serves_everything_itself(keys):
+    body = _meta()
+    files = {_latest(prefix=MIRROR): body}
+    with pytest.raises(inst.InstallError, match="必须有签名"):
+        inst.latest_release(OFFICIAL, opener=_opener(files), sources=_src("mirror"))
+    files[_latest(prefix=MIRROR) + ".sig"] = keys.signature_text(SEED, body).encode()
+    rel = inst.latest_release(OFFICIAL, opener=_opener(files), sources=_src("mirror"))
+    assert rel["signed"] and rel["source"] == "自定义加速地址 mirror.example"
+    base = f"https://github.com/{OFFICIAL}/releases/download/v0.3.1"
+    assert rel["install_url"] == MIRROR + base + "/install.sh" and rel["release_base"] == MIRROR + base
+
+
+def test_a_mirror_cannot_change_the_version_or_the_address(keys):
+    for body in (_meta(base=f"https://github.com/{OFFICIAL}/releases/download/v9.9.9"),
+                 _meta(base="https://evil.example/v0.3.1"), _meta(version="nightly")):
+        files = {_latest(prefix=MIRROR): body, _latest(prefix=MIRROR) + ".sig": keys.signature_text(SEED, body).encode()}
+        with pytest.raises(inst.InstallError, match="不符|不规范"):
+            inst.latest_release(OFFICIAL, opener=_opener(files), sources=_src("mirror"))
+    unsigned_hashes = json.dumps({**json.loads(_meta()), "sha256": {}}).encode()
+    files = {_latest(prefix=MIRROR): unsigned_hashes,
+             _latest(prefix=MIRROR) + ".sig": keys.signature_text(SEED, unsigned_hashes).encode()}
+    with pytest.raises(inst.InstallError, match="SHA-256"):
+        inst.latest_release(OFFICIAL, opener=_opener(files), sources=_src("mirror"))
+
+
+def test_sources_are_tried_in_order_and_every_failure_is_explained(keys):
+    import socket
+    body = _meta()
+    files = {_latest(): socket.timeout("timed out"), _latest(prefix=MIRROR): body,
+             _latest(prefix=MIRROR) + ".sig": keys.signature_text(SEED, body).encode()}
+    rel = inst.latest_release(OFFICIAL, opener=_opener(files), sources=_src("github", "mirror"))
+    assert rel["source"].startswith("自定义加速地址")
+    files[_latest(prefix=MIRROR)] = urllib.error.URLError("refused")
+    with pytest.raises(inst.InstallError) as info:
+        inst.latest_release(OFFICIAL, opener=_opener(files), sources=_src("github", "mirror"))
+    assert "GitHub：连接超时" in str(info.value) and "自定义加速地址 mirror.example：连不上" in str(info.value)
+
+
+def test_nothing_published_yet_is_said_plainly(keys):
+    with pytest.raises(inst.InstallError, match="还没有发布"):
+        inst.latest_release(OFFICIAL, opener=_opener({}))
+
+
+def test_a_fork_is_only_read_from_github_itself(keys):
+    seen = []
+    body = _meta(repo="someone/fork")
+    rel = inst.latest_release("someone/fork", opener=_opener({_latest("someone/fork"): body}, seen),
+                              sources=_src("mirror"))
+    assert rel["signed"] is False and all(url.startswith("https://github.com/") for url in seen)
 
 
 def test_the_repository_can_be_overridden(monkeypatch):
@@ -117,6 +210,29 @@ def test_update_downloads_the_releases_installer_and_runs_its_upgrade(tmp_path):
     assert got == [RELEASE["install_url"]]
     assert run.calls[0][0] == "bash" and run.calls[0][2:] == ["upgrade", "--root", str(opts.root), "--json"]
     assert result["updated"] is True and result["to"] == "0.2.0" and result["backup"] == "/b.tar.gz"
+
+
+def test_a_signed_update_runs_only_the_signed_script_and_passes_the_archive_hash(tmp_path):
+    import hashlib
+    script = b"#!/usr/bin/env bash\necho signed\n"
+    rel = {**RELEASE, "signed": True, "source": "加速站 p.jackyu.cn",
+           "install_url": "https://p.jackyu.cn/https://github.com/o/r/releases/download/v0.2.0/install.sh",
+           "release_base": "https://p.jackyu.cn/https://github.com/o/r/releases/download/v0.2.0",
+           "sha256": {"install.sh": hashlib.sha256(script).hexdigest(), "violet.tar.gz": "c" * 64}}
+    seen = {}
+
+    def run(cmd, **kw):
+        import subprocess
+        seen["env"] = kw.get("env") or {}
+        return subprocess.CompletedProcess(cmd, 0, json.dumps({"ok": True, "to": "0.2.0"}) + "\n", "")
+    result = inst.update(_installed(tmp_path), release=rel, download=lambda u, t: t.write_bytes(script), run=run,
+                         windows=False)
+    assert result["updated"] and result["source"] == "加速站 p.jackyu.cn"
+    assert seen["env"]["VIOLET_EXPECT_SHA256"] == "c" * 64 and seen["env"]["VIOLET_RELEASE_BASE"] == rel["release_base"]
+    never = lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run"))  # noqa: E731
+    with pytest.raises(inst.InstallError, match="不一致"):
+        inst.update(_installed(tmp_path / "b"), release=rel, download=lambda u, t: t.write_bytes(script + b"x"),
+                    run=never, windows=False)
 
 
 def test_update_does_nothing_when_already_current_or_only_checking(tmp_path):
@@ -211,10 +327,28 @@ def test_the_release_workflow_publishes_what_make_release_builds():
     assert 'want="v$(tr -d' in flow and "violet/VERSION" in flow                      # tag must match the version
     assert "releases/download/${GITHUB_REF_NAME}" in flow and "make_release.py" in flow
     source = (PROJECT / "tools" / "make_release.py").read_text(encoding="utf-8")
-    built = re.findall(r'"([^"]+)"', re.search(r"for n in \(([^)]*)\)", source).group(1))
+    built = re.findall(r'"([^"]+)"', re.search(r"names = \[([^\]]*)\]", source).group(1))
     assert "install.sh" in built and "violet.tar.gz" in built
-    for name in built + ["SHA256SUMS"]:
+    for name in built + ["SHA256SUMS", "release.json.sig"]:
         assert f"dist/{name}" in flow, name
+    # 0.7.59: always signed; the secret is required (make_release refuses an empty one)
+    assert "--sign-key-env VIOLET_RELEASE_SIGNING_KEY" in flow and "secrets.VIOLET_RELEASE_SIGNING_KEY" in flow
+
+
+def test_make_release_signs_release_json_with_the_hashes(tmp_path, keys, monkeypatch):
+    import hashlib
+    from tools import make_release
+    meta =make_release.build("https://github.com/o/r/releases/download/v1", tmp_path, worktree=True,
+                              sign_key=SEED.hex())
+    body = (tmp_path / "release.json").read_bytes()
+    assert keys.check(keys.VIOLET_RELEASE_KEY, body, (tmp_path / "release.json.sig").read_bytes())
+    assert meta["sha256"]["violet.tar.gz"] == hashlib.sha256((tmp_path / "violet.tar.gz").read_bytes()).hexdigest()
+    assert meta["sha256"]["install.sh"] == hashlib.sha256((tmp_path / "install.sh").read_bytes()).hexdigest()
+    assert "release.json.sig" in (tmp_path / "SHA256SUMS").read_text(encoding="utf-8")
+    monkeypatch.setenv("EMPTY_KEY", "")
+    with pytest.raises(SystemExit, match="secret"):
+        make_release.main(["--base", "https://x.example/v1", "--out", str(tmp_path / "o"), "--worktree",
+                           "--sign-key-env", "EMPTY_KEY"])
 
 
 def test_the_readme_and_install_guide_give_the_github_one_liner():

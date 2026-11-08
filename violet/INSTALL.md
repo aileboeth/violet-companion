@@ -89,9 +89,22 @@ Choose the update mode under Settings → Version updates in the panel:
 
 The backup made before an upgrade (and before re-running the install as a repair) is **deleted automatically** after success and a passing health check, so it takes no disk space; after a failure it is kept in `backups/` for restoring. Backups you make yourself with `violet backup` are never deleted automatically. To be able to go back to the old data after an upgrade, run `/opt/violet/violet backup` once before upgrading.
 
-Automatic updates rely on the root timer registered during install (`violet-update.timer`), which only root + systemd installs have (the one-line install is one). Violet itself runs as the normal user `violet` and can only "request an update to the latest official version"; it cannot choose a download address. Clicking Update now in the panel shows a progress bar (check, download and verify, backup, install dependencies, restart, health check); Violet restarts once during the upgrade, and the dialog waits for it to come back and shows the result. Other installs show the command on the page: `/opt/violet/violet update`.
+Automatic updates rely on the root timer registered during install (`violet-update.timer`), which only root + systemd installs have (the one-line install is one). Violet itself runs as the normal user `violet` and can only "request an update to the latest official version"; it cannot choose what gets installed (the panel can choose the download source, but a release that comes through a mirror must carry the official release signature, see below). Clicking Update now in the panel shows a progress bar (check, download and verify, backup, install dependencies, restart, health check); Violet restarts once during the upgrade, and the dialog waits for it to come back and shows the result. Other installs show the command on the page: `/opt/violet/violet update`.
 
-To publish from your own fork instead: add `--update-repo your-username/repo-name` during install.
+**Download source** (since 0.7.59, Settings → Version updates → Download source): checking for new versions, automatic updates, Update now, `violet update`, and the one-click installs of the phone relay, web search and voice all download from here.
+
+| Option | Effect |
+|---|---|
+| Automatic (default) | GitHub first; if it cannot be reached, the built-in GitHub mirrors `https://p.jackyu.cn/` and `http://8.217.135.233:9999/` in turn |
+| GitHub only | No mirror |
+| One of the built-in mirrors only | Only that mirror |
+| Custom mirror address | The address in "Custom mirror address", for example `https://gh.example.com/` (put in front of the GitHub address when downloading) |
+
+A GitHub mirror is a stranger's server, so: the version check reads the release's own `release.json` (no GitHub API any more, which mirrors do not forward, and no 60-requests-an-hour limit). Through a mirror, `release.json` must carry the release signature (`release.json.sig`, made by GitHub Actions with the repository secret `VIOLET_RELEASE_SIGNING_KEY`; the public key is in `tools/violet_sign.py`), and the install script and the program archive must match the SHA-256 in it, otherwise nothing is installed. The phone relay must carry Violet MCP's signature (`SHA256SUMS.txt.sig`); the voice sources must match the SHA-256 recorded in `tools/violet_voice.py`; the web search source cannot be checked, so it only comes from GitHub and the built-in mirrors, never from the custom address (that setting is written by Violet's service account, while the install runs as root). From github.com itself, unsigned releases (0.7.58 and older) are still accepted.
+
+Version 0.7.58 and older have no such setting: install or upgrade once with the mirror commands in the [Chinese README](../README.zh-CN.md#国内服务器github-加速地址) (`install.sh upgrade`; also backup first and automatic rollback). `install.sh` also takes `--release-base=<address>` for where the program archive comes from; it does the same as the environment variable `VIOLET_RELEASE_BASE` and survives the re-run through sudo.
+
+To publish from your own fork instead: add `--update-repo your-username/repo-name` during install. A fork's releases are only read from github.com itself (there is no key for them).
 
 Releasing a new version (maintainers): change `violet/VERSION`, commit, then push the tag `v<version>` (for example `git tag v0.1.1 && git push origin v0.1.1`); GitHub Actions builds it and publishes it to Releases.
 

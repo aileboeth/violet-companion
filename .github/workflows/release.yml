@@ -20,14 +20,21 @@ jobs:
         run: |
           want="v$(tr -d ' \r\n' < violet/VERSION)"
           [ "$GITHUB_REF_NAME" = "$want" ] || { echo "::error::tag $GITHUB_REF_NAME does not match violet/VERSION ($want)"; exit 1; }
+      # 0.7.59: release.json is signed (tools/violet_sign.py); updates through a GitHub mirror need the signature.
+      # The secret is the Ed25519 seed (64 hex characters) whose public half is VIOLET_RELEASE_KEY; without it the
+      # release fails here instead of publishing an unsigned one.
       - name: build the release files
+        env:
+          VIOLET_RELEASE_SIGNING_KEY: ${{ secrets.VIOLET_RELEASE_SIGNING_KEY }}
         run: |
           python3 violet/tools/make_release.py \
-            --base "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}" --out dist
+            --base "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}" --out dist \
+            --sign-key-env VIOLET_RELEASE_SIGNING_KEY
           (cd dist && sha256sum -c SHA256SUMS)
+          python3 violet/tools/violet_sign.py verify --public "$(python3 -c 'import sys; sys.path.insert(0, "violet/tools"); import violet_sign; print(violet_sign.VIOLET_RELEASE_KEY)')" dist/release.json
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" dist/install.sh dist/violet.tar.gz dist/violet.tar.gz.sha256 \
-            dist/SHA256SUMS dist/release.json --title "Violet ${GITHUB_REF_NAME#v}" --generate-notes
+            dist/SHA256SUMS dist/release.json dist/release.json.sig --title "Violet ${GITHUB_REF_NAME#v}" --generate-notes

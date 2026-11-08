@@ -98,6 +98,8 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 /opt/violet/violet update
 ```
 
+- 伺服器連不上 GitHub（中國大陸常見）時：後台「設定 → 版本更新 → 下載來源」決定從哪裡下載。預設「自動」會先連 GitHub，連不上再依序試內建的 GitHub 加速站。經加速站下載的新版本必須帶有發佈簽章才會安裝。詳見 [violet/INSTALL.md](violet/INSTALL.md#updates)。
+
 ## 解除安裝
 
 下面這一條指令會徹底刪除 Violet，**刪除後無法復原**：

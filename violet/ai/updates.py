@@ -108,11 +108,13 @@ def _fetch_default(root: Path) -> Callable[[], dict]:
     state = install_state(root)
 
     def fetch() -> dict:
-        # the same source the root update service uses (install.json only -- never this process's environment)
+        # the same release the root update service uses (install.json only -- never this process's environment);
+        # only WHERE it is downloaded from is the page's setting "下载来源" (0.7.59), as for the root service
+        from tools import violet_sources
         from tools.violet_installer import UPDATE_REPO, feed_release, latest_release
         if state.get("update_feed"):
             return feed_release(state["update_feed"])
-        return latest_release(state.get("update_repo") or UPDATE_REPO)
+        return latest_release(state.get("update_repo") or UPDATE_REPO, sources=violet_sources.from_values(os.environ))
     return fetch
 
 
@@ -138,9 +140,11 @@ def check(refresh: bool = False, fetch: Callable[[], dict] | None = None, now: C
         url = str(release.get("url") or "")
         found = {"latest": release["version"], "url": url if url.startswith("https://github.com/") else None,
                  "published_at": release.get("published_at"),
-                 "notes": release.get("notes") or "", "error": None, "checked_at": now()}
+                 "notes": release.get("notes") or "", "error": None, "checked_at": now(),
+                 "source": release.get("source"), "signed": bool(release.get("signed"))}
     except InstallError as exc:
-        found = {"latest": None, "url": None, "published_at": None, "notes": "", "error": str(exc), "checked_at": now()}
+        found = {"latest": None, "url": None, "published_at": None, "notes": "", "error": str(exc), "checked_at": now(),
+                 "source": None, "signed": False}
     with _LOCK:
         _CACHE["result"] = found
     result = {**base, **found, "newer": _newer(found, current)}

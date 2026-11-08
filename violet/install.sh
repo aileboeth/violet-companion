@@ -33,10 +33,16 @@ violet_main() {
   is_root() { [ "$(id -u 2>/dev/null || echo 1)" = "0" ]; }
 
   # --user-install: stay the current user on purpose (no root, no sudo)
+  # --release-base=<address>: where the program archive comes from (0.7.59: a GitHub mirror; the same as
+  #   VIOLET_RELEASE_BASE, but it survives the sudo re-run below, which drops the environment)
   local user_install=0 arg
   local -a rest=()
   for arg in "$@"; do
-    if [ "$arg" = "--user-install" ]; then user_install=1; else rest+=("$arg"); fi
+    case "$arg" in
+      --user-install) user_install=1 ;;
+      --release-base=*) release_base="${arg#--release-base=}"; release_base="${release_base%/}" ;;
+      *) rest+=("$arg") ;;
+    esac
   done
   set -- ${rest[@]+"${rest[@]}"}
 
@@ -57,7 +63,12 @@ violet_main() {
         else die "需要 curl 或 wget"; fi
         script="$tmp_script"
       fi
-      sudo bash "$script" "$command" "$@" || code=$?
+      local -a carry=()
+      case "$release_base" in
+        __VIOLET_RELEASE_BASE*) ;;
+        *) carry=("--release-base=$release_base") ;;
+      esac
+      sudo bash "$script" "$command" ${carry[@]+"${carry[@]}"} "$@" || code=$?
       [ -z "$tmp_script" ] || rm -f "$tmp_script"
       exit "$code"
     fi
@@ -161,9 +172,14 @@ PY
     local tmp="$VIOLET_TMP"
     say "== 下载 Violet：$release_base"
     fetch "$release_base/violet.tar.gz" "$tmp/violet.tar.gz"
-    fetch "$release_base/violet.tar.gz.sha256" "$tmp/violet.tar.gz.sha256"
     local want got
-    want="$(tr -d ' \r\n' < "$tmp/violet.tar.gz.sha256" | cut -c1-64)"
+    if [ -n "${VIOLET_EXPECT_SHA256:-}" ]; then
+      # 0.7.59: the SHA-256 from the signed release.json (the root update service checked the signature)
+      want="$VIOLET_EXPECT_SHA256"
+    else
+      fetch "$release_base/violet.tar.gz.sha256" "$tmp/violet.tar.gz.sha256"
+      want="$(tr -d ' \r\n' < "$tmp/violet.tar.gz.sha256" | cut -c1-64)"
+    fi
     got="$(sha256_of "$tmp/violet.tar.gz")"
     [ -n "$want" ] && [ "$want" = "$got" ] || die "下载的文件校验失败（SHA-256 不一致），没有安装任何东西"
     tar -xzf "$tmp/violet.tar.gz" -C "$tmp"

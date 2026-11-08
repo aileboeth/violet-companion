@@ -98,6 +98,8 @@ More details (access modes, firewall, maintenance commands) are in [violet/INSTA
 /opt/violet/violet update
 ```
 
+- If the server cannot reach GitHub (common in mainland China): Settings → Version updates → Download source picks where downloads come from. The default, Automatic, tries GitHub first and then the built-in GitHub mirrors. A new version downloaded through a mirror is installed only if it carries the release signature. See [violet/INSTALL.md](violet/INSTALL.md#updates).
+
 ## Uninstall
 
 The command below removes Violet completely. **This cannot be undone.** It deletes:
