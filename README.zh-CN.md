@@ -85,6 +85,8 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 
 更多说明（访问方式、防火墙、日常维护命令）见 [violet/INSTALL.md](violet/INSTALL.zh-CN.md)。
 
+服务器在国内、连不上 GitHub：用下面 [GitHub 加速地址](#国内服务器github-加速地址) 里的命令安装、更新和卸载。
+
 ## 更新
 
 - 默认自动更新：有新版本就在服务器上自动升级。升级前先备份，升级失败自动退回旧版本。
@@ -95,6 +97,8 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 ```bash
 /opt/violet/violet update
 ```
+
+- 服务器连不上 GitHub 时，自动更新和这条命令都会失败，改用 [GitHub 加速地址](#国内服务器github-加速地址) 里的更新命令。
 
 ## 卸载
 
@@ -110,6 +114,55 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 ```
 
 只装了一半、安装记录丢了，或者之前只卸载了程序，这条命令也能把剩下的东西清理干净。安装时用系统包管理器装的 Python、openssl 不会删除，因为其他程序可能也在用。
+
+## 国内服务器：GitHub 加速地址
+
+国内服务器经常连不上 GitHub，这时在 GitHub 地址前面加上一个加速站的地址再下载。
+
+| 加速站 | 说明 |
+|---|---|
+| `https://p.jackyu.cn/` | 推荐，HTTPS |
+| `http://8.217.135.233:9999/` | 备用，下载更快，但是明文 HTTP |
+
+2026-11-08 在国内网络（中国移动）实测，这两个都能用，下载的文件和 GitHub 上的完全一致（SHA-256 相同）。加速站是别人提供的免费服务，不归本项目管，随时可能失效；能直接连上 GitHub 时请用上面的官方命令。
+
+先执行这一行，设置下载地址（每次打开新的终端都要先执行一次；换备用站时把 `https://p.jackyu.cn/` 换成 `http://8.217.135.233:9999/`）：
+
+```bash
+G=https://p.jackyu.cn/https://github.com/aileboeth/violet-companion/releases/latest/download
+```
+
+**安装**：
+
+```bash
+curl -fsSL $G/install.sh | VIOLET_RELEASE_BASE=$G bash
+```
+
+**更新到最新版**（和自动更新一样：先备份，升级失败自动退回旧版本）：
+
+```bash
+curl -fsSL $G/install.sh | VIOLET_RELEASE_BASE=$G bash -s -- upgrade
+```
+
+**彻底卸载**（删除后无法恢复，删除的内容见上面“卸载”）：
+
+```bash
+/opt/violet/violet uninstall --purge --yes
+```
+
+这一条不用联网。如果装坏了、`/opt/violet/violet` 已经不在了，改用：
+
+```bash
+curl -fsSL $G/install.sh | VIOLET_RELEASE_BASE=$G bash -s -- uninstall --purge --yes
+```
+
+注意：
+
+- 命令里的 `VIOLET_RELEASE_BASE=$G` 不能省。安装脚本会再下载一个程序包，有了它才从加速站下载，没有它还是去 GitHub 下载。
+- 以普通用户运行时，把 `| VIOLET_RELEASE_BASE=$G bash` 改成 `| sudo VIOLET_RELEASE_BASE=$G bash`（sudo 不会带上这个设置）。
+- 后台的自动更新、“立即更新”按钮和 `/opt/violet/violet update` 还是直接连 GitHub（查询最新版本用的是 GitHub API，加速站不支持）。连不上时用上面的更新命令。
+- 后台“一键安装中继”和“一键安装联网搜索”也是从 GitHub 下载的，国内服务器可能装不上。
+- 程序包的 SHA-256 校验文件也是从同一个加速站下载的，只能发现下载出错，不能防止加速站改动文件内容。
 
 ## 当前状态
 

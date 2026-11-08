@@ -12,6 +12,8 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 
 各种 Linux 都用这一条：以 root 登录的（例如 Debian 最小安装，没有 sudo）直接安装；普通用户会自动通过 sudo 重新运行（输入你的密码）；普通用户而且没有 sudo 的，会提示先执行 `su -` 切换到 root。下面的 `/opt/violet/violet …` 命令也是一样，不需要自己加 sudo。
 
+服务器在国内、连不上 GitHub 时，按 [README 的“国内服务器：GitHub 加速地址”](../README.zh-CN.md#国内服务器github-加速地址) 用加速站安装、更新和卸载（环境变量 `VIOLET_RELEASE_BASE` 指定程序包从哪里下载）。
+
 装的是 GitHub Releases 上最新发布的版本。选项放在 `-s --` 后面，例如 `| bash -s -- --access public`。自己发布到别的地址时：`tools/make_release.py --base <发布地址>` 生成发布文件，`release.json` 里的 `install_command` 就是对应的命令。
 
 安装程序会依次：找到或自动安装 Python 3.11+（root 时用系统包管理器；系统自带的版本太旧时，例如 Ubuntu 22.04，再装 python3.11）→ 下载程序并核对 SHA-256 → 检查系统（venv、磁盘、内存、目录权限）→ 复制程序到 `/opt/violet/app` → 创建虚拟环境并安装依赖 → 生成配置 `config/violet.env` 和数据目录 → 选择端口（新装时在 10000–29999 里随机选一个空闲端口，重装 / 升级沿用原来的端口；`--port` 可以指定）→ 生成随机的安全入口、用户名和一次性的初始密码 → 创建系统用户 `violet`、注册 systemd 服务（崩溃自动重启、开机自启）→ 启动并做健康检查 → 输出后台地址、用户名、初始密码和网络检查结果。
@@ -88,6 +90,8 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 升级（以及重新运行安装做修复）前做的备份：成功并通过健康检查后**自动删除**，不占硬盘；失败时保留在 `backups/`，用来恢复。自己用 `violet backup` 做的备份不会被自动删除。想在升级后还能退回旧数据，升级前先执行一次 `/opt/violet/violet backup`。
 
 自动更新靠安装时注册的 root 定时任务（`violet-update.timer`），只有 root + systemd 的安装才有（一行命令安装就是这种）。Violet 自己以普通用户 `violet` 运行，它只能“请求更新到官方最新版”，不能指定下载地址。在后台点“立即更新”会弹出进度条（检查、下载校验、备份、安装依赖、重启、健康检查）；升级期间 Violet 会重启一次，弹窗等它回来后显示结果。其他安装方式在页面上给出命令：`/opt/violet/violet update`。
+
+检查更新用的是 GitHub API（`api.github.com`），GitHub 加速站不支持它，所以服务器连不上 GitHub 时自动更新会一直失败。这种情况用 README 里的 [加速更新命令](../README.zh-CN.md#国内服务器github-加速地址)（`install.sh upgrade`，同样先备份、失败自动退回）。
 
 改用自己的分支发布：安装时加 `--update-repo 你的用户名/仓库名`。
 
