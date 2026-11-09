@@ -1114,7 +1114,12 @@ $("#set-restart").addEventListener("click", restartViolet);
 // 0.7.9: clear her memory and / or every setting (user: "二选一或都选")
 function resetDialog() {
   const mem = h("input", { type: "checkbox" }), cfg = h("input", { type: "checkbox" }), cut = h("input", { type: "checkbox" });
-  mem.addEventListener("change", () => { if (mem.checked) cut.checked = true; });   // forgetting without 翻篇 does not stick
+  const hist = h("input", { type: "checkbox" });
+  // forgetting without 翻篇 does not stick; 2026-11-09 (user: "聊天记录那里的记录也给删掉，这样不就一劳永逸了"): clearing
+  // the memory deletes the chat too by default (can be unticked); deleting the chat always turns the page
+  mem.addEventListener("change", () => { if (mem.checked) { cut.checked = true; hist.checked = true; } });
+  hist.addEventListener("change", () => { if (hist.checked) cut.checked = true; });
+  cut.addEventListener("change", () => { if (!cut.checked) hist.checked = false; });
   const err = h("p", { class: "err" });
   const d = h("dialog", {}, h("form", { method: "dialog", class: "stack" },
     h("h3", { text: "清除数据 / 翻篇" }),
@@ -1124,21 +1129,26 @@ function resetDialog() {
       h("span", { class: "note", text: "：设置页和图片页改过的设置全部恢复默认，QQ 群全部回到“关闭”。模型服务（API 地址、Key、模型）保留，不然她就没法说话了；可以在“修改记录”里回滚。" }))),
     h("label", { class: "check" }, cut, h("span", {}, h("strong", { text: " 翻篇" }),
       h("span", { class: "note", text: "：从现在起她看不到以前的聊天（和你的、群里的都算），像重新开始聊。聊天记录不删，“聊天记录”页照样能看。只清记忆不翻篇的话，她还会从最近的聊天里看到以前的事。" }))),
+    h("label", { class: "check" }, hist, h("span", {}, h("strong", { text: " 删除聊天记录" }),
+      h("span", { class: "note", text: "：“聊天记录”页里你和她的聊天、QQ 群和别人私聊的记录都删掉（会同时翻篇）。删之前在服务器上存一份备份，页面上看不到了。还在发送中的消息不受影响。" }))),
     h("p", { class: "note", text: "聊天渠道的绑定、人设和登录账号都不会动。" }),
     err,
     h("div", { class: "row" },
       h("button", { type: "button", class: "ghost", text: "取消", onclick: () => { d.close(); d.remove(); } }),
       h("button", { type: "button", class: "danger", text: "确定", onclick: async () => {
         err.textContent = "";
-        if (!mem.checked && !cfg.checked && !cut.checked) { err.textContent = "请至少选一项"; return; }
-        const what = [mem.checked ? "清除全部记忆" : null, cfg.checked ? "清除全部配置" : null, cut.checked ? "翻篇" : null].filter(Boolean).join("、");
+        if (!mem.checked && !cfg.checked && !cut.checked && !hist.checked) { err.textContent = "请至少选一项"; return; }
+        const what = [mem.checked ? "清除全部记忆" : null, cfg.checked ? "清除全部配置" : null,
+          hist.checked ? "删除聊天记录" : null, cut.checked && !hist.checked ? "翻篇" : null].filter(Boolean).join("、");
         d.close();
         if (!(await confirmBox(`确定${what}？这一步不能在页面上撤销。`))) { d.remove(); return; }
         d.remove();
         try {
-          const r = await api("POST", "/api/control/reset", { memory: mem.checked, config: cfg.checked, cut: cut.checked, confirm: true });
+          const r = await api("POST", "/api/control/reset", { memory: mem.checked, config: cfg.checked, cut: cut.checked,
+            history: hist.checked, confirm: true });
           const parts = [];
           if (r.memory) parts.push(`记忆已清除（备份：${r.memory.archive}）`);
+          if (r.history) parts.push(`聊天记录已删除（备份：${r.history.archive}）`);
           if (r.config) parts.push(`${r.config.reset.length} 项设置已恢复默认`);
           if (r.cut) parts.push("已翻篇");
           toast(parts.join("；")); loaders.settings();

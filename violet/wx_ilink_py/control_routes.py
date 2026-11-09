@@ -1122,10 +1122,13 @@ def register_control_routes(app: Flask, violetdb, client=None, proactive_schedul
     def control_reset():
         """0.7.9 (user: "清除所有记忆和清除所有配置，二选一或都选"). memory: what she remembers (archived first, like a
         persona switch); config: the dashboard's settings back to default (the model service stays) and every QQ group
-        / private chat back to its starting mode. Chat history, channels, the persona and the login stay."""
+        / private chat back to its starting mode; history (2026-11-09): the chat itself, archived first (implies cut).
+        Channels, the persona and the login stay."""
         body = request.get_json(silent=True) or {}
         memory, config = body.get("memory") is True, body.get("config") is True
         cut = body.get("cut") is True            # 2026-10-30 翻篇: she no longer sees the chat before now
+        history = body.get("history") is True    # 2026-11-09: and the chat itself is deleted (archived first)
+        cut = cut or history                     # what is derived from the chat (proactive history) starts here too
         if not memory and not config and not cut:
             return bad("请至少选一项")
         if body.get("confirm") is not True:
@@ -1139,6 +1142,14 @@ def register_control_routes(app: Flask, violetdb, client=None, proactive_schedul
                 logger.exception("clearing the memory failed")
                 return bad(f"清除记忆失败（{exc.__class__.__name__}），什么都没有删")
             out["memory"] = {"archive": archive, "removed": counts}
+        if history:
+            from ai.persona_templates import clear_history
+            try:
+                archive, counts = clear_history(violetdb)
+            except Exception as exc:
+                logger.exception("deleting the chat history failed")
+                return bad(f"删除聊天记录失败（{exc.__class__.__name__}），聊天记录没有删", 500, **out)
+            out["history"] = {"archive": archive, "removed": counts}
         if config:
             try:
                 result = store().reset(actor(), apply=apply_now)
@@ -1152,5 +1163,5 @@ def register_control_routes(app: Flask, violetdb, client=None, proactive_schedul
         if cut:
             from ai import context_cut
             out["cut"] = context_cut.cut(violetdb, "all")
-        logger.warning("dashboard reset by %s: memory=%s config=%s cut=%s", actor(), memory, config, cut)
+        logger.warning("dashboard reset by %s: memory=%s config=%s cut=%s history=%s", actor(), memory, config, cut, history)
         return ok(out)

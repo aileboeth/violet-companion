@@ -16,6 +16,10 @@ from pathlib import Path
 from typing import Any
 
 SUPPORTED = ("zh-CN", "en", "zh-TW", "ja", "ko", "es", "fr", "de", "ru", "pt-BR")
+# each language in its own words (the login page's picker; the menu's picker in control_i18n.js has the same list)
+NAMES = (("zh-CN", "简体中文"), ("en", "English"), ("zh-TW", "繁體中文"), ("ja", "日本語"), ("ko", "한국어"),
+         ("es", "Español"), ("fr", "Français"), ("de", "Deutsch"), ("ru", "Русский"), ("pt-BR", "Português (Brasil)"))
+YEAR = 365 * 24 * 3600
 SOURCE = "zh-CN"
 COOKIE = "violet_lang"
 DIR = Path(__file__).resolve().parent / "i18n"

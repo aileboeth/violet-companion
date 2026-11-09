@@ -57,7 +57,7 @@ from datetime import timedelta
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from flask import Flask, jsonify, redirect, render_template_string, request, session
+from flask import Flask, jsonify, make_response, redirect, render_template_string, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ai.settings import env_bool, env_int
@@ -118,6 +118,9 @@ _LOGIN_PAGE = """<!doctype html>
  .hint{color:var(--muted);font-size:12px;margin-top:16px}
  .hint code{display:inline-block;white-space:nowrap;font-size:11.5px;padding:1px 6px;border-radius:6px;border:1px solid var(--line);
       margin-top:4px}
+ .langs{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:16px;padding-top:12px;border-top:1px solid var(--line);font-size:12px}
+ .langs a{color:var(--muted);text-decoration:none} .langs a:hover{color:var(--text)}
+ .langs a[aria-current]{color:var(--text);font-weight:600}
  @keyframes rise{from{opacity:0;transform:translateY(14px) scale(.98)}to{opacity:1;transform:none}}
  @keyframes drift{to{transform:translate(60px,40px) scale(1.12)}}
  @keyframes shake{0%,100%{transform:none}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
@@ -135,6 +138,7 @@ _LOGIN_PAGE = """<!doctype html>
   <div class="hint">{{ t("第一次登录请用安装完成时显示的用户名和密码（随机生成，可以一直用，也可以在“账号安全”里改）。忘记了：在服务器上执行") }}<br>
   <code>/opt/violet/violet info</code> {{ t("查看用户名和地址") }}<br>
   <code>/opt/violet/violet reset-password</code> {{ t("生成新密码") }}</div>
+  <nav class="langs" aria-label="Language">{% for code, name in langs %}<a href="/auth/login?lang={{ code }}{% if next_url %}&amp;next={{ next_url|urlencode }}{% endif %}"{% if code == lang %} aria-current="true"{% endif %} lang="{{ code }}">{{ name }}</a>{% endfor %}</nav>
 </form></body></html>"""
 
 _NOT_FOUND = "404 Not Found\n"
@@ -572,14 +576,24 @@ def install_auth(app: Flask, token: str, data_dir: str | os.PathLike[str] | None
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
         return response
 
-    def _login_page(error, next_url):
+    def _login_page(error, next_url, lang=None):
         from wx_ilink_py import i18n          # 2026-11-09: the login page in the admin's language too
-        lang = i18n.pick(request)
-        return render_template_string(_LOGIN_PAGE, error=error, next_url=next_url, lang=lang, t=i18n.translator(lang))
+        lang = lang or i18n.pick(request)
+        return render_template_string(_LOGIN_PAGE, error=error, next_url=next_url, lang=lang, t=i18n.translator(lang),
+                                      langs=i18n.NAMES)
 
     @app.get("/auth/login")
     def auth_login_page():
-        return _login_page(None, _safe_next(request.args.get("next")))
+        """?lang=<code> (the links under the form): show the page in that language and remember it (cookie
+        violet_lang, the same one the menu's picker writes) -- 2026-11-09, user: the page followed a browser whose
+        first language was Russian, choose before logging in."""
+        from wx_ilink_py import i18n
+        chosen = i18n.normalize(request.args.get("lang"))
+        response = make_response(_login_page(None, _safe_next(request.args.get("next")), chosen))
+        if chosen:
+            response.set_cookie(i18n.COOKIE, chosen, max_age=i18n.YEAR, path="/", samesite="Strict",
+                                secure=request.is_secure)
+        return response
 
     @app.post("/auth/login")
     def auth_login():

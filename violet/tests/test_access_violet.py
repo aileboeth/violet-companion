@@ -66,6 +66,27 @@ def _login(c, username=USER, password=PASSWORD):
     return c.post("/auth/login", data={"username": username, "password": password}, headers=SAME)
 
 
+# ------------------------------------------------------------------------------------------------ language
+
+def test_the_login_page_offers_every_language_and_remembers_the_choice(app, store):
+    """2026-11-09 (user: the page came up in Russian -- the browser's first language was ru, the system English;
+    "建议你在登录页就显示选择语言的"). The links under the form set violet_lang, which beats the browser."""
+    _locked(store)
+    c = _enter(app)
+    ru = {"Accept-Language": "ru,en-US;q=0.9"}
+    page = c.get("/auth/login?next=/control", headers=ru).get_data(as_text=True)
+    assert '<html lang="ru">' in page and 'aria-current="true" lang="ru"' in page
+    for code in ("zh-CN", "en", "zh-TW", "ja", "ko", "es", "fr", "de", "ru", "pt-BR"):
+        assert f'href="/auth/login?lang={code}&amp;next=/control"' in page
+    resp = c.get("/auth/login?lang=en&next=/control", headers=ru)
+    assert resp.status_code == 200 and '<html lang="en">' in resp.get_data(as_text=True)
+    assert "violet_lang=en" in resp.headers["Set-Cookie"] and "SameSite=Strict" in resp.headers["Set-Cookie"]
+    again = c.get("/auth/login", headers=ru).get_data(as_text=True)        # the cookie now wins over the browser
+    assert '<html lang="en">' in again and "Log in" in again
+    assert "violet_lang" not in (c.get("/auth/login?lang=xx", headers=ru).headers.get("Set-Cookie") or "")
+    assert _login(c).status_code == 302
+
+
 # ------------------------------------------------------------------------------------------------ entrance
 
 def test_without_an_entrance_everything_works_as_before_and_any_username_is_accepted(app, store):

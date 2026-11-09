@@ -212,6 +212,41 @@ def _clear_memory(db) -> tuple[str, dict[str, int]]:
     return str(path), counts
 
 
+# 2026-11-09 (user: "删除记忆之后……在聊天记录那里的记录也给删掉，这样不就一劳永逸了"): the chat itself.
+# messages / outbound_messages: the owner's chat of the persona (scoped); social_messages / social_decisions: QQ groups
+# and other people's private chats (her decision notes quote what was said). Sends still queued or in flight stay;
+# inbound_messages keep their rows (dedup_key stops a platform's re-delivered message from being answered again),
+# only the text goes.
+HISTORY_TABLES = {"messages": None, "outbound_messages": "status NOT IN ('queued', 'sending')",
+                  "social_messages": None, "social_decisions": None}
+INBOUND_DONE = "status NOT IN ('pending', 'processing') AND content IS NOT NULL"
+
+
+def clear_history(db, scope: str | None = None) -> tuple[str, dict[str, int]]:
+    """Archive, then delete the chat history (HISTORY_TABLES; inbound text blanked). (archive file, rows per table)"""
+    from ai import memory_scope
+    with memory_scope.use(scope or memory_scope.MAIN):
+        existing = {r["name"] for r in db.fetch_all("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        archive: dict[str, Any] = {"archived_at": db.now(), "tables": {}}
+        counts: dict[str, int] = {}
+        for table, where in HISTORY_TABLES.items():
+            if table in existing:
+                rows = db.fetch_all(f"SELECT * FROM {table}" + (f" WHERE {where}" if where else ""))
+                archive["tables"][table] = rows
+                counts[table] = len(rows)
+        inbound = db.fetch_all(f"SELECT id, received_at, content FROM inbound_messages WHERE {INBOUND_DONE}")
+        archive["tables"]["inbound_messages"] = inbound
+        counts["inbound_messages"] = len(inbound)
+        path = control_dir() / f"chat-archive-{time.strftime('%Y%m%d-%H%M%S')}.json"
+        _write(path, archive)
+        with db.transaction():
+            for table, where in HISTORY_TABLES.items():
+                if table in existing:
+                    db.execute(f"DELETE FROM {table}" + (f" WHERE {where}" if where else ""))
+            db.execute(f"UPDATE inbound_messages SET content = NULL WHERE {INBOUND_DONE}")
+        return str(path), counts
+
+
 LIST_FIELDS = ("personality", "communication_habits", "values", "flaws")
 
 

@@ -10,7 +10,9 @@ from datetime import datetime
 
 import pytest
 
-DAY = "2026-11-09"
+from tests.test_qq_social_violet import admin, db  # noqa: F401  (the admin client + database fixtures)
+
+DAY ="2026-11-09"
 CUT_AT = f"{DAY}T13:20:00+08:00"
 NOW = datetime.fromisoformat(f"{DAY}T16:35:00+08:00")
 BEFORE = [      # from the user's export (D:\unity\violet-chat-2026-11-09-2026-11-09.json), 00:28 - 12:07
@@ -107,6 +109,41 @@ def test_her_proactive_messages_from_before_the_cut_are_not_shown_again(fresh_st
     scheduler = ProactiveScheduler.__new__(ProactiveScheduler)
     recent, _ = scheduler._recent_proactive(NOW)
     assert [r["text"] for r in recent] == ["下午好呀"]
+
+
+def test_deleting_the_chat_history_from_the_settings_page(admin, db, tmp_path, monkeypatch):
+    """User: "删除记忆之后……在聊天记录那里的记录也给删掉，这样不就一劳永逸了". The chat goes (archived first), sends still
+    queued stay, inbound rows keep their dedup key but lose the text, and the page is turned too."""
+    import json
+    from ai import context_cut
+    from ai.social.store import SocialStore
+    from tests.test_qq_social_violet import SAME
+    monkeypatch.setenv("VIOLET_DATA_DIR", str(tmp_path / "data"))
+    db.add_user_message("text", "我今晚通宵")
+    db.add_assistant_message("text", "老公，早点睡")
+    now = db.now()
+    for status, text in (("sent", "老公，早点睡"), ("queued", "还在排队的一条")):
+        db.execute("INSERT INTO outbound_messages (client_id, origin, message_type, content, status, created_at, updated_at) "
+                   "VALUES (?, 'reply', 'text', ?, ?, ?, ?)", (f"c-{status}", text, status, now, now))
+    for key, status in (("k-done", "done"), ("k-new", "pending")):
+        db.execute("INSERT INTO inbound_messages (dedup_key, content, status, received_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+                   (key, "我今晚通宵", status, now, now))
+    store = SocialStore(db)
+    conv = store.conversation("napcat", "group", "701", "群", default_mode="auto")
+    db.execute("INSERT INTO social_messages (conversation_id, sender_id, sender_name, content, is_self, created_at) "
+               "VALUES (?, '9', '群友', '昨晚谁熬夜了', 0, ?)", (conv["id"], now))
+
+    r = admin.post("/api/control/reset", json={"memory": True, "history": True, "confirm": True}, headers=SAME).get_json()
+    assert r["ok"] and r["data"]["history"]["removed"]["messages"] == 2
+    assert db.fetch_one("SELECT COUNT(*) AS n FROM messages")["n"] == 0
+    assert db.fetch_one("SELECT COUNT(*) AS n FROM social_messages")["n"] == 0
+    assert [row["status"] for row in db.fetch_all("SELECT status FROM outbound_messages")] == ["queued"]
+    inbound = {row["dedup_key"]: row["content"] for row in db.fetch_all("SELECT dedup_key, content FROM inbound_messages")}
+    assert inbound == {"k-done": None, "k-new": "我今晚通宵"}
+    archive = json.loads(open(r["data"]["history"]["archive"], encoding="utf-8").read())
+    assert [m["content"] for m in archive["tables"]["messages"]] == ["我今晚通宵", "老公，早点睡"]
+    assert archive["tables"]["social_messages"][0]["content"] == "昨晚谁熬夜了"
+    assert r["data"]["cut"]["owner"] and context_cut.status()["social"]          # deleting the chat turns the page
 
 
 def test_clearing_memory_also_drops_queued_memory_jobs(violetdb, tmp_path, monkeypatch):
