@@ -100,13 +100,14 @@ def test_budget_trims_low_priority_items_first(engine, violetdb, monkeypatch):
         violetdb.upsert_core_memory(f"legacy_{i}", "other", f"旧系统里的一条很长很长的记忆内容，编号{i}，" + "填充" * 20)
     # phase 8.9.3: persona 1.2.0 renders ~810 chars (1.1.0: ~670) and is never trimmed; the budget leaves room
     # above it so the test still shows what goes first (legacy) and what stays (the address name)
-    monkeypatch.setenv("VIOLET_CONTEXT_MAX_CHARS", "950")
+    # 2026-11-09: +150 for the base info's weekdays and, after midnight, what "明天" means (never trimmed either)
+    monkeypatch.setenv("VIOLET_CONTEXT_MAX_CHARS", "1100")
     monkeypatch.setenv("VIOLET_CONTEXT_MAX_LEGACY", "30")
     packet = engine.build("chat", "早")
     assert packet.report["trimmed_items"] > 0
     text = sections(packet)
     assert "希望被称呼为：小满" in text
-    assert sum(len(s) for s in packet.sections) < 1300
+    assert sum(len(s) for s in packet.sections) < 1450
     assert packet.report["approx_tokens"] > 0
 
 

@@ -35,11 +35,19 @@ ARGS = {"get_foreground_app": {"lookbackMinutes": 120}, "get_app_usage_stats": {
         "calendar_events": {"days": 2}}
 CACHE_SECONDS = 120
 TIMEOUT_SECONDS = 12
-_cache: dict[str, Any] = {"at": 0.0, "line": ""}
+_cache: dict[str, Any] = {"at": 0.0, "line": ""}     # line: {"_data", "_now", kind -> text} of the last read
 _lock = threading.Lock()
 
 GUIDE = ("（手机状态只作参考：判断现在合不合适说话、怎么开口更自然。不要每次都提，更不要逐条复述；"
-         "可以偶尔顺口说一句“又在刷某某呀”，但不要让对方觉得被监视。夜里屏幕熄灭很久多半是在睡觉。）")
+         "可以偶尔顺口说一句“又在刷某某呀”，但不要让对方觉得被监视。夜里屏幕熄灭很久多半是在睡觉。"
+         # 2026-11-09 (real chat): "戴着耳机" every turn beat the owner's "不是耳机是手表，你要记住哦" twice, and the next
+         # morning; the alarm in every line made her nag about it for twenty minutes
+         "对方亲口说过的事（聊天记录、记忆里的）比手机数据准，对不上时按对方说的来；"
+         "手机上的同一件事，这次聊天里提过一次就别再提。）")
+# 2026-11-09: in replies the alarm is shown only when it is near (VIOLET_PHONE_CHAT_ALARM_HOURS); proactive runs see it
+# up to 24 hours ahead (a morning message)
+CHAT_ALARM_HOURS = 3.0
+AUDIO_KINDS = {"wired_headphones": "插着有线耳机", "usb_headset": "插着 USB 耳机"}
 
 
 def enabled_for(kind: str) -> bool:
@@ -66,8 +74,9 @@ def _ms(value: Any) -> str:
         return ""
 
 
-def compose(data: dict[str, dict[str, Any]], read_at: str, now: datetime | None = None) -> str:
-    """One line from the tools' JSON results (missing / failed ones are left out)."""
+def compose(data: dict[str, dict[str, Any]], read_at: str, now: datetime | None = None, kind: str = "proactive") -> str:
+    """One line from the tools' JSON results (missing / failed ones are left out). kind: "chat" (a reply) or
+    "proactive"; replies leave out an alarm that is still far away."""
     if now is None:
         from ai.proactive_scheduler import now_china
         now = now_china()
@@ -100,7 +109,7 @@ def compose(data: dict[str, dict[str, Any]], read_at: str, now: datetime | None 
         total = _ms(usage.get("totalForegroundMs"))
         if total:
             parts.append(f"今天用手机约 {total}" + (f"：{top}" if top else ""))
-    parts += _life_parts(data, now)
+    parts += _life_parts(data, now, kind)
     if not parts:
         return ""
     return f"【主人手机此刻（{read_at} 读取）】" + "；".join(parts) + "\n" + GUIDE
@@ -118,15 +127,40 @@ def _when(stamp: Any, now: datetime) -> tuple[datetime | None, str]:
     return local, f"{word} {local.strftime('%H:%M')}"
 
 
-def _life_parts(data: dict[str, dict[str, Any]], now: datetime) -> list[str]:
+def audio_text(audio: dict[str, Any]) -> str:
+    """What the sound goes to, as the phone reports it. 2026-11-09: a Bluetooth device is not necessarily headphones
+    (the owner's was a watch) -- the device name is given and the type is not guessed."""
+    if not audio.get("headphonesOrBluetooth"):
+        return ""
+    words: list[str] = []
+    for device in audio.get("devices") or []:
+        if not isinstance(device, dict):
+            continue
+        name = str(device.get("name") or "").strip()[:30]
+        if device.get("type") in AUDIO_KINDS:
+            word = AUDIO_KINDS[device["type"]]
+        else:
+            word = f"连着蓝牙设备「{name}」" if name else "连着蓝牙设备"
+        if word not in words:
+            words.append(word)
+    if not words:
+        words = ["连着耳机或蓝牙设备"]
+    text = "、".join(words[:2])
+    if any(w.startswith("连着蓝牙") for w in words):
+        text += "（不一定是耳机，也可能是手表、音箱）"
+    return text
+
+
+def _life_parts(data: dict[str, dict[str, Any]], now: datetime, kind: str = "proactive") -> list[str]:
     parts: list[str] = []
     music = data.get("now_playing") or {}
     playing = [s for s in music.get("sessions") or [] if isinstance(s, dict) and s.get("playing") and s.get("title")]
     if playing:
         s = playing[0]
         parts.append(f"在听「{s['title']}」" + (f"（{s['artist']}）" if s.get("artist") else ""))
-    if (data.get("audio_output") or {}).get("headphonesOrBluetooth"):
-        parts.append("戴着耳机 / 连着蓝牙音频")
+    audio = audio_text(data.get("audio_output") or {})
+    if audio:
+        parts.append(audio)
     net = data.get("network_state") or {}
     if net.get("type") == "wifi":
         parts.append(f"连着「{net['place']}」的 Wi-Fi" if net.get("place") else "连着 Wi-Fi")
@@ -138,7 +172,8 @@ def _life_parts(data: dict[str, dict[str, Any]], now: datetime) -> list[str]:
     alarm = data.get("next_alarm") or {}
     if alarm.get("hasAlarm"):
         at, text = _when(alarm.get("time"), now)
-        if at is not None and (at - now) <= timedelta(hours=24):
+        ahead = env_float("VIOLET_PHONE_CHAT_ALARM_HOURS", CHAT_ALARM_HOURS) if kind == "chat" else 24.0
+        if at is not None and (at - now) <= timedelta(hours=ahead):
             parts.append(f"下一个闹钟 {text}")
     calendar = data.get("calendar_events") or {}
     upcoming = []
@@ -209,16 +244,22 @@ def _read(calls: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str,
 
 
 def line(kind: str = "proactive") -> str:
-    """The phone line for this use, or "" (switched off / nothing readable). Cached CACHE_SECONDS."""
+    """The phone line for this use, or "" (switched off / nothing readable). The phone is read at most once every
+    CACHE_SECONDS; the line is written for each use (2026-11-09: a reply leaves out a far-away alarm)."""
     if not enabled_for(kind):
         return ""
     with _lock:
-        if time.monotonic() - _cache["at"] < CACHE_SECONDS:
-            return _cache["line"]
-    data = _read()
-    from ai.proactive_scheduler import now_china
-    current = now_china()
-    text = compose(data, current.strftime("%H:%M"), current)
+        cached = _cache["line"] if time.monotonic() - _cache["at"] < CACHE_SECONDS else None
+    if isinstance(cached, dict) and kind in cached:
+        return cached[kind]
+    if isinstance(cached, dict):
+        data, current = cached["_data"], cached["_now"]
+    else:
+        data = _read()
+        from ai.proactive_scheduler import now_china
+        current = now_china()
+        cached = {"_data": data, "_now": current}
+    text = compose(data, current.strftime("%H:%M"), current, kind)
     try:                                                    # the phone's recent events (ai/phone_events.py)
         from ai import phone_events
         recent = phone_events.recent_text(current)
@@ -228,8 +269,11 @@ def line(kind: str = "proactive") -> str:
         head, _, guide = text.partition("\n")
         text = (head + "；" + recent if head else f"【主人手机此刻（{current.strftime('%H:%M')} 读取）】{recent}") \
             + "\n" + (guide or GUIDE)
+    cached[kind] = text
     with _lock:
-        _cache.update(at=time.monotonic(), line=text)
+        if not isinstance(_cache["line"], dict) or _cache["line"].get("_data") is not data:
+            _cache.update(at=time.monotonic())             # a fresh read starts the two minutes
+        _cache["line"] = cached
     from ai import trace
     trace.step("读取手机状态", 用途=kind, 结果=text.split("\n", 1)[0] if text else "没有读到")
     return text

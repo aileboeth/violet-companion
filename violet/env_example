@@ -12,6 +12,8 @@ DEBOUNCE_NORMAL=10.0
 DEBOUNCE_EXTRA=15.0
 # 2026-11-02: new messages arrived while she wrote a reply -> that reply is not sent, the next turn answers both (never twice in a row)
 VIOLET_REPLY_RECHECK=1
+# 2026-11-09: you write again while she is sending a reply line by line -> the lines not sent yet are left out, the next turn answers both
+VIOLET_REPLY_INTERRUPT=1
 # 2026-11-02 (token): the proactive decision sees only the last turns (the message itself is written with the full history)
 VIOLET_DECISION_HISTORY_TURNS=8
 VIOLET_DECISION_HISTORY_MAX_CHARS=1500
@@ -139,6 +141,12 @@ VIOLET_MEMORY_SEARCH_WINDOW=5000
 # Phase 9.1：用户这句话和某条记忆有相同的关键词时，由代码直接带给 Chat（不管 Intent 有没有调用 query_memory），最多几条；0 或开关为 0 时关闭。
 VIOLET_MEMORY_WORD_RECALL=1
 VIOLET_MEMORY_WORD_RECALL_LIMIT=3
+# 2026-11-09：不管这句话聊什么，每次回复 / 主动消息都带上用户的长期事实（和手机状态有关的排前面）和接下来 _HOURS 小时的安排；0 = 不带。
+VIOLET_MEMORY_STANDING_FACTS=5
+VIOLET_MEMORY_STANDING_EVENTS=3
+VIOLET_MEMORY_STANDING_HOURS=36
+# 2026-11-09：凌晨几点之前，用户说的“明天”按天亮以后的这一天理解（写进时间提示和记忆整理的提示）。
+VIOLET_LATE_NIGHT_END_HOUR=5
 # Phase 9.1：用户问“还记得…吗”而这次没找到相关记忆时，提醒 Chat 这不代表对方没说过。
 VIOLET_MEMORY_NOT_FOUND_NOTE=1
 # 用户明确要求的提醒：只给日期时的默认时刻；生成失败时使用的兜底模板（{content} 为提醒内容）。
@@ -163,6 +171,8 @@ VIOLET_HOLIDAY_GREETING=0
 VIOLET_PHONE_CONTEXT=1
 VIOLET_PHONE_CONTEXT_CHAT=0
 VIOLET_PHONE_CONTEXT_TIMEOUT=12
+# 2026-11-09：平常回复里只在闹钟快到时（几个小时内）写闹钟；主动联系照旧看 24 小时内的。
+VIOLET_PHONE_CHAT_ALARM_HOURS=3
 # 手机上的动静（ai/phone_events.py，Violet MCP 1.4.1 的 phone_events）：每分钟取一次新动静；早上第一次解锁、
 # 到了起过名字的地方时马上做一次主动联系判断。
 VIOLET_PHONE_EVENTS=1

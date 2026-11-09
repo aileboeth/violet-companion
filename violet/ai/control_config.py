@@ -133,6 +133,9 @@ SETTINGS: list[Setting] = [
     # 2026-11-02 (0.7.31's crossed-replies fix had no switch)
     Setting("VIOLET_REPLY_RECHECK", "她写回复时你又发了消息，就合在一起回", "messages", "bool", "now",
             "开：那条回复不发，下一轮把你前后说的一起回（不会连续两次这样；用过工具的回复照常发）。关：每条都单独回", True),
+    # 2026-11-09 (real chat: five or six lines kept coming after the owner had moved on; "晚安啦，笨蛋" twice)
+    Setting("VIOLET_REPLY_INTERRUPT", "她一条条发的时候你又说话，就停下剩下的", "messages", "bool", "now",
+            "开：已经发出去的照常，还没发的几条不再发，下一轮把你新说的和刚才的一起回。关：一次回复总是全部发完", True),
     Setting("VIOLET_TYPING_MIN_DELAY_SECONDS", "打字间隔下限（秒）", "messages", "float", "now", "", 1.0, 0, 30),
     Setting("VIOLET_TYPING_MAX_DELAY_SECONDS", "打字间隔上限（秒）", "messages", "float", "now", "", 20.0, 0, 120),
     Setting("proactive.enabled", "主动联系", "proactive", "bool", "now", "关掉后不再主动找对方（约定的提醒不受影响）",
@@ -306,6 +309,12 @@ SETTINGS: list[Setting] = [
             "关闭后先整理记忆再回复（回复会慢一些）", True),
     Setting("VIOLET_MEMORY_WORD_RECALL", "按关键词带出旧记忆", "memory", "bool", "now",
             "你这句话和某条记忆有相同的关键词时，直接让 Chat 看到这条记忆", True),
+    # 2026-11-09 (real chat: "不是耳机是手表" was remembered but never reached a reply that did not mention it)
+    Setting("VIOLET_MEMORY_STANDING_FACTS", "每次都带上的长期事实（条）", "memory", "int", "now",
+            "你告诉过她的长期事实（比如“蓝牙连的是手表”），不管这句话聊什么，每次回复和主动消息都带上这么多条"
+            "（和手机状态有关的排在前面）。0 = 不带，只按关键词找", 5, 0, 20),
+    Setting("VIOLET_MEMORY_STANDING_EVENTS", "每次都带上的近期安排（条）", "memory", "int", "now",
+            "接下来 36 小时里你说过的安排（比如“明天八点半有课”），每次都带上这么多条。0 = 不带", 3, 0, 10),
     Setting("VIOLET_EVENT_VALID_DAYS", "事件记忆有效期（天）", "memory", "float", "now",
             "过期只标记为过期，不删除", 14.0, 1, 3650),
     Setting("VIOLET_PROFILE_STORE_SENSITIVE", "自动记住敏感信息", "memory", "bool", "now",

@@ -222,6 +222,7 @@ class SendReport:
     cancelled: list[dict[str, Any]] = field(default_factory=list)
     skipped: list[dict[str, Any]] = field(default_factory=list)
     blocked: str | None = None          # phase 10: the outbound guard refused the whole send (reason code)
+    interrupted: bool = False           # 2026-11-09: the owner wrote again while she was sending; the rest was left out
 
     @property
     def ok(self) -> bool:
@@ -236,6 +237,7 @@ class SendReport:
             "sent_messages": self.sent,
             "error": self.failed[0].get("error") if self.failed else (f"blocked: {self.blocked}" if self.blocked else None),
             "blocked": self.blocked,
+            "interrupted": self.interrupted,
         }
 
 
@@ -321,7 +323,11 @@ class MessageSender:
         turn_id: str | None = None,
         proactive_event_id: int | None = None,
         record_history: bool = True,
+        interrupted: Callable[[], bool] | None = None,
     ) -> SendReport:
+        """interrupted (2026-11-09): asked before every message after the first one that went out; True = the owner
+        has written again, the rest is not sent (recorded as skipped) and the next turn answers everything. In the real
+        chat she kept sending five or six lines -- "晚安啦，笨蛋" twice -- about words the owner had already moved on from."""
         report = SendReport()
         stop_reason: str | None = None
         spoken: list[str] = []
@@ -350,6 +356,19 @@ class MessageSender:
             msg_type = msg.get("type")
             content = msg.get("content")
             client_id = f"pybot-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+            if not report.interrupted and interrupted is not None and stop_reason is None and report.sent:
+                try:
+                    report.interrupted = bool(interrupted())
+                except Exception:                           # noqa: BLE001 -- a broken check never stops a reply
+                    logger.exception("could not check for newer messages")
+            if report.interrupted:
+                outbound_id = self.db.add_outbound_message(
+                    client_id, origin, str(msg_type or "text"),
+                    content if isinstance(content, str) else f"asset:{msg.get('asset_id')}", turn_id, proactive_event_id,
+                    status="skipped", channel=self.channel, peer_id=self.peer_id)
+                self.db.update_outbound_message(outbound_id, error="interrupted: the owner wrote again")
+                report.skipped.append({**msg, "error": "interrupted"})
+                continue
             if msg_type == "image":
                 error = self._send_image_message(msg, client_id, origin, turn_id, proactive_event_id, record_history,
                                                  stop_reason, report)
@@ -1311,8 +1330,13 @@ class VioletRuntime:
                 from ai.channels.outbound import build_reply
                 envelope = build_reply(pipeline, turn_key=extra.get("turn_key") or turn.turn_id)
                 if envelope.should_send:
-                    report = sender.send_messages(envelope.send_list(), origin="reply", turn_id=turn.turn_id)
+                    report = sender.send_messages(envelope.send_list(), origin="reply", turn_id=turn.turn_id,
+                                                  interrupted=self._interrupt_check(turn, conversation))
                     sent_texts = [m["content"] for m in report.sent]
+                    if report.interrupted:
+                        self._bump("replies_interrupted")
+                        trace.step("回复停下", 原因="她一条条发的时候你又发了新消息，剩下的没发，下一轮一起回",
+                                   没发=len([m for m in report.skipped if m.get("error") == "interrupted"]))
                     if report.blocked:
                         # internal content in the reply: nothing of it went out; the person gets the fallback line
                         status = "failed"
@@ -1363,13 +1387,24 @@ class VioletRuntime:
         chat = pipeline.get("chat") or {}
         if pipeline.get("reminder") or any((m or {}).get("role") == "tool" for m in chat.get("messages") or []):
             return False
-        buffer = self.buffers.get(conversation) if conversation != ("wechat", "") else self.buffer
-        with self.turn_queue.mutex:
-            queued = any((t.channel or "wechat", t.peer_id or "") == conversation for t in self.turn_queue.queue)
-        newer = queued or (buffer is not None and buffer.has_pending())
+        newer = self._has_newer(conversation)
         if newer:
             dropped[conversation] = True
         return newer
+
+    def _has_newer(self, conversation: tuple[str, str]) -> bool:
+        """New messages of this conversation wait in the debounce buffer or the turn queue."""
+        buffer = self.buffers.get(conversation) if conversation != ("wechat", "") else self.buffer
+        with self.turn_queue.mutex:
+            queued = any((t.channel or "wechat", t.peer_id or "") == conversation for t in self.turn_queue.queue)
+        return queued or (buffer is not None and buffer.has_pending())
+
+    def _interrupt_check(self, turn: Turn, conversation: tuple[str, str]):
+        """2026-11-09: while she sends a reply line by line, the owner's new words stop the rest (VIOLET_REPLY_INTERRUPT,
+        on by default). Live turns only; the next turn answers both, with her lines that went out in its history."""
+        if not env_bool("VIOLET_REPLY_INTERRUPT", True) or turn.origin != "live":
+            return None
+        return lambda: self._has_newer(conversation)
 
     def _before_pipeline(self, text: str, turn_id: str) -> None:
         """Engagement (topic fatigue), implicit preferences and onboarding refusals for this turn."""

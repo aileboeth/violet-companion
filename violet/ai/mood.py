@@ -35,8 +35,40 @@ PRAISE = re.compile(r"(谢谢|谢啦|多谢|感谢|辛苦了|真棒|好棒|太�
 # 2026-11-03: "工作好烦" / "烦死了" is the owner's own mood, not scolding her -- only "你好烦" / "烦死你了" counts
 SCOLD = re.compile(r"(笨蛋|蠢|傻[逼瓜子]|白痴|弱智|废物|垃圾|滚|闭嘴|你(好|真|很|太)?烦|烦死你|讨厌你|恶心|没用|有病|脑残|"
                    r"别吵|闭麦|shut up|stupid|idiot)", re.I)
+# 2026-11-09 (real chat, user: 打情骂俏可能触发的骂人): "现在凌晨十二点，我有步数才奇怪，笨蛋" and "笨蛋还不去睡觉" were
+# counted as scolding -- her mood went to 有点不高兴 for half an hour and every reply said "我气还没消呢". Between people
+# who are close, 笨蛋 / 傻瓜 / 讨厌 / 你好烦 are mostly teasing (嗔怪 / 打情骂俏) -- whether a word hurts depends on the tone
+# and the relationship, which a word list cannot see and the reply model can (it reads the message itself). So these
+# words alone move her mood only a little (several in a row still add up); the hard insults count as before, and less
+# when the same message is plainly affectionate.
+MILD_SCOLD = re.compile(r"(笨蛋|蠢|傻瓜|傻子|你(好|真|很|太)?烦|烦死你|讨厌你|没用)", re.I)
+# sweet words, pet names, laughing, a teasing tone or a sticker read as playful (the vision description is in the text)
+AFFECTION = re.compile(r"(宝贝|宝宝|臭宝|宝儿|亲爱的|老婆|老公|媳妇|爱你|喜欢你|想你|么么|mua|亲亲|抱抱|贴贴|"
+                       r"(小|大|臭)笨蛋|笨蛋蛋|哈哈|嘿嘿|嘻嘻|hhh|233|开玩笑|逗你|[~～]|"
+                       r"俏皮|调侃|卖萌|撒娇|搞怪|戏谑|得意|捉弄)", re.I)
+MILD_DELTA = -0.1
 SAD = re.compile(r"(难过|伤心|好累|崩溃|想哭|哭了|失眠|好烦啊|压力好大|不开心|郁闷)")
 THRESHOLD = 0.3
+
+
+def scold_strength(text: str) -> float:
+    """How much a message scolds her: 0 (not at all) .. 1 (a hard insult, said in earnest)."""
+    found = [m.group(0) for m in SCOLD.finditer(text or "")]
+    if not found:
+        return 0.0
+    affectionate = bool(AFFECTION.search(text))
+    if all(MILD_SCOLD.fullmatch(w) for w in found):
+        return 0.0 if affectionate else abs(MILD_DELTA) / 0.35
+    return 0.4 if affectionate else 1.0
+
+
+def _quoted(text: str) -> str:
+    """The scolding words themselves, for the cause line ("主人说你「笨蛋」")."""
+    words = []
+    for m in SCOLD.finditer(text or ""):
+        if m.group(0) not in words:
+            words.append(m.group(0))
+    return "、".join(f"「{w}」" for w in words[:2])
 
 
 def enabled() -> bool:
@@ -67,12 +99,13 @@ def feel(db, text: str, who: str = "主人", weight: float = 1.0) -> float | Non
     from ai import test_mode
     if not enabled() or test_mode.active() or not text:
         return None
-    praise, scold, sad = bool(PRAISE.search(text)), bool(SCOLD.search(text)), bool(SAD.search(text))
+    scold = scold_strength(text)
+    praise, sad = bool(PRAISE.search(text)), bool(SAD.search(text))
     if not (praise or scold or sad):
         return None
     delta, cause = 0.0, None
     if scold:
-        delta, cause = -0.35, f"{who}凶了你"
+        delta, cause = -0.35 * scold, f"{who}对你说了{_quoted(text)}"
     elif praise:
         delta, cause = 0.3, f"{who}夸了你 / 谢了你"
     elif sad and who == "主人":
@@ -113,7 +146,10 @@ def note(db) -> str:
         # 2026-11-03 (user: 被凶了情绪起伏不应该更大，语言不应该更多吗): an upset girl says MORE, not less
         how = ("情绪要明显地表现出来，话也会比平时多：委屈地抱怨、气鼓鼓地怼回去、嘴硬、碎碎念为什么不开心，"
                "可以连发几条；按你自己的性格来。但不攻击任何人、不说伤人的话，不冷着对方、不装没事，该帮的忙照样帮；"
-               "对方哄你或道歉，就嘴硬一会儿再慢慢好起来。")
+               "对方哄你或道歉，就嘴硬一会儿再慢慢好起来。"
+               # 2026-11-09 (real chat: "我气还没消呢" in reply after reply for twenty minutes, about a teasing 笨蛋)
+               "那句话要是听得出是玩笑、撒娇或打情骂俏，就别当真生气，用玩笑回过去；"
+               "同一句抱怨（比如“气还没消”）说过了就别每次回复都再说。")
     return f"【你现在的心情】{_words(value)}{why}。{how}心情会自己慢慢平复，不用一直提。"
 
 

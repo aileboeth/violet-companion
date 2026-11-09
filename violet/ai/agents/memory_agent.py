@@ -944,7 +944,12 @@ class MemoryAgent(BaseAgent):
         # clock (to the second) was the 4th message, so everything after it differed in every call. Same content, new
         # order: fixed instructions, then what changes only when something is remembered, then the recent chat, and
         # last what belongs to this call (the time, to the minute; a retry's note; this turn).
-        turn = f"当前时间：{violetdb.now()[:16].replace('T', ' ')}\n\n{user_message}"
+        # 2026-11-09: with the weekday and the next days written out, and after midnight what "明天" means (a class "明天早八"
+        # said at 01:03 was stored for the wrong day, as "2026-11-10（周一）")
+        from ai.memory_model import clock_text, day_words, parse_time
+        now = parse_time(violetdb.now())
+        turn = (f"当前时间：{clock_text(now)}\n日期：{day_words(now)}。写进记忆的日期和星期必须和这里一致；"
+                f"event_date 用 today / tomorrow 时按日历算，凌晨说的“明天”直接写日期\n\n{user_message}")
         return [
             {"role": "system", "content": self._config.reply_prompt},
             {"role": "system", "content": MEMORY_RULES},

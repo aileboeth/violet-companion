@@ -116,7 +116,11 @@ def format_recent_messages(limit: int = 30) -> str:
 
 
 def format_base_info() -> str:
-    lines = ["基础信息：", f"当前时间: {violetdb.now()}"]
+    # 2026-11-09: the weekday and what "明天" means after midnight, written by the code (an ISO stamp alone left both to
+    # the model)
+    from ai.memory_model import clock_text, day_words, parse_time
+    now = parse_time(violetdb.now())
+    lines = ["基础信息：", f"当前时间: {clock_text(now)}", f"日期：{day_words(now)}"]
     return "\n".join(lines) + "\n"
 
 

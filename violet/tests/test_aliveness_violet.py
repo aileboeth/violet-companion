@@ -118,7 +118,7 @@ def test_praise_and_scolding_move_her_mood_and_it_calms_down(clean, monkeypatch)
     mood.feel(db, "垃圾")
     assert mood.current(db)["value"] < -0.3 and "不攻击任何人" in mood.note(db)
     mood.feel(db, "你真烦人，滚", "小周", 0.5)
-    assert mood.current(db)["cause"] == "小周凶了你"
+    assert mood.current(db)["cause"] == "小周对你说了「你真烦」、「滚」"
     monkeypatch.setenv("VIOLET_MOOD", "0")
     assert mood.note(db) == "" and mood.feel(db, "谢谢") is None
 

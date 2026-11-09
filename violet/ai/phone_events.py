@@ -61,7 +61,11 @@ def describe(event: dict[str, Any], at: datetime) -> str:
             return f"{hhmm} 解锁手机（之前熄屏约 {off // 60} 小时）"
         return f"{hhmm} 解锁手机"
     words = {"charger_connected": "插上充电器", "charger_disconnected": "拔了充电器",
-             "headphones_connected": "戴上耳机", "headphones_disconnected": "摘下耳机"}
+             # 2026-11-09: "headphones" are any Bluetooth audio device -- the owner's was a watch
+             "headphones_connected": "连上耳机或蓝牙设备", "headphones_disconnected": "断开耳机或蓝牙设备"}
+    name = str(detail.get("name") or "").strip()[:30]
+    if kind in ("headphones_connected", "headphones_disconnected") and name:
+        return f"{hhmm} {'连上' if kind.endswith('_connected') else '断开'}「{name}」"
     if kind in words:
         return f"{hhmm} {words[kind]}"
     if kind == "place_arrived":

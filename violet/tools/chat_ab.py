@@ -60,7 +60,9 @@ TIME_RE = re.compile(r"当前时间: (\S+)")
 # A base section holding only the clock reading: datetime.isoformat() drops ".ffffff" when the microseconds are
 # exactly 0 (the scenario clock ticks in ~15.6 ms steps on Windows), so the same content is 38 or 45 chars.
 BASE_TIME_ONLY = {38, 45}
-BASE_TIME_ONLY_RE = re.compile(r"^\n?基础信息：\n当前时间: \S+\n?$")
+# 2026-11-09: the clock reading is "2026-11-09 01:03 周一 凌晨" plus a "日期：今天 … 周一；明天 …" line (and after midnight
+# what "明天" means) -- still nothing but the time, so a recorded 38 / 45 matches any length of it
+BASE_TIME_ONLY_RE = re.compile(r"^\n?基础信息：\n当前时间: [^\n]+(\n日期：[^\n]+)?\n?$")
 
 
 def sha256_file(path) -> str:
@@ -413,7 +415,7 @@ def _compare(verdict: dict, rendered: dict) -> dict:
     want = {k: _renamed(v) for k, v in expected.items() if k not in COMPARED_EXCLUDE}
     diffs = {k: {"historical": want.get(k), "rebuilt": got.get(k)} for k in sorted(set(want) | set(got))
              if want.get(k) != got.get(k)
-             and not (k == "base" and rendered.get("base_time_only") and {want.get(k), got.get(k)} <= BASE_TIME_ONLY)}
+             and not (k == "base" and rendered.get("base_time_only") and want.get(k) in BASE_TIME_ONLY)}
     if verdict.get("expected_history_messages") != rendered["history_messages"]:
         diffs["history_messages"] = {"historical": verdict.get("expected_history_messages"), "rebuilt": rendered["history_messages"]}
     if diffs:

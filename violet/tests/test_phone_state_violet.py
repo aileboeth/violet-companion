@@ -56,7 +56,7 @@ def test_the_life_state_tools_of_mcp_1_4_1():
              "end": stamp(datetime(2026, 11, 5, tzinfo=tz))}]},
     }
     line = compose(data, "22:00", now).split("\n")[0]
-    assert line == ("【主人手机此刻（22:00 读取）】在听「晴天」（周杰伦）；戴着耳机 / 连着蓝牙音频；连着「家」的 Wi-Fi；"
+    assert line == ("【主人手机此刻（22:00 读取）】在听「晴天」（周杰伦）；连着耳机或蓝牙设备；连着「家」的 Wi-Fi；"
                     "今天走了 6234 步；下一个闹钟 明天 07:30；日程：明天 15:00 组会、明天全天 妈妈生日")
     # nothing playing, cellular, an alarm days away: no guessing, no far-away alarm
     quiet = compose({"now_playing": {"playing": False, "sessions": []}, "network_state": {"type": "cellular"},
@@ -187,7 +187,7 @@ def test_phone_events_poll_uses_the_cursor_and_survives_a_phone_restart(monkeypa
     assert phone_events.poll(now, force=True) == 0 and asked[-1] == ("A", 2)              # only what is new
     phone["epoch"] = "B"                                                                    # the phone restarted
     assert phone_events.poll(now, force=True) == 1 and asked[-1] == ("B", 0)
-    assert "戴上耳机" in phone_events.recent_text(now)
+    assert "连上耳机或蓝牙设备" in phone_events.recent_text(now)      # 2026-11-09: not always headphones
     monkeypatch.setattr(phone_state, "_read", lambda calls: {})                             # no such tool
     assert phone_events.poll(now, force=True) == 0 and phone_events.poll(now) == 0          # paused, not retried
     phone_events.reset()

@@ -100,10 +100,13 @@ def test_classification_never_guesses(scenarios):
     assert [r["role"] for r in rows] == ["user", "assistant", "assistant"]          # one row per sent line
 
 
-@pytest.mark.parametrize("rebuilt,time_only,cls", [(38, True, "complete"), (45, True, "complete"),
-                                                   (38, False, "partial"), (52, True, "partial")])
-def test_clock_reading_without_microseconds_is_not_a_context_difference(rebuilt, time_only, cls):
-    verdict = {"reasons": [], "expected_sections": {"base": 45, "profile": 58}, "expected_history_messages": 2}
+# 2026-11-09: the clock line has the weekday and a "日期：" line now -- any length, still only the time; a recorded
+# base that held more than the clock (90) still counts as a difference
+@pytest.mark.parametrize("rebuilt,time_only,cls,recorded", [(38, True, "complete", 45), (45, True, "complete", 45),
+                                                            (38, False, "partial", 45), (96, True, "complete", 45),
+                                                            (96, True, "partial", 90)])
+def test_clock_reading_without_microseconds_is_not_a_context_difference(rebuilt, time_only, cls, recorded):
+    verdict = {"reasons": [], "expected_sections": {"base": recorded, "profile": 58}, "expected_history_messages": 2}
     rendered = {"sections": {"base": rebuilt, "profile": 58}, "history_messages": 2, "base_time_only": time_only}
     assert ab._compare(verdict, rendered)["class"] == cls
 

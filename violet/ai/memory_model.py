@@ -64,6 +64,35 @@ def now_china() -> datetime:
     return now_local()
 
 
+WEEKDAYS = "一二三四五六日"
+
+
+def _part_of_day(hour: int) -> str:
+    return ("凌晨" if hour < 5 else "早上" if hour < 9 else "上午" if hour < 12 else "中午" if hour < 14
+            else "下午" if hour < 18 else "晚上")
+
+
+def clock_text(now: datetime | None = None) -> str:
+    """2026-11-09: "2026-11-09 01:03 周一 凌晨" -- the weekday is written by the code, not worked out by a model (a
+    memory written at 01:03 said "2026-11-10（周一）"; the 10th is a Tuesday)."""
+    now = now or now_china()
+    return f"{now.strftime('%Y-%m-%d %H:%M')} 周{WEEKDAYS[now.weekday()]} {_part_of_day(now.hour)}"
+
+
+def day_words(now: datetime | None = None) -> str:
+    """The next days with their weekdays, and after midnight what "明天" usually means.
+
+    2026-11-09 (real chat): at 01:03 the owner said "明天早八" -- the class that very morning -- and the memory became
+    the 10th. Until VIOLET_LATE_NIGHT_END_HOUR (5) the night has not ended for a person yet."""
+    now = now or now_china()
+    days = [now.date() + timedelta(days=i) for i in range(3)]
+    text = "；".join(f"{w} {d.strftime('%m-%d')} 周{WEEKDAYS[d.weekday()]}" for w, d in zip(("今天", "明天", "后天"), days))
+    if now.hour < env_int("VIOLET_LATE_NIGHT_END_HOUR", 5):
+        text += (f"。现在是凌晨，对方还没睡：对方说的“明天”多半是天亮以后的这一天（{days[0].strftime('%m-%d')} "
+                 f"周{WEEKDAYS[days[0].weekday()]}），“今晚”是刚过去的这个晚上；对方说了具体日期或星期的，以那个为准")
+    return text
+
+
 def parse_time(value: str | None) -> datetime | None:
     if not value:
         return None

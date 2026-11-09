@@ -88,6 +88,18 @@ def recall_lines(system: str, memory_id: int) -> list[str]:
     return [line for line in system.splitlines() if line.startswith(f"- id={memory_id};")]
 
 
+def standing_lines(system: str) -> list[str]:
+    """The lines of the every-turn section of the owner's facts (2026-11-09)."""
+    from ai.context_engine import ContextEngine
+    parts = system.split(ContextEngine.STANDING_HEADER, 1)
+    out = []
+    for line in (parts[1].strip("\n").splitlines() if len(parts) == 2 else []):
+        if not line.startswith("- "):
+            break
+        out.append(line)
+    return out
+
+
 def test_eight_weeks_of_memory_through_the_real_pipeline(make_world, clock, admin):
     w = make_world()
     mem = MemoryModel(w.db)
@@ -171,7 +183,8 @@ def test_eight_weeks_of_memory_through_the_real_pipeline(make_world, clock, admi
     mem.plan = [("握手", [lambda r: [{"name": "update_memory", "arguments": {
         "memory_id": pet, "summary": "用户养了一只柯基，叫豆豆，会握手"}}]])]
     system = turn("豆包今天学会握手了")
-    assert any(corrected in line for line in recall_lines(system, pet)) and PET not in system
+    # 2026-11-09: a long-term fact is in the standing section on every turn now (not the per-turn recall list)
+    assert f"- {corrected}" in standing_lines(system) and PET not in system
     assert w.db.get_event_memory(pet)["content"] == corrected
     assert any(r.get("reason") == "confirmed_by_user" for r in mem.results)
 
@@ -186,7 +199,7 @@ def test_eight_weeks_of_memory_through_the_real_pipeline(make_world, clock, admi
     clock.advance_to(at("2026-11-23T20:00:00+08:00"))
     nights(1)
     system = turn("好想豆包啊")
-    assert any(moved in line for line in recall_lines(system, pet)) and corrected not in system
+    assert f"- {moved}" in standing_lines(system) and corrected not in system
 
     # --- day 29: a second, similar event stays a separate event --------------------------------------------------
     clock.advance_to(at("2026-12-01T20:00:00+08:00"))

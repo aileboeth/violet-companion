@@ -5,6 +5,7 @@ Sections (in priority order, each item carries its source/time/state):
   2. relevant profile facts                    (only when relevant to this turn)
   3. current situation                         (only unexpired; else "unknown")
   4. explicit commitments                      (chat)
+  4b. standing memories: the owner's long-term facts + plans of the next hours (every turn, 2026-11-09)
   5. recalled memories                          (phase-2 labelling)
   6. legacy core memories                       (old system, unconfirmed)
   7. restricted / cooling topics, avoid topics (phase 2 + preferences)
@@ -438,6 +439,62 @@ class ContextEngine:
         text = format_recalled_memories(usable)
         lines = text.splitlines()
         return _Section("recall", self.RECALL_PRIORITY, lines[0], lines[1:-1], lines[-1])
+
+    STANDING_HEADER = "【对方告诉过你的（一直记着；和手机状态或你的印象对不上时，以这里为准；不用主动提）】"
+
+    def standing_memories(self, hint: str = "") -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """(facts, upcoming): what the owner told her about themselves and their plans of the next hours.
+
+        2026-11-09 (real chat): "我蓝牙连的那个不是耳机是手表你要记住哦" was saved as a memory at 00:34 -- and at 01:13
+        and in the next morning's message she said "耳机" again. A memory reached a reply only when the owner's message
+        of that turn shared a word with it ("mua~" and a picture shared none), so the phone line's "戴着耳机" won. These
+        are shown on every chat turn and proactive run now: long-term facts (kind fact), the ones sharing a word with
+        ``hint`` (the phone line) first, then by importance; planned events of the next VIOLET_MEMORY_STANDING_HOURS.
+        VIOLET_MEMORY_STANDING_FACTS / _EVENTS = 0 switch a part off."""
+        from ai.memory_model import event_deadline, parse_time, recall_terms
+        facts_limit = env_int("VIOLET_MEMORY_STANDING_FACTS", 5)
+        events_limit = env_int("VIOLET_MEMORY_STANDING_EVENTS", 3)
+        facts: list[dict[str, Any]] = []
+        upcoming: list[tuple[Any, dict[str, Any]]] = []
+        if facts_limit <= 0 and events_limit <= 0:
+            return [], []
+        now = parse_time(self.db.now())
+        ahead = timedelta(hours=env_float("VIOLET_MEMORY_STANDING_HOURS", 36.0))
+        for m in self.db.list_recent_event_memories(include_ended=False, limit=self.db.search_window()):
+            if m.get("status") != "active" or not (m.get("content") or "").strip():
+                continue
+            if m.get("kind") == "fact":
+                facts.append(m)
+            elif m.get("progress") == "planned" and m.get("event_time"):
+                start, end = parse_time(m["event_time"]), event_deadline(m["event_time"])
+                if end is not None and end >= now and (start is None or start - now <= ahead):
+                    upcoming.append((end, m))
+
+        def rank(m: dict[str, Any]) -> tuple:
+            return (bool(hint and recall_terms(hint, m["content"])), float(m.get("importance") or 0),
+                    int(m.get("mention_count") or 0), m.get("updated_at") or "")
+        facts.sort(key=rank, reverse=True)
+        upcoming.sort(key=lambda pair: pair[0])
+        return facts[:max(0, facts_limit)], [m for _, m in upcoming[:max(0, events_limit)]]
+
+    def _standing_section(self, call_context: dict[str, Any]) -> tuple[_Section, set[int]]:
+        from ai.memory_model import WEEKDAYS, is_date_only, parse_time
+        hint = " ".join(str(call_context.get(k) or "") for k in ("phone_note", "_user_message"))
+        try:
+            facts, upcoming = self.standing_memories(hint)
+        except Exception:                                   # noqa: BLE001 -- never break a reply over this
+            logger.exception("standing memories unavailable")
+            return _Section("standing", 1, self.STANDING_HEADER, []), set()
+        lines = [f"- {m['content']}" for m in facts]
+        for m in upcoming:
+            when = str(m["event_time"]).strip()
+            at = parse_time(when)
+            if at is not None:
+                label = f"{at.strftime('%m-%d')} 周{WEEKDAYS[at.weekday()]}" + ("" if is_date_only(when) else at.strftime(" %H:%M"))
+            else:
+                label = when
+            lines.append(f"- 接下来的安排（{label}）：{m['content']}")
+        return _Section("standing", 1, self.STANDING_HEADER, lines), {int(m["id"]) for m in facts + upcoming}
 
     def _legacy_section(self) -> _Section:
         excluded = self.profile.facts.excluded_core_memory_ids()
@@ -995,10 +1052,16 @@ class ContextEngine:
         if mode in ("chat", "proactive", "decision") and context_style() == "natural":
             # phase 8.9.3: the proactive decision too -- whether Violet reaches out depends on how close you are
             sections.append(self._relationship_section())
+        standing_ids: set[int] = set()
+        if mode in ("chat", "proactive", "decision"):
+            standing_section, standing_ids = self._standing_section(call_context)     # 2026-11-09
+            sections.append(standing_section)
         if mode == "chat":
             sections.append(self._known_keys_section())
             sections.append(self._commitment_section())
-            sections.append(self._recall_section(recalled, user_message))
+            rest = [m for m in recalled if m.get("id") not in standing_ids]
+            if rest or not recalled:                     # all found ones already shown above: no "没找到" line
+                sections.append(self._recall_section(rest, user_message))
         if mode in ("chat", "proactive", "decision") and env_bool("VIOLET_PERSONA_CONTEXT", True):
             sections += self._persona_sections(mode, user_message, call_context)
         if mode in ("chat", "proactive", "decision"):
@@ -1026,6 +1089,7 @@ class ContextEngine:
             "mode": mode,
             "sections": {name: len(txt) for name, txt in rendered},
             "fact_ids": [f["id"] for f in facts],
+            "standing_memory_ids": sorted(standing_ids),
             "situation_ids": [s["id"] for s in situations],
             "history_messages": sum(1 for h in history if h["role"] != "system"),
             "time_marks": sum(1 for h in history if h["role"] == "system"),

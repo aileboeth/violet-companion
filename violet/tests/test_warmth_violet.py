@@ -21,8 +21,8 @@ def test_the_owners_own_bad_day_is_not_scolding_and_an_upset_mood_is_not_cold(vi
     from ai import mood
     assert not mood.SCOLD.search("今天工作好烦") and not mood.SCOLD.search("烦死了")
     assert mood.SCOLD.search("你好烦") and mood.SCOLD.search("烦死你了") and mood.SCOLD.search("笨蛋")
-    mood.feel(violetdb, "你好烦啊笨蛋")
-    mood.feel(violetdb, "你好烦啊笨蛋")
+    mood.feel(violetdb, "你好烦啊，闭嘴")        # 2026-11-09: a teasing 笨蛋 alone hardly moves her mood any more
+    mood.feel(violetdb, "你好烦啊，闭嘴")
     line = mood.note(violetdb)
     assert "不高兴" in line and "短一点" not in line and "淡一点" not in line and "不冷着对方" in line
     assert "话也会比平时多" in line                             # upset = more words, not fewer
