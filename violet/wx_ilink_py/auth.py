@@ -85,9 +85,9 @@ LOCK_WINDOW_SECONDS = 15 * 60
 GLOBAL_FAILURE_LIMIT = 50
 
 _LOGIN_PAGE = """<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8">
+<html lang="{{ lang }}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>登录 · Violet</title>
+<title>{{ t("登录") }} · Violet</title>
 <style>
  :root{--bg:#0c0a1a;--panel:rgba(23,20,44,.78);--line:rgba(255,255,255,.12);--text:#ece9f7;--muted:#a19cba;--accent:#8b5cf6;
        --accent2:#d946ef;--field:#120f26;--bad:#f87171;color-scheme:dark}
@@ -126,15 +126,15 @@ _LOGIN_PAGE = """<!doctype html>
 <form method="post" action="/auth/login">
   <div class="logo" aria-hidden="true"></div>
   <h1>Violet</h1>
-  <div class="sub">Control Center 管理后台</div>
-  {% if error %}<div class="err">{{ error }}</div>{% endif %}
-  <input type="text" name="username" placeholder="用户名" autocomplete="username" maxlength="32" autofocus>
-  <input type="password" name="password" placeholder="密码" autocomplete="current-password" required>
+  <div class="sub">{{ t("Control Center 管理后台") }}</div>
+  {% if error %}<div class="err">{{ t(error) }}</div>{% endif %}
+  <input type="text" name="username" placeholder="{{ t('用户名') }}" autocomplete="username" maxlength="32" autofocus>
+  <input type="password" name="password" placeholder="{{ t('密码') }}" autocomplete="current-password" required>
   <input type="hidden" name="next" value="{{ next_url }}">
-  <button type="submit">登录</button>
-  <div class="hint">第一次登录请用安装完成时显示的用户名和密码（随机生成，可以一直用，也可以在“账号安全”里改）。忘记了：在服务器上执行<br>
-  <code>/opt/violet/violet info</code> 查看用户名和地址<br>
-  <code>/opt/violet/violet reset-password</code> 生成新密码</div>
+  <button type="submit">{{ t("登录") }}</button>
+  <div class="hint">{{ t("第一次登录请用安装完成时显示的用户名和密码（随机生成，可以一直用，也可以在“账号安全”里改）。忘记了：在服务器上执行") }}<br>
+  <code>/opt/violet/violet info</code> {{ t("查看用户名和地址") }}<br>
+  <code>/opt/violet/violet reset-password</code> {{ t("生成新密码") }}</div>
 </form></body></html>"""
 
 _NOT_FOUND = "404 Not Found\n"
@@ -436,7 +436,10 @@ def _wants_html() -> bool:
     return best == "text/html" and request.accept_mimetypes[best] > request.accept_mimetypes["application/json"]
 
 
-CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+# 2026-11-09: scripts only from our own files -- the pages have no inline script or on...= handler (the Control Center
+# builds its DOM with nodes and text), so an injected <script> or onerror= could not run even if one got into a page.
+# Styles stay 'unsafe-inline' (the Control Center's stylesheet is inlined, see V14).
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "media-src 'self' blob:; "              # 2026-10-31: the voice 试听 plays the audio it fetched (control_voice.js)
        "connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 
@@ -569,9 +572,14 @@ def install_auth(app: Flask, token: str, data_dir: str | os.PathLike[str] | None
             response.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
         return response
 
+    def _login_page(error, next_url):
+        from wx_ilink_py import i18n          # 2026-11-09: the login page in the admin's language too
+        lang = i18n.pick(request)
+        return render_template_string(_LOGIN_PAGE, error=error, next_url=next_url, lang=lang, t=i18n.translator(lang))
+
     @app.get("/auth/login")
     def auth_login_page():
-        return render_template_string(_LOGIN_PAGE, error=None, next_url=_safe_next(request.args.get("next")))
+        return _login_page(None, _safe_next(request.args.get("next")))
 
     @app.post("/auth/login")
     def auth_login():
@@ -583,8 +591,7 @@ def install_auth(app: Flask, token: str, data_dir: str | os.PathLike[str] | None
         wait = limiter.locked_for(key)
         if wait:
             logger.warning("dashboard login locked for %s (%ss)", key, wait)
-            return render_template_string(_LOGIN_PAGE, error=f"尝试次数太多，请 {wait // 60 + 1} 分钟后再试",
-                                          next_url=next_url), 429
+            return _login_page(f"尝试次数太多，请 {wait // 60 + 1} 分钟后再试", next_url), 429
         supplied = (request.form.get("password") or request.form.get("token") or "").strip()
         # the admin token logs in on its own; the password needs the username too (both checked, no early exit)
         user_ok = store.username_ok(request.form.get("username"))
@@ -596,7 +603,7 @@ def install_auth(app: Flask, token: str, data_dir: str | os.PathLike[str] | None
         limiter.failed(key)
         time.sleep(0.3)
         logger.warning("failed dashboard login from %s", key)
-        return render_template_string(_LOGIN_PAGE, error="用户名或密码不正确", next_url=next_url), 401
+        return _login_page("用户名或密码不正确", next_url), 401
 
     @app.post("/auth/logout")
     def auth_logout():

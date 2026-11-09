@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="{{ lang or 'zh-CN' }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -74,7 +74,7 @@
       <div class="row"><button id="model-save" type="button">保存模型并测试对话</button><span id="model-save-test"></span></div>
       <p class="note">测试对话用 Chat 的模型真实调用一次（很短的请求），只记录成功与否、耗时和错误类型。</p>
     </div>
-    <details class="card" id="model-advanced" open><summary>提示词缓存、超时与重试</summary>
+    <details class="card" id="model-advanced"><summary>提示词缓存、超时与重试（一般不用改）</summary>
       <div id="model-adv-rows"></div>
       <div class="row"><button id="model-adv-save" type="button" disabled>保存</button></div>
     </details>
@@ -182,11 +182,13 @@
       <button type="button" data-set="general" class="active">通用</button><button type="button" data-set="wechat">微信</button>
       <button type="button" data-set="qq">QQ</button><button type="button" data-set="telegram">Telegram</button>
     </nav>
-    <div class="set-panel" id="set-p-general">
-      <nav class="jump" id="set-jump" aria-label="设置分类"></nav>
+    <div class="set-panel set-layout" id="set-p-general">
+      <nav class="set-cats" id="set-jump" aria-label="设置分类"></nav>
+      <div class="set-main">
       <p class="note">对所有聊天渠道都生效的设置。模型和 API 在“模型服务”页，图片在“图片”页，课表的开关在“课表”页。“立即生效”保存后马上用于新的请求；“重启后生效”需要重启 Violet。保存前会整体检查，有任何一项不合格就一项也不改。</p>
       <div class="set-group" id="set-g-permissions"><h3>她能自己做的事</h3><div id="set-permissions"></div></div>
       <div id="set-groups"></div>
+      </div>
     </div>
     <div class="set-panel" id="set-p-wechat" hidden></div>
     <div class="set-panel" id="set-p-qq" hidden></div>
@@ -221,16 +223,17 @@
   </section>
 
   <section id="tab-tools" class="tab">
-    <h2>工具与手机</h2>
+    <div class="row"><h2>工具与手机</h2>
+      <span class="page-actions"><span class="note" id="tools-updated"></span><button class="ghost" id="tools-refresh">检查全部连接</button></span></div>
+    <p class="note">Violet 能用的工具：看手机、上网查东西、发语音，以及你自己加的 MCP 服务器。只有连接成功、已启用、已分类并授权的工具才会告诉 Violet；修改立即生效。</p>
     <nav class="jump" id="tools-jump" aria-label="工具"></nav>
     <div class="card" id="phone-mcp"></div>
-    <p class="note">Violet 能用的外部工具（MCP）。只有连接成功、已启用、已分类并授权给 Agent 的工具才会告诉 Violet；修改立即生效，重启后仍然有效。
-      每个服务器下面写明了现在的问题和处理办法。凭据只能替换，不能查看。运行本地命令的（stdio）服务器只能在 .env 里配置。</p>
-    <div class="row"><button id="tools-refresh">检查全部连接</button><span class="note" id="tools-updated"></span></div>
     <div id="tools-web" class="cards list"></div>
     <div id="tools-voice" class="cards list"></div>
+    <div class="card" id="tools-mcp"><h3>其他 MCP 服务器</h3>
+    <p class="note">每个服务器下面写明了现在的问题和处理办法。凭据只能替换，不能查看。运行本地命令的（stdio）服务器只能在 .env 里配置。</p>
     <div id="tools-list" class="cards list"></div>
-    <div id="mcp-add-box"><h3>添加 MCP 服务器</h3>
+    <details id="mcp-add-box" class="sub-box"><summary>添加 MCP 服务器</summary>
     <form id="mcp-add" class="stack" autocomplete="off">
       <div class="filters">
         <label>名字 <input id="mcp-name" maxlength="31" placeholder="例如 phone" required></label>
@@ -245,10 +248,10 @@
         <label class="check"><input type="checkbox" data-agent="chat" checked> Chat</label>
         <label class="check"><input type="checkbox" data-agent="performer"> Performer</label>
         <label class="check"><input type="checkbox" data-agent="proactive"> Proactive</label></div>
-      <p class="note">添加后会立即连接并列出工具。新工具默认都是“未分类（拒绝）”：请逐个选择只读 / 写入 / 高风险 / 拒绝；如果服务器的工具和已有模板一致，会提示一键套用。写入和高风险工具还要单独授权。</p>
+      <p class="note">添加后会立即连接并列出工具。工具自己声明“只是查看”的默认“直接用”，其余默认“先问你”（她每次要用都先问你）；每个工具都可以再改成“直接用 / 先问你 / 不给她用”。如果服务器的工具和已有模板一致，会提示一键套用。</p>
       <p class="err" id="mcp-add-error"></p>
       <div class="row"><button type="submit">添加并检查</button></div>
-    </form></div>
+    </form></details></div>
   </section>
 
   <section id="tab-schedule" class="tab">
@@ -381,28 +384,34 @@
   <section id="tab-persona" class="tab">
     <div class="row"><h2>人设与生活</h2><button class="ghost" id="pl-refresh" type="button">刷新</button></div>
     <p class="note">Violet 的核心人设、会慢慢变化的部分，以及她的虚拟生活。这里的生活经历都是虚构的；改动会记下原因，可以看历史。</p>
-    <h3>人设 <span class="note">（卡片上写着哪些渠道在用她）</span></h3>
-    <p class="note">“设为主人设”：没有单独设人设的渠道都用她。某个渠道单独用谁，在下面“不同聊天渠道用不同人设”里改（导入 Eve 时选的人设也在那里）。每个人设只有一份自己的聊天记录和记忆，换来换去都不会丢。</p>
-    <div id="pl-templates" class="platforms"></div>
-    <h3>和你的关系 <span class="note">（人设是“她是谁”，这里是“你们是什么关系”，可以自由搭配）</span></h3>
-    <div class="card" id="pl-relationship"></div>
-    <h3>不同聊天渠道用不同人设 <span class="note">（不设就和上面一样。用别的人设的渠道是另一个人：聊天记录、记忆、生活和心情都是她自己的，互相不知道）</span></h3>
-    <div class="card" id="pl-channels"></div>
+    <nav class="jump" id="pl-jump" aria-label="人设与生活"></nav>
+    <!-- 2026-11-09 (user: 人设与生活的UI也要改一下): who talks to you where -- the main setting and every channel in one
+         table (persona / relationship / what she calls you); then the persona library as small cards; test mode
+         is its own bar, not a persona card -->
+    <div class="card" id="pl-who"></div>
+    <div class="row pl-lib-head"><h3 id="pl-sec-templates">人设库 <span class="note">（点卡片看完整人设；每个人设有自己的一份聊天记录和记忆，换来换去都不会丢）</span></h3></div>
+    <div id="pl-templates" class="pt-grid"></div>
+    <div class="card test-bar" id="pl-test"></div>
     <div class="persona-bar" data-persona-pick hidden>
       <label>下面这些是谁的（样子、人设动态、生活） <select class="persona-scope" aria-label="看哪个人设的样子、人设动态和生活"></select></label><span class="note persona-where"></span></div>
-    <h3>她的样子 <span class="note">（画她自己时用；每个人设一份）</span></h3>
-    <div class="card" id="pl-look"></div>
-    <div class="card" id="pl-core"></div>
-    <h3>人设动态 <span class="note">（缓慢变化，需要你批准）</span></h3>
-    <div id="pl-dynamics" class="cards list"></div>
-    <h3>生活引擎 <span id="pl-engine" class="pill"></span></h3>
-    <div class="row"><button class="ghost" id="pl-pause" type="button">暂停</button><button class="ghost" id="pl-resume" type="button">恢复</button></div>
-    <p class="note">暂停只停止虚拟生活往前推进，不影响聊天和主动消息；彻底关闭在“设置 → 生活引擎”。</p>
-    <h3>生活线</h3><div id="pl-threads" class="cards list"></div>
-    <h3>计划</h3><div id="pl-plans" class="cards list"></div>
-    <h3>生活事件</h3><div id="pl-events" class="cards list"></div>
-    <h3>一致性标记 <span class="note">（回复里和人设、生活记录对不上的地方）</span></h3>
-    <div id="pl-flags" class="cards list"></div>
+    <!-- 2026-11-09 UI pass: the look and the persona's details fold away; her life is one card -->
+    <details class="card fold-card" id="pl-look-box"><summary>她的样子 <span class="note">（画她自己时用；每个人设一份）</span></summary>
+      <div id="pl-look"></div></details>
+    <details class="card fold-card" id="pl-core-box"><summary>人设详情 <span class="note">（性格、说话习惯、兴趣、价值观、缺点）</span></summary>
+      <div id="pl-core"></div></details>
+    <div class="card" id="pl-life">
+      <div class="row"><h3>她的生活 <span id="pl-engine" class="pill"></span></h3>
+        <span class="page-actions"><button class="ghost" id="pl-pause" type="button">暂停</button><button class="ghost" id="pl-resume" type="button">恢复</button></span></div>
+      <p class="note">她的虚拟生活（都是虚构的）。暂停只停止虚拟生活往前推进，不影响聊天和主动消息；彻底关闭在“设置 → 生活引擎”。</p>
+      <div class="life-grid">
+        <div><h4>人设动态 <span class="note">（缓慢变化，需要你批准）</span></h4><div id="pl-dynamics" class="cards list"></div></div>
+        <div><h4>一致性标记 <span class="note">（回复里和人设、生活记录对不上的地方）</span></h4><div id="pl-flags" class="cards list"></div></div>
+        <div><h4>生活线</h4><div id="pl-threads" class="cards list"></div></div>
+        <div><h4>计划</h4><div id="pl-plans" class="cards list"></div></div>
+      </div>
+      <details class="sub-box" id="pl-events-box"><summary>生活事件 <span class="note">（最近 60 件）</span></summary>
+        <div id="pl-events" class="cards list"></div></details>
+    </div>
   </section>
 
   <section id="tab-logs" class="tab">
@@ -442,6 +451,8 @@
   <p class="err" id="sch-form-error"></p>
   <div class="row"><button type="button" class="ghost" id="sch-form-cancel">取消</button><button type="submit" id="sch-form-ok">保存</button></div>
 </form></dialog>
+{% if translated %}<script src="/control/i18n.js?lang={{ lang }}"></script>{% endif %}
+<script src="/static/control_i18n.js"></script>
 <script src="/static/control.js"></script>
 <script src="/static/control_schedule.js"></script>
 <script src="/static/control_social.js"></script>

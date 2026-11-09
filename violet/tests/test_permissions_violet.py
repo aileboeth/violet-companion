@@ -41,6 +41,13 @@ def test_owner_commands():
     from ai.permissions import owner_command
     assert owner_command("同意 3") == (True, 3) and owner_command(" 不同意#12 ") == (False, 12)
     assert owner_command("拒绝 4") == (False, 4) and owner_command("同意") is None and owner_command("我同意你说的 3 点") is None
+    # 2026-11-09: the other Control Center languages
+    assert owner_command("Agree 5") == (True, 5) and owner_command("disagree #5") == (False, 5)
+    assert owner_command("no 7.") == (False, 7) and owner_command("承認 2") == (True, 2) and owner_command("동의 2") == (True, 2)
+    assert owner_command("de acuerdo 3") == (True, 3) and owner_command("d’accord 3") == (True, 3)
+    assert owner_command("Nein 9") == (False, 9) and owner_command("не согласна 4") == (False, 4)
+    assert owner_command("согласна 4") == (True, 4) and owner_command("NÃO 1") == (False, 1)
+    assert owner_command("同意 3！") == (True, 3) and owner_command("yes I can do 3") is None
 
 
 def test_request_decide_and_expire(db, data_dir, told, monkeypatch):

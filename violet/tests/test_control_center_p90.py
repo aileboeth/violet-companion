@@ -593,7 +593,12 @@ def test_control_page_script_never_builds_html_from_data():
     for banned in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function"):
         assert banned not in js, banned
     html = (root / "templates" / "control.html").read_text(encoding="utf-8")
-    assert "<script src=\"/static/control.js\"></script>" in html and "{{" not in html
+    # 2026-11-09 (Control Center languages): the page's language is the only value written into the template
+    # (one of wx_ilink_py/i18n.SUPPORTED, picked by i18n.pick); no data
+    import re
+    assert "<script src=\"/static/control.js\"></script>" in html
+    assert set(re.findall(r"\{\{\s*([^}]*?)\s*\}\}", html)) <= {"lang", "lang or 'zh-CN'"}
+    assert set(re.findall(r"\{%\s*([^%]*?)\s*%\}", html)) <= {"if translated", "endif"}
     assert "localStorage" not in js and "sessionStorage" not in js
 
 

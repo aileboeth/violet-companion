@@ -30,6 +30,15 @@ from ai.tool_manager import AGENTS, tool_store
 
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,30}$")
 LEVELS = ("read", "write", "high_risk", "deny")
+
+
+def _risky_level() -> str:
+    """"会改动东西的工具" in 她能自己做的事: ask (default) / forbid / self."""
+    try:
+        from ai import permissions
+        return permissions.level("risky_tools")
+    except Exception:  # noqa: BLE001 -- only wording depends on it
+        return "ask"
 TRANSPORTS = ("streamable_http", "sse")
 ERROR_WORDS = {
     "MCP_CONNECT_FAILED": "连不上这个地址：检查地址是否正确、服务是否在运行、服务器能否访问这个网络",
@@ -157,7 +166,7 @@ def allow_risky(server: str, tool: str, allowed: bool, actor: str) -> dict[str, 
         from ai.mcp import classify_tool_permission
         server_cfg = next((s for s in get_mcp_servers() if s.get("name") == server), {})
         if classify_tool_permission(server_cfg, tool, None, server_name=server) not in ("write", "high_risk"):
-            raise MCPAdminError({"tool": "只有被分类为“写入”或“高风险”的工具需要（也才能）单独授权"})
+            raise MCPAdminError({"tool": "只有“先问你”的工具才需要（也才能）设为“允许直接用”"})
     return tool_store().set_allow_tool(server, tool, allowed, actor)
 
 
@@ -215,13 +224,15 @@ def server_diagnosis(described: dict[str, Any], server: dict[str, Any]) -> list[
         findings.append({"level": "warn", "code": "tools_unclassified",
                          "message": f"MCP 已连接，但有 {len(unclassified)} 个工具还没有分类，Violet 看不到、也不能调用它们："
                                     + "、".join(unclassified[:8]) + ("…" if len(unclassified) > 8 else "")
-                                    + "。请逐个选择“只读 / 写入 / 高风险 / 拒绝”",
+                                    + "。请给每个工具选“直接用 / 先问你 / 不给她用”",
                          "action": "classify", "tools": unclassified})
     waiting = [t["name"] for t in tools if t["permission"] in ("write", "high_risk") and t["enabled"]
                and not t.get("allowed_risky")]
     if waiting:
         findings.append({"level": "info", "code": "tools_need_second_key",
-                         "message": "这些写入 / 高风险工具还需要单独授权才能使用：" + "、".join(waiting[:8]),
+                         "message": ("这些工具会改动东西，她每次要用都会先问你（点“允许直接用”就不再问）：" if _risky_level() == "ask" else
+                                     "这些工具会改动东西，现在不给她用（“设置 → 她能自己做的事”改成“先问你”，或点“允许直接用”）：")
+                                    + "、".join(waiting[:8]),
                          "action": "allow_risky", "tools": waiting})
     agents = described.get("agents") or []
     if tools and not agents:
@@ -280,9 +291,10 @@ def test_tool(server_name: str, tool: str, arguments: dict[str, Any] | None) -> 
             result = {"ok": False, "status": STATUS_OF.get(code, "tool_error"), "code": code}
         else:
             result["result"] = text[:3000]
-    words = {"not_classified": "这个工具还没有分类（未分类的工具一律拒绝）", "needs_second_key": "写入 / 高风险工具需要单独授权",
+    # 2026-11-09: the page's words -- 直接用 / 先问你 / 不给她用 (write and high_risk are handled alike)
+    words = {"not_classified": "这个工具还没有分类（没分类的不给她用）", "needs_second_key": "会改动东西的工具：要你同意，或点“允许直接用”",
              "disabled": "这个工具已停用", "unavailable": "MCP 服务器连不上", "not_found": "服务器上没有这个工具",
-             "not_read_only": "只能测试只读工具（写入 / 高风险工具会真的执行操作）",
+             "not_read_only": "只能测试“直接用”的工具（会改动东西的工具测试时会真的执行操作）",
              "invalid_arguments": "参数不符合工具的要求", "tool_error": "工具运行了但返回错误", "timeout": "工具超时",
              "permission_denied": "没有权限"}
     if not result.get("ok"):

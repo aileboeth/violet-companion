@@ -8,7 +8,8 @@
   function renderChecklist(data) {
     $("#setup-summary").textContent = data.complete
       ? "必需的设置都完成了，Violet 可以正常聊天。下面的可选项可以随时调整，点一项直接过去。"
-      : "还有必需的设置没有完成：" + (data.next ? data.next.title + "（" + data.next.detail + "）" : "") + "。点下面的卡片直接过去。";
+      : data.next ? `还有必需的设置没有完成：${data.next.title}（${data.next.detail}）。点下面的卡片直接过去。`
+        : "还有必需的设置没有完成。点下面的卡片直接过去。";
     $("#setup-list").replaceChildren(...data.items.map((item) => {
       const [text, kind] = STATE[item.state] || [item.state, ""];
       const go = () => goTo(item.tab, item.anchor);

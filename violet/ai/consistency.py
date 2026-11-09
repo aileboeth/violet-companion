@@ -288,7 +288,8 @@ class ConsistencyGuard:
         from ai.settings import env_float
         current = parse_time(now)
         since = current - timedelta(hours=env_float("VIOLET_CONTEXT_SESSION_GAP_HOURS", 3.0))
-        rows = [r for r in self.db.fetch_all("SELECT role, content, created_at FROM messages ORDER BY id DESC LIMIT 200")
+        from ai import context_cut                        # 翻篇: the weather talk before it is not "this chat's" either
+        rows = [r for r in context_cut.owner_rows(self.db.fetch_all("SELECT role, content, created_at FROM messages ORDER BY id DESC LIMIT 200"))
                 if r.get("created_at") and parse_time(r["created_at"]) <= current and WEATHER_WORDS_RE.search(r["content"] or "")]
         if any(r["role"] == "user" and parse_time(r["created_at"]) >= since for r in rows):
             return False                                  # the user brought the weather up in this conversation

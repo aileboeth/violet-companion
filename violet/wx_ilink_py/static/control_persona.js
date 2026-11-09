@@ -195,25 +195,52 @@
     document.body.append(d); d.showModal();
   }
 
-  // 0.7.9: the whole persona on hover (or "预览" on a phone), to compare before switching
-  function previewBox(t) {
-    const block = (title, items) => (items && items.length ? h("div", { class: "pt-block" }, h("div", { class: "k", text: title }),
-      h("ul", {}, ...items.map((i) => h("li", { text: i })))) : null);
-    return h("div", { class: "pt-preview", role: "tooltip" },
-      h("strong", { text: t.blank ? "空白人设" + (t.name ? `（${t.name}）` : "") : (t.name || t.title) }),
-      t.self_description ? h("p", { class: "note", text: t.self_description }) : null,
-      t.blank ? h("p", { class: "note", text: "没有名字、性格和经历，什么都从和你聊天开始慢慢长出来。" }) : null,
-      block("性格", t.personality), block("说话习惯", t.habits), block("兴趣", t.interests),
-      block("看重", t.values), block("小缺点", t.flaws));
+  // 2026-11-09 (user: 预览人设的很丑而且不好用): the hover pop-up that covered the cards below is gone. A click on a
+  // card (or "查看") opens the whole persona in a dialog: what she is like in two columns, ‹ › (or the arrow keys)
+  // to go through the personas one by one and compare, and "设为主人设" right there.
+  const BLOCKS = [["personality", "性格"], ["habits", "说话习惯"], ["interests", "兴趣"], ["values", "看重"], ["flaws", "小缺点"]];
+  function personaDialog(entries, start) {
+    let i = start;
+    const body = h("div", { class: "pv-body" });
+    const d = h("dialog", { class: "pv-dialog", "aria-label": "人设详情" }, body);
+    function show() {
+      const e = entries[i], t = e.t;
+      const blocks = BLOCKS.filter(([k]) => (t[k] || []).length).map(([k, title]) => h("section", { class: "pv-block" },
+        h("h4", { text: title }), h("ul", {}, ...t[k].map((x) => h("li", { text: typeof x === "string" ? x : x.label })))));
+      body.replaceChildren(...[                      // replaceChildren would print "null"
+        h("div", { class: "pv-head" },
+          h("div", {}, h("div", { class: "pv-count", text: `${i + 1} / ${entries.length}` }),
+            h("h3", { text: t.blank ? "空白人设" + (t.name ? `（${t.name}）` : "") : (e.title || t.name || t.title) })),
+          h("span", { class: "pv-pills" }, ...e.pills),
+          h("button", { type: "button", class: "ghost pv-close", "aria-label": "关闭", text: "✕", onclick: () => d.close() })),
+        h("p", { class: "pv-lead", text: e.summary || t.summary || "" }),
+        t.self_description ? h("blockquote", { class: "pv-quote", text: t.self_description }) : null,
+        t.blank ? h("p", { class: "note", text: "没有名字、性格和经历，什么都从和你聊天开始慢慢长出来。" }) : null,
+        blocks.length ? h("div", { class: "pv-grid" }, ...blocks) : (t.blank ? null : h("p", { class: "note", text: "这个人设没有写细节。" })),
+        e.users.length ? h("p", { class: "note used-by", text: "在用：" + e.users.join("、") }) : null,
+        h("div", { class: "pv-foot" },
+          h("button", { type: "button", class: "ghost", text: "‹ 上一个", disabled: entries.length < 2 ? true : null, onclick: () => go(-1) }),
+          h("button", { type: "button", class: "ghost", text: "下一个 ›", disabled: entries.length < 2 ? true : null, onclick: () => go(1) }),
+          h("span", { class: "grow" }),
+          e.action ? h("button", { type: "button", text: e.action.label, onclick: () => { d.close(); e.action.run(); } }) : h("span", { class: "note", text: e.mainNote || "" }))
+      ].filter(Boolean));
+      body.scrollTop = 0;
+    }
+    const go = (step) => { i = (i + step + entries.length) % entries.length; show(); };
+    d.addEventListener("keydown", (ev) => { if (ev.key === "ArrowLeft") go(-1); else if (ev.key === "ArrowRight") go(1); });
+    d.addEventListener("click", (ev) => { if (ev.target === d) d.close(); });          // a click outside closes it
+    d.addEventListener("close", () => d.remove());
+    document.body.append(d);
+    show();
+    d.showModal();
   }
-  function withPreview(card, t) {
-    if (!t) return card;
+  // a card opens the dialog when clicked anywhere except its own buttons
+  function openable(card, entries, index) {
     card.classList.add("pt-card");
     card.tabIndex = 0;
-    const toggle = h("button", { type: "button", class: "ghost pt-toggle", text: "预览", onclick: (ev) => {
-      ev.stopPropagation(); card.classList.toggle("pt-open"); } });
-    card.querySelector(".platform-head").append(toggle);
-    card.append(previewBox(t));
+    card.title = "点开看完整人设";
+    card.addEventListener("click", (ev) => { if (!ev.target.closest("button")) personaDialog(entries, index); });
+    card.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && ev.target === card) personaDialog(entries, index); });
     return card;
   }
 
@@ -224,94 +251,129 @@
     sel.value = value || "";
     return sel;
   }
-  function renderRelationship(d) {
-    const rel = d.relationship || { kind: "close" };
-    const sel = relationshipSelect(d, rel.kind, false);
-    const call = h("input", { maxlength: 12, placeholder: "她怎么称呼你（可空，例如 爸爸）" }); call.value = rel.call || "";
-    const text = h("p", { class: "note" });
-    const show = () => { const r = d.relationships.find((x) => x.key === sel.value); text.textContent = r ? r.text : ""; };
-    sel.addEventListener("change", show); show();
-    $("#pl-relationship").replaceChildren(h("div", { class: "row" }, sel, call,
-      h("button", { type: "button", text: "保存", onclick: async () => {
-        try { await api("POST", "/api/persona/relationship", { kind: sel.value, call: call.value }); toast("已保存，下一条消息起生效"); loaders.persona(); }
-        catch (e) { toast(e.message, false); }
-      } })), text, d.in_effect ? inEffect(d.in_effect) : null);
-  }
   // 2026-11-01 (user: 设置了称呼，切换人设之后也不显示，不知道还有没有生效): what is really used now, after merging
-  const inEffect = (x) => h("p", { class: "note", text: `现在生效：${x.persona} · 关系“${x.label}” · ${x.call ? `叫你“${x.call}”` : "不特别称呼你"}` });
-  function renderChannelPersonas(d) {
-    const options = [h("option", { value: "", text: "和主人设一样" }),
+  const effectText = (x) => `现在：${x.persona} · ${x.label} · ${x.call ? `叫你“${x.call}”` : "不特别称呼你"}`;
+  // 2026-11-09 (user: 人设与生活的UI也要改一下): the relationship and the per-channel personas were two cards of
+  // stacked full-width fields. Now one table: the main setting first, then every channel -- persona / relationship /
+  // what she calls you / save, and under each row what is really in effect.
+  function renderWho(d) {
+    const mainTpl = d.current.template === "custom" ? "自定义人设"
+      : ((d.templates.find((t) => t.key === d.current.template) || {}).title || d.current.template || "—");
+    const rel = d.relationship || { kind: "close" };
+    const mainRel = relationshipSelect(d, rel.kind, false);
+    const mainCall = h("input", { maxlength: 12, placeholder: "可空，例如 爸爸", "aria-label": "称呼" }); mainCall.value = rel.call || "";
+    const relText = h("span", { class: "who-sub" });
+    const showRel = () => { const r = d.relationships.find((x) => x.key === mainRel.value); relText.textContent = (r ? r.text + "　" : "") + (d.in_effect ? effectText(d.in_effect) : ""); };
+    mainRel.addEventListener("change", showRel); showRel();
+    const head = h("div", { class: "who-row who-head" }, h("span", { text: "" }), h("span", { text: "人设（她是谁）" }),
+      h("span", { text: "关系（你们是什么关系）" }), h("span", { text: "她怎么叫你" }), h("span", { text: "" }));
+    const main = h("div", { class: "who-row who-main" },
+      h("div", {}, h("strong", { text: "主设定" }), h("div", { class: "note", text: "没单独设的渠道都用它" })),
+      h("div", { class: "who-tpl" }, h("strong", { text: mainTpl }),
+        h("button", { type: "button", class: "ghost small", text: "换", onclick: () => scrollToAnchor("pl-sec-templates") })),
+      mainRel, mainCall,
+      h("button", { type: "button", text: "保存", onclick: async () => {
+        try { await api("POST", "/api/persona/relationship", { kind: mainRel.value, call: mainCall.value }); toast("已保存，下一条消息起生效"); loaders.persona(); }
+        catch (e) { toast(e.message, false); }
+      } }), relText);
+    const options = [h("option", { value: "", text: "和主设定一样" }),
       ...d.templates.map((t) => h("option", { value: t.key, text: t.title })), ...(d.custom ? [h("option", { value: "custom", text: "自定义人设" })] : [])];
-    const mainCall = (d.relationship || {}).call;
     const rows = (d.channels || []).map((c) => {
-      const tpl = h("select", { "aria-label": "人设" }, ...options.map((o) => o.cloneNode(true))); tpl.value = c.template || "";
-      const rel = relationshipSelect(d, (c.relationship || {}).kind, true);
-      const call = h("input", { maxlength: 12, placeholder: mainCall ? `称呼（空 = 和主设定一样：${mainCall}）` : "称呼（可空）" });
+      const tpl = h("select", { "aria-label": `${c.label} 的人设` }, ...options.map((o) => o.cloneNode(true))); tpl.value = c.template || "";
+      const crel = relationshipSelect(d, (c.relationship || {}).kind, true);
+      const call = h("input", { maxlength: 12, "aria-label": `${c.label} 的称呼`, placeholder: rel.call ? `空 = 和主设定一样（${rel.call}）` : "空 = 和主设定一样" });
       call.value = (c.relationship || {}).call || "";
-      return h("div", { class: "stack" }, h("div", { class: "row" }, h("strong", { text: c.label, style: "min-width:7em" }), tpl, rel, call,
+      return h("div", { class: "who-row" + (c.template ? " own" : "") },
+        h("div", {}, h("strong", { text: c.label }), c.template ? h("div", { class: "note", text: "单独的人设 · 自己的记忆" }) : null),
+        tpl, crel, call,
         h("button", { class: "ghost", type: "button", text: "保存", onclick: async () => {
-          try { await api("POST", "/api/persona/channel", { channel: c.id, template: tpl.value || null, kind: rel.value || null, call: call.value }); toast(`${c.label} 已保存`); loaders.persona(); loadPersonaPicker(); }
+          try { await api("POST", "/api/persona/channel", { channel: c.id, template: tpl.value || null, kind: crel.value || null, call: call.value }); toast(`${c.label} 已保存`); loaders.persona(); loadPersonaPicker(); }
           catch (e) { toast(e.message, false); }
-        } })), c.in_effect ? inEffect(c.in_effect) : null);
+        } }),
+        c.in_effect ? h("span", { class: "who-sub", text: effectText(c.in_effect) }) : null);
     });
-    $("#pl-channels").replaceChildren(...(rows.length ? rows : [h("p", { class: "note", text: "还没有聊天渠道。" })]),
-      h("p", { class: "note", text: "比如：微信上是“Violet + 恋人”，QQ 上是“AI + 开发者”。人设不同就是不同的人：聊天记录、记忆、提醒、生活和心情各是各的（聊天记录、记忆页上方和本页下面可以选看谁的）；课表共用。第一次给一个渠道选自己的人设时，这个渠道以前的聊天会跟着过去。QQ 群里也按 QQ 这一行的设定。" }));
+    $("#pl-who").replaceChildren(...[                       // replaceChildren would print "null"
+      h("h3", { id: "pl-sec-who", text: "谁在和你聊" }),
+      h("div", { class: "who-table" }, head, main, ...rows),
+      rows.length ? null : h("p", { class: "note", text: "还没有聊天渠道。" }),
+      h("details", {}, h("summary", { text: "渠道用不同的人设会怎样？" }),
+        h("p", { class: "note", text: "比如：微信上是“Violet + 恋人”，QQ 上是“AI + 开发者”。人设不同就是不同的人：聊天记录、记忆、提醒、生活和心情各是各的（聊天记录、记忆页上方和本页下面可以选看谁的）；课表共用。第一次给一个渠道选自己的人设时，这个渠道以前的聊天会跟着过去。QQ 群里也按 QQ 这一行的设定。导入 Eve 时选的人设也显示在这里。" }))].filter(Boolean));
+  }
+
+  // test mode: its own bar (it is not a persona -- it runs on top of the one in use and switches itself off)
+  function renderTest(d) {
+    const tm = d.test_mode || { on: false };
+    const hours = h("select", { "aria-label": "多久后自动关闭" }, ...[1, 2, 4, 8]
+      .map((v) => h("option", { value: v, text: `${v} 小时后自动关闭` })));
+    hours.value = "2";
+    const box = $("#pl-test");
+    box.classList.toggle("test-on", !!tm.on);
+    box.replaceChildren(
+      h("div", { class: "test-text" }, h("div", { class: "row" }, h("strong", { text: "测试模式" }),
+        tm.on ? pill(`测试中 · 还有 ${tm.minutes_left} 分钟`, "warn") : pill("排查问题用", "")),
+        h("p", { class: "note", text: "不用人设、不看记忆和以前的聊天，什么都不记下来；每条回复后面附一段程序写的诊断（她判断你要做什么、能用什么、实际做了什么、哪里没成）。私聊和群聊都生效，群里的诊断群友也能看到；关掉后回到现在的人设，记忆不受影响。" })),
+      h("div", { class: "row test-ctl" }, tm.on
+        ? h("button", { type: "button", text: "关闭测试", onclick: async () => {
+          try { await api("POST", "/api/persona/test-mode", { on: false }); toast("测试模式已关闭"); loaders.persona(); } catch (e) { toast(e.message, false); }
+        } })
+        : [hours, h("button", { type: "button", class: "ghost", text: "开始测试", onclick: async () => {
+          try { await api("POST", "/api/persona/test-mode", { on: true, hours: Number(hours.value) }); toast("测试模式已打开"); loaders.persona(); } catch (e) { toast(e.message, false); }
+        } })]));
   }
 
   async function renderTemplates() {
     let d;
     try { d = await api("GET", "/api/persona/templates"); } catch (e) { $("#pl-templates").replaceChildren(h("p", { class: "err", text: e.message })); return; }
-    renderRelationship(d);
-    renderChannelPersonas(d);
-    const own = h("div", { class: "card platform" },
-      h("div", { class: "platform-head" }, h("strong", { text: "自定义人设" }),
-        ((d.used_by || {}).custom || []).length ? pill("正在使用", "ok") : d.current.template === "custom" ? pill("主人设", "ok") : pill("自己写", "")),
-      h("p", { class: "note platform-intro", text: d.custom ? `你写过的：${d.custom.name}${d.custom.summary ? "，" + d.custom.summary : ""}` : "名字、性格、说话方式、兴趣都自己写；从现在用的人设开始改。" }),
-      h("div", { class: "platform-body" }, usedLine((d.used_by || {}).custom || [], d.current.template === "custom")),
-      h("div", { class: "row platform-foot" }, h("button", { type: "button", class: "ghost",
-        text: d.current.template === "custom" ? "修改" : (d.custom ? "修改并换回它" : "自己写一个"), onclick: () => customDialog(d.custom) })));
-    withPreview(own, d.custom);
-    // 2026-10-30: test mode -- on top of the persona in use (which stays as it is), switches itself off
-    const tm = d.test_mode || { on: false };
-    const hours = h("select", { "aria-label": "多久后自动关闭" }, ...[[1, "1 小时"], [2, "2 小时"], [4, "4 小时"], [8, "8 小时"]]
-      .map(([v, label]) => h("option", { value: v, text: label + "后自动关闭" })));
-    hours.value = "2";
-    const testCard = h("div", { class: "card platform" + (tm.on ? " test-on" : "") },
-      h("div", { class: "platform-head" }, h("strong", { text: "测试" }), tm.on ? pill(`测试中 · 还有 ${tm.minutes_left} 分钟`, "warn") : pill("排查问题用", "")),
-      h("p", { class: "note platform-intro", text: "不用人设、不看记忆和以前的聊天，什么都不记下来；每条回复后面附一段程序写的诊断：她判断你要做什么、能用什么、实际做了什么、哪里没成。" }),
-      h("div", { class: "platform-body" },
-        h("p", { class: "note", text: "私聊和群聊都生效：群里的诊断群友也能看到。关掉后回到现在的人设，记忆不受影响。" })),
-      h("div", { class: "row platform-foot" }, tm.on
-        ? h("button", { type: "button", text: "关闭测试", onclick: async () => {
-          try { await api("POST", "/api/persona/test-mode", { on: false }); toast("测试模式已关闭"); loaders.persona(); } catch (e) { toast(e.message, false); }
-        } })
-        : h("div", { class: "row" }, hours, h("button", { type: "button", text: "开始测试", onclick: async () => {
-          try { await api("POST", "/api/persona/test-mode", { on: true, hours: Number(hours.value) }); toast("测试模式已打开"); loaders.persona(); } catch (e) { toast(e.message, false); }
-        } }))));
-    $("#pl-templates").replaceChildren(testCard, ...d.templates.map((t) => {
+    renderWho(d);
+    renderTest(d);
+    const ownUsers = (d.used_by || {}).custom || [];
+    const switchTo = (t) => async () => {
+      const choice = await switchDialog(t, (d.records || {})[t.key]);
+      if (!choice) return;
+      if (choice.memory === "clear" && !(await confirmBox("确定清除她的全部记忆？她会忘记你和以前的一切（服务器上会保留一份备份文件）。"))) return;
+      try {
+        const r = await api("POST", "/api/persona/switch", { template: t.key, memory: choice.memory, name: choice.name, confirm: true });
+        toast(r.archive ? `已换主人设，她的记忆已清除（备份：${r.archive}）`
+          : r.records === "own" ? "已换主人设，她用自己的记录" : "已换主人设，记忆保留");
+        loaders.persona(); loadPersonaPicker();
+      } catch (e) { toast(e.message, false); }
+    };
+    // the persona in use first, then the rest in their order
+    const order = d.templates.slice().sort((a, b) => (((d.used_by || {})[b.key] || []).length > 0 || d.current.template === b.key) -
+      (((d.used_by || {})[a.key] || []).length > 0 || d.current.template === a.key));
+    const entries = order.map((t) => {
       const isMain = d.current.template === t.key;
       const users = (d.used_by || {})[t.key] || [];
-      return withPreview(h("div", { class: "card platform" + (users.length ? " current" : "") },
-        h("div", { class: "platform-head" }, h("strong", { text: t.title }),
-          users.length ? pill("正在使用", "ok") : isMain ? pill("主人设", "ok") : pill("模板", "")),
-        h("p", { class: "note platform-intro", text: t.summary }),
-        h("div", { class: "platform-body" },
-          // 0.7.55 (user: 导入时选了人设，人设页却看不出来，两边同步): which channels talk as her, wherever it was chosen
-          usedLine(users, isMain),
-          t.personality.length ? h("p", { class: "note", text: "性格：" + t.personality.slice(0, 2).join("；") }) : null),
-        h("div", { class: "row platform-foot" }, isMain ? h("span", { class: "note", text: d.current.switched_at ? `主人设 · ${when(d.current.switched_at)} 换上` : "主人设（默认）" })
-          : h("button", { type: "button", class: "ghost", text: "设为主人设", onclick: async () => {
-            const choice = await switchDialog(t, (d.records || {})[t.key]);
-            if (!choice) return;
-            if (choice.memory === "clear" && !(await confirmBox("确定清除她的全部记忆？她会忘记你和以前的一切（服务器上会保留一份备份文件）。"))) return;
-            try {
-              const r = await api("POST", "/api/persona/switch", { template: t.key, memory: choice.memory, name: choice.name, confirm: true });
-              toast(r.archive ? `已换主人设，她的记忆已清除（备份：${r.archive}）`
-                : r.records === "own" ? "已换主人设，她用自己的记录" : "已换主人设，记忆保留");
-              loaders.persona(); loadPersonaPicker();
-            } catch (e) { toast(e.message, false); }
-          } }))), t);
-    }), own);
+      return { t, isMain, users, title: t.title, summary: t.summary,
+        pills: [isMain ? pill("主人设", "ok") : users.length ? pill("正在使用", "ok") : null].filter(Boolean),
+        mainNote: isMain ? (d.current.switched_at ? `主人设 · ${when(d.current.switched_at)} 换上` : "主人设（默认）") : "",
+        action: isMain ? null : { label: "设为主人设", run: switchTo(t) } };
+    });
+    const customMain = d.current.template === "custom";
+    if (d.custom) entries.push({ t: d.custom, isMain: customMain, users: ownUsers, title: d.custom.name || "自定义人设",
+      summary: d.custom.summary || "你自己写的人设", pills: [customMain ? pill("主人设", "ok") : ownUsers.length ? pill("正在使用", "ok") : pill("自己写")],
+      action: { label: customMain ? "修改" : "修改并换回它", run: () => customDialog(d.custom) } });
+    const cards = entries.filter((e) => e.t !== d.custom).map((e, index) => openable(
+      h("div", { class: "card platform pt-small" + (e.users.length || e.isMain ? " current" : "") },
+        h("div", { class: "platform-head" }, h("strong", { text: e.title }), ...e.pills),
+        h("p", { class: "note pt-summary", text: e.summary }),
+        // 0.7.55 (user: 导入时选了人设，人设页却看不出来，两边同步): which channels talk as her, wherever it was chosen
+        usedLine(e.users, e.isMain),
+        h("div", { class: "row platform-foot" },
+          h("button", { type: "button", class: "ghost", text: "查看", onclick: () => personaDialog(entries, index) }),
+          e.action ? h("button", { type: "button", class: "ghost", text: e.action.label, onclick: e.action.run })
+            : h("span", { class: "note", text: e.mainNote }))), entries, index));
+    const own = h("div", { class: "card platform pt-small" + (ownUsers.length || customMain ? " current" : "") },
+      h("div", { class: "platform-head" }, h("strong", { text: d.custom ? d.custom.name || "自定义人设" : "自定义人设" }),
+        ownUsers.length ? pill("正在使用", "ok") : customMain ? pill("主人设", "ok") : pill("自己写", "")),
+      h("p", { class: "note pt-summary", text: d.custom ? (d.custom.summary || "你自己写的人设") : "名字、性格、说话方式、兴趣都自己写；从现在用的人设开始改。" }),
+      usedLine(ownUsers, customMain),
+      h("div", { class: "row platform-foot" },
+        d.custom ? h("button", { type: "button", class: "ghost", text: "查看", onclick: () => personaDialog(entries, entries.length - 1) }) : null,
+        h("button", { type: "button", class: "ghost",
+          text: customMain ? "修改" : (d.custom ? "修改并换回它" : "自己写一个"), onclick: () => customDialog(d.custom) })));
+    if (d.custom) openable(own, entries, entries.length - 1);
+    $("#pl-templates").replaceChildren(...cards, own);
   }
   function usedLine(users, isMain) {
     if (users.length) return h("p", { class: "note used-by", text: "在用：" + users.join("、") });
@@ -348,6 +410,8 @@
   }
 
   loaders.persona = async () => {
+    jumpNav($("#pl-jump"), [["谁在和你聊", "pl-who"], ["人设库", "pl-sec-templates"], ["测试模式", "pl-test"],
+      ["她的样子", "pl-look-box"], ["人设详情", "pl-core-box"], ["她的生活", "pl-life"]]);
     renderTemplates();
     renderLook();
     try {

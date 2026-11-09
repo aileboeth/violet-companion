@@ -25,7 +25,9 @@ TEMPLATE_DIR = PROJECT_ROOT / "persona" / "templates"
 # what "clear" empties, in this order (archived first)
 MEMORY_TABLES = ("core_memories", "event_memories", "memory_revisions", "commitments", "topic_mentions",
                  "user_profile_facts", "user_situations", "interaction_preferences", "preference_observations",
-                 "profile_questions", "persona_dynamic", "life_events", "life_plans", "life_threads", "life_revisions")
+                 "profile_questions", "persona_dynamic", "life_events", "life_plans", "life_threads", "life_revisions",
+                 # 2026-11-09: a memory job queued before the clear would write the old chat back afterwards
+                 "memory_jobs")
 
 
 def control_dir() -> Path:

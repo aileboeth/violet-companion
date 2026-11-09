@@ -79,6 +79,14 @@ def social_since(conversation_id: int | None = None) -> str | None:
     return _later(data.get("social"), one, test_mode.since())
 
 
+def owner_floor(at: str | None = None) -> str:
+    """2026-11-09 (user: 清除记忆 + 翻篇 后她还说"看到了聊天记录"): the later of ``at`` and the owner's cut, for SQL on
+    the owner's chat and on her own proactive messages ("created_at >= ?"); "" when there is neither. Everything the
+    model is told that is DERIVED from the message log (how long you have known each other, today's count, what she
+    already said today, the chat MemoryAgent reads, proactive reasons) starts here -- not only the chat lines."""
+    return _later(at, owner_since()) or ""
+
+
 def _after(rows: list[dict[str, Any]], since: str | None, key: str) -> list[dict[str, Any]]:
     if not since:
         return rows

@@ -84,12 +84,40 @@ def test_a_silent_connection_does_not_block_anyone_else(server):
             s.close()
 
 
-def test_plain_http_on_the_https_port_is_dropped_quietly(server):
-    with socket.create_connection(("127.0.0.1", server), timeout=5) as s:
-        s.sendall(b"GET /x HTTP/1.1\r\nHost: a\r\n\r\n")
+def _plain(port, raw):
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+        s.sendall(raw)
+        data = b""
         try:
-            data = s.recv(100)
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
         except (ConnectionResetError, socket.timeout):
-            data = b""
+            pass
+    return data
+
+
+def test_plain_http_on_the_https_port_is_sent_to_https(server):
+    """2026-11-09: http://host:port/... used to get a dropped connection; now 301 to https, same host and path.
+    The app never sees the plain request."""
+    data = _plain(server, f"GET /k3x9q2m7wz8a?next=/control HTTP/1.1\r\nHost: 203.0.113.5:{server}\r\n\r\n".encode())
+    assert data.startswith(b"HTTP/1.1 301")
+    assert f"Location: https://203.0.113.5:{server}/k3x9q2m7wz8a?next=/control\r\n".encode() in data
     assert b"scheme" not in data
+    # no port in Host (a proxy in front): ours is added
+    data = _plain(server, b"GET /x HTTP/1.1\r\nHost: violet.example.com\r\n\r\n")
+    assert f"Location: https://violet.example.com:{server}/x\r\n".encode() in data
+    assert _get(server)[0] == 200
+
+
+@pytest.mark.parametrize("raw", [b"GET /x HTTP/1.1\r\nHost: a b\r\n\r\n",              # a broken Host
+                                 b"GET /x\r\nfoo\r\n\r\n",                              # not HTTP/1.x
+                                 b"GET http://evil.example/ HTTP/1.1\r\nHost: a\r\n\r\n",  # not a path
+                                 b"GET /x HTTP/1.1\r\n\r\n",                            # no Host
+                                 b"GET /a\r\nb HTTP/1.1\r\nHost: a\r\n\r\n"])
+def test_a_plain_request_that_cannot_be_understood_gets_400(server, raw):
+    data = _plain(server, raw)
+    assert data.startswith(b"HTTP/1.1 400") and b"Location" not in data
     assert _get(server)[0] == 200

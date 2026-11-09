@@ -4,6 +4,7 @@
 "use strict";
 (() => {
   let showSecret = false;
+  let setupOpen = false;
 
   function valueRow(label, value, { secret = false, help = "" } = {}) {
     const shown = secret && !showSecret && value ? "•".repeat(Math.min(value.length, 24)) : (value || "—");
@@ -86,7 +87,10 @@
     const server = d.server;
     const token = h("input", { type: "password", maxlength: 600, autocomplete: "off", placeholder: server && server.token_set ? "已设置，粘贴新的访问令牌可以替换" : "粘贴手机上复制的访问令牌" });
     const result = h("p", { class: "note" });
-    box.replaceChildren(head, intro,
+    // 2026-11-09 UI pass: once the phone's tools are connected, the three setup steps fold away (one line to open
+    // them again) and the tool list comes first
+    const done = server && server.status === "connected";
+    const steps = [
       step(1, "在手机上安装 Violet MCP",
         h("p", { class: "note" }, "从 ", h("a", { href: d.app_url, target: "_blank", rel: "noopener", text: "GitHub 发布页" }),
           " 下载 APK 安装。打开后在“设置 → 权限”里允许“使用情况访问权限”。")),
@@ -115,8 +119,15 @@
             loaders.tools();
           } catch (e) { result.textContent = "失败：" + e.message; }
         } })), result,
-        server ? h("p", { class: "note", text: `手机工具：${server.status === "connected" ? "已连接" : "未连接"}，${server.tools} 个工具。` }) : null,
-        h("div", { id: "phone-tools" })));
+        server && !done ? h("p", { class: "note", text: `手机工具：未连接，${server.tools} 个工具。` }) : null)];
+    if (done) {
+      const fold = h("details", { class: "sub-box", open: setupOpen ? true : null },
+        h("summary", { text: "连接设置（第 1–3 步：安装 App、中继的三项、访问令牌、换端口）" }), ...steps);
+      fold.addEventListener("toggle", () => { setupOpen = fold.open; });
+      box.replaceChildren(head, intro, h("div", { id: "phone-tools" }), fold);
+    } else {
+      box.replaceChildren(head, intro, ...steps, h("div", { id: "phone-tools" }));
+    }
     window.renderPhoneTools();
   }
 

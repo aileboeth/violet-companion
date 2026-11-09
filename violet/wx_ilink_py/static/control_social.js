@@ -126,7 +126,7 @@
     let d;
     try { d = await api("GET", "/api/control/social"); } catch (e) { root.replaceChildren(h("p", { class: "err", text: e.message })); return; }
     modes = d.modes;
-    const people = h("div", { class: "stack people" }), qzone = h("div", { class: "stack" });
+    const people = h("div", { class: "stack people" }), qzone = h("div", { class: "stack qzone-box" });
     const groups = [...d.groups].sort((a, b) => (b.mode !== "off") - (a.mode !== "off") || String(a.title).localeCompare(String(b.title)));
     const PRIV = { off: "不理", known: "只回群里认识的人", all: "谁都回" };
     root.replaceChildren(h("div", { class: "set-group social" },

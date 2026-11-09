@@ -336,8 +336,8 @@ def _mcp_findings() -> list[dict[str, Any]]:
             elif d.get("action") == "check":
                 fix = {"action": "check_mcp", "target": s["name"]}
             level = {"error": "error", "warn": "warn"}.get(d["level"], "info")
-            suggestion = "在“工具”页处理：" + {"tools_unclassified": "逐个选择只读 / 写入 / 高风险 / 拒绝",
-                                             "tools_need_second_key": "确认后单独授权",
+            suggestion = "在“工具”页处理：" + {"tools_unclassified": "给每个工具选“直接用 / 先问你 / 不给她用”",
+                                             "tools_need_second_key": "需要时点“允许直接用”",
                                              "no_agent": "勾选要使用它的 Agent"}.get(d["code"], "按提示操作")
             out.append(_finding("mcp", kind, level, f"MCP {s['name']}：{d['message']}", suggestion, fix))
     return out

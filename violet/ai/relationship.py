@@ -57,8 +57,10 @@ class RelationshipView:
 
 
 def assess(db, now: datetime | None = None) -> RelationshipView:
+    from ai import context_cut
     now = now or parse_time(db.now())
-    rows = [r for r in db.fetch_all("SELECT role, content, created_at FROM messages ORDER BY created_at, id")
+    # 2026-11-09: after 翻篇 how close you are is judged from the chat since then
+    rows = [r for r in context_cut.owner_rows(db.fetch_all("SELECT role, content, created_at FROM messages ORDER BY created_at, id"))
             if r.get("created_at") and parse_time(r["created_at"]) <= now]
     user = [r for r in rows if r["role"] == "user"]
     if not user:

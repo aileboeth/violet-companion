@@ -124,7 +124,10 @@
   function peersDetails(ch) {
     const box = h("div", { class: "stack" });
     return h("details", { ontoggle: (ev) => { if (ev.target.open) loadPeers(ch, box); } },
-      h("summary", { text: `联系人（主人 ${ch.peers.bound}` + (ch.peers.admin ? ` · 管理员 ${ch.peers.admin}` : "") + ` · 待批准 ${ch.peers.pending} · 已屏蔽 ${ch.peers.blocked}）` }), box);
+      // whole sentences (not "a" + optional "b"), so the page's dictionary finds them
+      h("summary", { text: ch.peers.admin
+        ? `联系人（主人 ${ch.peers.bound} · 管理员 ${ch.peers.admin} · 待批准 ${ch.peers.pending} · 已屏蔽 ${ch.peers.blocked}）`
+        : `联系人（主人 ${ch.peers.bound} · 待批准 ${ch.peers.pending} · 已屏蔽 ${ch.peers.blocked}）` }), box);
   }
 
   // the settings of a channel in use: hidden behind "修改配置"
@@ -423,9 +426,12 @@
     if (!login.logged_in) {
       setIntro(card, false);
       setHead(card, login.desktop ? "等待扫码" : "正在启动", "warn");
+      // 2026-11-09 UI pass: while waiting for the scan the QQ card takes the whole row (window left, text right), so
+      // the other cards in the row are not stretched to its height with an empty middle
+      card.classList.add("platform-wide");
       if (!body.dataset.window) {            // the picture stays; only the state is polled
         body.dataset.window = "1";
-        const holder = h("div", { class: "stack" });
+        const holder = h("div", { class: "stack qq-scan" });
         body.replaceChildren(step(1, "用手机 QQ 扫 QQ 窗口里的二维码", holder,
           h("p", { class: "note", text: "用要给 Violet 用的 QQ 号（建议小号）扫码，并在手机上确认。QQ 刚启动时要等几十秒才有窗口。" })));
         qqView = qqWindow(holder);
@@ -435,6 +441,7 @@
       return;
     }
     body.dataset.window = "";
+    card.classList.remove("platform-wide");
     if (!s.channel) { loaders.channels(); return; }        // logged in just now: the channel was created
     ch = s.channel;
     setIntro(card, false);

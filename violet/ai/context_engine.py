@@ -389,10 +389,12 @@ class ContextEngine:
             return False
 
     def _relationship_section(self) -> _Section:
-        """How long the two of you have been talking, from the message log -- so closeness has a basis."""
+        """How long the two of you have been talking, from the message log -- so closeness has a basis. After 翻篇 it
+        counts from the cut (2026-11-09: "第一次聊天在 00:28（16 小时前）" after 清除记忆 + 翻篇 at 13:20)."""
+        from ai import context_cut
         row = self.db.fetch_one(
             "SELECT MIN(created_at) AS first, COUNT(DISTINCT substr(created_at, 1, 10)) AS days "
-            "FROM messages WHERE role = 'user'")
+            "FROM messages WHERE role = 'user' AND created_at >= ?", (context_cut.owner_floor(),))
         if not row or not row["first"]:
             return _Section("relationship", 3, "【你们的相处】", ["- 这是你们第一次聊天"])
         from ai.memory_model import parse_time
@@ -643,7 +645,9 @@ class ContextEngine:
         day = now.date().isoformat()
         since = (now - timedelta(hours=24)).isoformat(timespec="seconds")
         try:
-            talk = self.db.fetch_one("SELECT COUNT(*) AS n FROM messages WHERE created_at >= ?", (day,))["n"]
+            from ai import context_cut
+            talk = self.db.fetch_one("SELECT COUNT(*) AS n FROM messages WHERE created_at >= ?",
+                                     (context_cut.owner_floor(day),))["n"]       # 翻篇: from the cut
             if talk:
                 lines.append(f"- 今天你和主人一共聊了 {talk} 条消息")
             for r in self.db.fetch_all("SELECT c.title, c.peer_id, c.kind, COUNT(*) AS n FROM social_messages m JOIN "
@@ -795,11 +799,13 @@ class ContextEngine:
     def _hours_waited(self) -> float | None:
         """Phase 8.9.10: hours since the FIRST message Violet sent on her own after the user's latest message (None if
         she sent none) -- how long she has been waiting for this answer."""
+        from ai import context_cut
         from ai.memory_model import parse_time
         last_user = self.db.get_latest_message_at(role="user")
         try:
             row = self.db.fetch_one("SELECT MIN(created_at) AS at FROM proactive_events WHERE status = 'sent' "
-                                    "AND event_type != 'commitment_reminder' AND created_at > ?", (last_user or "",))
+                                    "AND event_type != 'commitment_reminder' AND created_at > ?",
+                                    (context_cut.owner_floor(last_user),))
         except Exception:
             return None
         if not row or not row["at"]:
@@ -810,11 +816,12 @@ class ContextEngine:
         """Phase 8.9.13: when Violet wrote on her own TWICE since the user's latest message, the second one is where she
         told them she was waiting (the only reason to write again unanswered, 8.9.10) -- its text, else None."""
         import json
+        from ai import context_cut
         last_user = self.db.get_latest_message_at(role="user")
         try:
             rows = self.db.fetch_all("SELECT sent_messages FROM proactive_events WHERE status = 'sent' "
                                      "AND event_type != 'commitment_reminder' AND created_at > ? ORDER BY id",
-                                     (last_user or "",))
+                                     (context_cut.owner_floor(last_user),))
         except Exception:
             return None
         if len(rows) < 2:
@@ -828,10 +835,12 @@ class ContextEngine:
     def _answers_proactive(self) -> bool:
         """Phase 8.9.9: Violet sent a message on her own after the user's latest message (the one being answered is not
         in the log yet)."""
+        from ai import context_cut
         from ai.memory_model import parse_time
         try:
             row = self.db.fetch_one("SELECT MAX(created_at) AS at FROM proactive_events WHERE status = 'sent' "
-                                    "AND event_type != 'commitment_reminder'")
+                                    "AND event_type != 'commitment_reminder' AND created_at >= ?",
+                                    (context_cut.owner_floor(),))
         except Exception:
             return False
         last_user = self.db.get_latest_message_at(role="user")
@@ -1145,11 +1154,13 @@ class ContextEngine:
         return ContextPacket([txt for _, txt in rendered], history, report, turn_note=None)
 
     def _eve_replies_today(self) -> list[str]:
-        """Phase 8.9.4: everything Violet said since local midnight (care is counted per day, not per conversation)."""
+        """Phase 8.9.4: everything Violet said since local midnight (care is counted per day, not per conversation) --
+        and since 翻篇 (2026-11-09: "今天你已经叮嘱过对方……（比如“早点睡”）" from 01:26, before the cut at 13:20)."""
+        from ai import context_cut
         from ai.memory_model import parse_time
         now = parse_time(self.db.now())
         midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        rows = self.db.fetch_all("SELECT role, content, created_at FROM messages ORDER BY id DESC LIMIT 200")
+        rows = context_cut.owner_rows(self.db.fetch_all("SELECT role, content, created_at FROM messages ORDER BY id DESC LIMIT 200"))
         return [r["content"] or "" for r in reversed(rows)
                 if r["role"] != "user" and r.get("created_at") and midnight <= parse_time(r["created_at"]) <= now]
 

@@ -638,8 +638,9 @@ class ProactiveScheduler:
             plans = LifeStore(violetdb).plans(["planned", "active"])
             # phase 8.9.5: a plan of hers that came up in the chats of the last two days can be picked up again
             since = current - timedelta(days=2)
-            recent_text = [r["content"] or "" for r in violetdb.fetch_all(
-                "SELECT content, created_at FROM messages ORDER BY id DESC LIMIT 120")
+            from ai import context_cut                    # 2026-11-09: not from before 翻篇
+            recent_text = [r["content"] or "" for r in context_cut.owner_rows(violetdb.fetch_all(
+                "SELECT content, created_at FROM messages ORDER BY id DESC LIMIT 120"))
                 if r["created_at"] and parse_time(r["created_at"]) >= since]
             talked = {p["id"] for p in plans if any(mentions_life(t, p["content"]) for t in recent_text)}
             motives = proactive_motives(view, None if minutes is None else minutes / 60, state.get("cold_streak", 0),
@@ -682,7 +683,8 @@ class ProactiveScheduler:
         from ai.relationship import PLAYFUL_RE, is_warm
         if self._unanswered_proactive(current):
             return None
-        rows = violetdb.fetch_all("SELECT role, content, created_at FROM messages ORDER BY id DESC LIMIT 60")
+        from ai import context_cut                        # 2026-11-09: not from before 翻篇
+        rows = context_cut.owner_rows(violetdb.fetch_all("SELECT role, content, created_at FROM messages ORDER BY id DESC LIMIT 60"))
         talk, previous = [], None
         for row in rows:                                  # newest first, back to the start of that conversation
             at = parse_time(row["created_at"]) if row.get("created_at") else None
@@ -702,7 +704,8 @@ class ProactiveScheduler:
         """Phase 8.9.10: the messages Violet sent on her own since the user's latest message (reminders aside), oldest
         first: {"at": "HH:MM", "hours": hours ago rounded for wording, "elapsed_hours": the exact hours}. Gates use
         elapsed_hours (phase 9.1.1: 5 h 57 min rounded to 6.0 and passed a 6-hour gate)."""
-        last_user = violetdb.get_latest_message_at(role="user")
+        from ai import context_cut
+        last_user = context_cut.owner_floor(violetdb.get_latest_message_at(role="user"))    # 2026-11-09: or 翻篇
         last_user_at = parse_time(last_user) if last_user else None
         out = []
         for row in violetdb.fetch_all("SELECT created_at FROM proactive_events WHERE status = 'sent' AND event_type != ? "
@@ -719,7 +722,8 @@ class ProactiveScheduler:
         brought up after the user's latest message -- unless a happened life event about the plan came after it."""
         from ai.daily_life import mentions_life
         from ai.life_store import LifeStore
-        last_user = violetdb.get_latest_message_at(role="user")
+        from ai import context_cut
+        last_user = context_cut.owner_floor(violetdb.get_latest_message_at(role="user"))    # 2026-11-09: or 翻篇
         last_user_at = parse_time(last_user) if last_user else None
         raised: dict[int, datetime] = {}
         for row in violetdb.fetch_all(
@@ -751,7 +755,11 @@ class ProactiveScheduler:
     def _recent_proactive(self, current: datetime) -> tuple[list[dict[str, Any]], str | None]:
         """Phase 8.9.5: what Violet sent on her own lately (3 days), and -- when she keeps ending on a check-in question
         ("今天过得怎么样？", "吃得怎么样呀？", "准备怎么过呀？") -- a note to do it differently this time."""
+        from ai import context_cut
         since = current - timedelta(days=3)
+        cut = context_cut.owner_floor()                   # 2026-11-09: "昨晚聊到快两点" (08:12) is from before 翻篇
+        if cut:
+            since = max(since, parse_time(cut))
         recent = []
         for row in violetdb.fetch_all(
                 "SELECT created_at, sent_messages FROM proactive_events WHERE status = 'sent' AND event_type != ? "

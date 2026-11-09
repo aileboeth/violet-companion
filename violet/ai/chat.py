@@ -99,8 +99,10 @@ class LLMConfig:
 # ---------------------------------------------------------------------------
 
 def format_recent_messages(limit: int = 30) -> str:
-    """Build a compact recent-message context block from SQLite."""
-    rows = violetdb.get_recent_messages(limit=limit)
+    """Build a compact recent-message context block from SQLite (MemoryAgent's reference: after 翻篇 only the chat
+    since then -- 2026-11-09, the old "我今晚通宵" was there to be remembered again after 清除记忆 + 翻篇)."""
+    from ai import context_cut
+    rows = context_cut.owner_rows(violetdb.get_recent_messages(limit=limit))
     if not rows:
         return "最近聊天记录：无"
 

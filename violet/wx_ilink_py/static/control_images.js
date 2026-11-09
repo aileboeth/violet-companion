@@ -182,8 +182,9 @@
       const [st, s] = await Promise.all([api("GET", "/api/images/panel"), api("GET", "/api/control/settings"),
         !models.length && !fetchNote ? fetchModels(null) : null]);
       const byKey = (k) => (s.settings || []).find((x) => x.key === k);
-      root.replaceChildren(switchCard(st), visionCard(st, s.settings), genCard(st, byKey), galleryCard(st.assets || []),
-        moreCard(s.settings || []));
+      // 2026-11-09 UI pass: the image settings stay together (更多设置 right after 画图), then the pictures
+      root.replaceChildren(switchCard(st), visionCard(st, s.settings), genCard(st, byKey), moreCard(s.settings || []),
+        galleryCard(st.assets || []));
     } catch (e) { root.replaceChildren(h("p", { class: "err", text: e.message })); }
   }
 

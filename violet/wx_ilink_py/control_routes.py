@@ -134,7 +134,16 @@ def register_control_routes(app: Flask, violetdb, client=None, proactive_schedul
     # ------------------------------------------------------------------ page
     @app.get("/control")
     def control_page() -> str:
-        return _inline_stylesheet(render_template("control.html"), app.static_folder)
+        from wx_ilink_py import i18n                   # 2026-11-09: the page in the admin's language
+        lang = i18n.pick(request)
+        return _inline_stylesheet(render_template("control.html", lang=lang, translated=lang != i18n.SOURCE),
+                                  app.static_folder)
+
+    @app.get("/control/i18n.js")
+    def control_i18n_script():
+        from wx_ilink_py import i18n
+        lang = i18n.normalize(request.args.get("lang")) or i18n.pick(request)
+        return app.response_class(i18n.script(lang), mimetype="application/javascript")
 
     # ------------------------------------------------------------------ overview
     @app.get("/api/control/overview")

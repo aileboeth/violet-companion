@@ -15,7 +15,8 @@
   const ROLE = { system: "规则 / 资料", user: "对方 / 提示", assistant: "她", tool: "工具结果" };
   const state = { runs: [], selected: null, node: null, timer: null, detail: null, listSig: "", runSig: "" };
 
-  const secs = (a, b) => (a && b ? ((b - a) < 1 ? Math.round((b - a) * 1000) + " 毫秒" : (b - a).toFixed(1) + " 秒") : "");
+  const secs = (a, b) => (a && b ? ((b - a) < 1 ? `${Math.round((b - a) * 1000)} 毫秒` : `${(b - a).toFixed(1)} 秒`) : "");
+  const chars = (n) => `${n} 字`;                     // its own key, so "· 15 字 ·" is found between the other parts
   const clock = (t) => (t ? new Date(t * 1000).toLocaleTimeString() : "—");
 
   async function refresh() {
@@ -99,7 +100,7 @@
     const head = h("div", { class: "row" },
       h("h3", { text: TYPE[run.pipeline_type] || run.pipeline_type }),
       run.running ? pill("进行中", "warn") : run.error ? pill("出错", "bad") : pill("完成", "ok"),
-      h("span", { class: "note", text: `${clock(run.started_at)}${run.finished_at ? " · 用时 " + secs(run.started_at, run.finished_at) : ""}` +
+      h("span", { class: "note", text: clock(run.started_at) + (run.finished_at ? ` · 用时 ${secs(run.started_at, run.finished_at)}` : "") +
         (run.turn_id ? ` · 对话编号 ${run.turn_id}` : "") }));
     keepView(box, () => box.replaceChildren(...[head, h("p", { class: "flow-trigger", text: (run.title ? run.title + " · " : "") + (run.trigger || "") }),
       run.error ? h("p", { class: "err", text: run.error }) : null, steps, nodeDetail(run, state.node)].filter(Boolean)));  // replaceChildren prints "null"
@@ -141,7 +142,7 @@
       ...messages.map((m, i) => {
         const calls = (m.tool_calls || []).map((c) => `调用 ${(c.function || {}).name || "?"}(${(c.function || {}).arguments || ""})`).join("\n");
         const text = [m.content, calls].filter(Boolean).join("\n");
-        const one = h("details", {}, h("summary", { text: `${ROLE[m.role] || m.role} · ${String(text).length} 字 · ${String(text).slice(0, 40).replace(/\s+/g, " ")}` }),
+        const one = h("details", {}, h("summary", { text: `${ROLE[m.role] || m.role} · ${chars(String(text).length)} · ${String(text).slice(0, 40).replace(/\s+/g, " ")}` }),
           h("pre", { class: "prompt-part", text: text || "（空）" }));
         one.dataset.key = key + ":" + i;
         return one;

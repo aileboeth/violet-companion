@@ -192,9 +192,10 @@ REPLY_WITHIN = timedelta(hours=3)
 
 
 def earlier_messages(db, before: datetime, limit: int = 300) -> list[dict[str, Any]]:
-    """Messages before ``before`` (oldest first) as {'at', 'role', 'text'}."""
-    rows = db.fetch_all("SELECT role, content, created_at FROM messages ORDER BY created_at DESC, id DESC LIMIT ?",
-                        (limit,))
+    """Messages before ``before`` (oldest first) as {'at', 'role', 'text'} -- after 翻篇 only those since then."""
+    from ai import context_cut
+    rows = context_cut.owner_rows(db.fetch_all(
+        "SELECT role, content, created_at FROM messages ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)))
     out = [{"at": parse_time(r["created_at"]), "role": r["role"], "text": r["content"] or ""}
            for r in reversed(rows) if r.get("created_at")]       # phase 8.9.8: equal times keep the order they were sent in
     return sorted((m for m in out if m["at"] < before), key=lambda m: m["at"])

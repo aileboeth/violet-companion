@@ -46,14 +46,31 @@ CREATE TABLE IF NOT EXISTS approvals (
 LEVELS = {"self": "自己做", "ask": "先问你", "forbid": "不允许"}
 ABILITIES = {
     "qzone_post": ("自己发 QQ 动态", "她觉得想发时就发（还要打开“发 QQ 动态”）。先问你：她会私聊你要发的内容，你同意才发。", "self"),
-    "risky_tools": ("会改动东西的工具", "手机上的操作这类“写入 / 高风险”的工具（工具页里单独放行的那些照常直接用）。"
-                    "先问你：这些工具她都能用，但每次调用都要你同意；不允许：只有单独放行的能用。", "ask"),
+    # 2026-11-09 (user asked whether "写入" lets her change his phone): the phone app has no such tools -- this is
+    # about MCP servers added by hand. "自己做" was offered but behaved like "不允许" (only ask turns a tool on), so
+    # the choice is now 先问你 / 不允许; per tool, "允许直接用" on the tools page is the way to skip asking.
+    "risky_tools": ("会改动东西的工具", "你自己加的 MCP 服务器里会改动东西的工具（工具页选了“先问你”的那些；手机 App 的工具都只能查看，不在此列）。"
+                    "先问你：她能用，但每次都要你同意；不允许：不给她用。点了“允许直接用”的工具不受这里影响，照常直接用。", "ask"),
     # 2026-10-30 (user: 让她有同意加好友的能力，不过默认是要经我同意); only the owner answers, not an admin
     "friend_add": ("同意 QQ 加好友", "有人加她的 QQ 好友时。先问你：她私聊你是谁、验证消息是什么，你回复“同意 N”才加；"
                    "自己做：直接同意，再告诉你；不允许：不理会。", "ask"),
 }
+# the levels an ability can have (default: all three); a saved level outside them reads as the one it behaved like
+CHOICES = {"risky_tools": ("ask", "forbid")}
+BEHAVED_AS = {"risky_tools": {"self": "forbid"}}
 EXPIRE_HOURS = 24
-COMMAND_RE = re.compile(r"^\s*(同意|批准|可以|好的?|不同意|拒绝|不要|不行|算了)\s*#?(\d{1,6})\s*$")
+# 2026-11-09 (Control Center in 9 languages): the owner may answer in any of them -- "agree 3", "承認 3", "нет 3" ...
+# The number must still be an existing approval (violet_runtime._answer_approval), so a plain "yes 3" stays chat.
+APPROVE_WORDS = ("同意", "批准", "可以", "好", "好的", "准", "agree", "approve", "yes", "ok", "okay", "y", "承認", "はい",
+                 "了解", "いいよ", "동의", "승인", "네", "좋아", "acepto", "aceptar", "sí", "si", "vale", "de acuerdo",
+                 "accepter", "accepte", "j'accepte", "oui", "d'accord", "zustimmen", "einverstanden", "genehmigen", "ja",
+                 "да", "согласен", "согласна", "одобряю", "ок", "aceito", "concordo", "aprovar", "aprovo", "sim")
+DENY_WORDS = ("不同意", "拒绝", "拒絕", "不要", "不行", "算了", "disagree", "deny", "decline", "reject", "no", "n", "拒否",
+              "不承認", "いいえ", "だめ", "ダメ", "거절", "거부", "반대", "아니요", "아니", "rechazar", "rechazo",
+              "refuser", "refuse", "je refuse", "non", "ablehnen", "nein", "нет", "отказ", "отклонить", "не согласен",
+              "не согласна", "recusar", "recuso", "discordo", "não", "nao")
+COMMAND_RE = re.compile(r"^\s*(" + "|".join(re.escape(w) for w in sorted(APPROVE_WORDS + DENY_WORDS, key=len, reverse=True))
+                        + r")\s*[#＃№]?\s*(\d{1,6})\s*[.!。！]?\s*$", re.IGNORECASE)
 _HANDLERS: dict[str, Callable[[Any, dict[str, Any]], str]] = {}
 HANDLER_MODULES = {"qzone_post": "ai.social.qzone", "friend_add": "ai.channels.snowluma"}
 _RUNTIME: dict[str, Any] = {}
@@ -69,15 +86,23 @@ def levels() -> dict[str, str]:
         data = json.loads(_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         data = {}
-    return {key: data.get(key) if data.get(key) in LEVELS else default for key, (_, _, default) in ABILITIES.items()}
+    out = {}
+    for key, (_, _, default) in ABILITIES.items():
+        value = data.get(key) if data.get(key) in LEVELS else default
+        out[key] = BEHAVED_AS.get(key, {}).get(value, value)
+    return out
 
 
 def level(ability: str) -> str:
     return levels().get(ability, "forbid")
 
 
+def choices(ability: str) -> tuple[str, ...]:
+    return CHOICES.get(ability, tuple(LEVELS))
+
+
 def set_level(ability: str, value: str) -> dict[str, str]:
-    if ability not in ABILITIES or value not in LEVELS:
+    if ability not in ABILITIES or value not in choices(ability):
         raise ValueError("没有这项能力或这个级别")
     data = levels()
     data[ability] = value
@@ -91,7 +116,7 @@ def set_level(ability: str, value: str) -> dict[str, str]:
 
 def describe() -> list[dict[str, Any]]:
     current = levels()
-    return [{"key": k, "label": label, "help": help_text, "level": current[k], "default": default}
+    return [{"key": k, "label": label, "help": help_text, "level": current[k], "default": default, "choices": list(choices(k))}
             for k, (label, help_text, default) in ABILITIES.items()]
 
 
@@ -187,10 +212,10 @@ def decide(db, number: int, approve: bool, tell: bool = False) -> dict[str, Any]
 
 def owner_command(text: str) -> tuple[bool, int] | None:
     """"同意 3" -> (True, 3); "不同意 3" -> (False, 3); anything else -> None."""
-    match = COMMAND_RE.match(text or "")
+    match = COMMAND_RE.match((text or "").replace("’", "'"))
     if not match:
         return None
-    return match.group(1) in ("同意", "批准", "可以", "好", "好的"), int(match.group(2))
+    return match.group(1).lower() in APPROVE_WORDS, int(match.group(2))
 
 
 # ------------------------------------------------------------------------------------------------ risky tools

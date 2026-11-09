@@ -9,6 +9,9 @@ function h(tag, attrs, ...children) {
     if (k === "class") el.className = v;
     else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
     else if (k === "text") el.textContent = v;
+    // 2026-11-09: a link or picture address that came from outside (a channel, a release, a page) is used only when
+    // it is http(s), a path on this site, a data: picture or a blob: -- never javascript: and the like
+    else if ((k === "href" || k === "src") && !/^(https?:|\/(?!\/)|#|data:image\/|blob:)/i.test(String(v).trim())) continue;
     else el.setAttribute(k, v === true ? "" : String(v));
   }
   for (const c of children.flat()) if (c !== null && c !== undefined) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
@@ -105,6 +108,8 @@ function scrollToAnchor(id, tries = 25) {
   const el = document.getElementById(id);
   const panel = el && el.closest(".set-panel[hidden]");          // 2026-11-02: a settings tab not shown yet
   if (panel) showSettingsPanel(panel.id.slice("set-p-".length));
+  const group = el && el.closest("#set-p-general .set-group");   // 2026-11-09: one settings category at a time
+  if (group && group.hidden) showSettingsCategory(group.id);
   if (!el || !el.offsetParent) { if (tries > 0) setTimeout(() => scrollToAnchor(id, tries - 1), 120); return; }
   if (el.tagName === "DETAILS") el.open = true;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -405,7 +410,7 @@ async function loadChat(append) {
           !owner && !mine && m.sender_id ? h("span", { class: "note", text: m.sender_id }) : null,
           m.message_type && m.message_type !== "text" ? h("span", { text: "[" + m.message_type + "]" }) : null,
           m.mentions_self ? h("span", { class: "note", text: "@她" }) : null),
-        h("div", { text: m.content || "" })));
+        h("div", { text: m.content || "", translate: "no" })));          // chat text: never translated
     }
     if (append) list.prepend(...nodes); else list.replaceChildren(...(nodes.length ? nodes : [h("p", { class: "note", text: "没有符合条件的消息" })]));
     hist.before = d.next_before_id ?? null; $("#chat-more").hidden = hist.before === null;
@@ -556,7 +561,7 @@ function memoryCard(kind, m) {
   if (m.confirmed_by_user) facts.push("用户已确认");
   for (const c of m.pending_conflicts || []) facts.push(`待确认：“${c.old}”已被纠正为“${c.new}”`);
   return h("div", { class: "card" },
-    h("div", {}, marked(m.content, memQuery())),
+    h("div", { translate: "no" }, marked(m.content, memQuery())),
     h("div", { class: "badges" }, ...facts.filter(Boolean).map((f) => pill(f)), pill(`更新 ${when(m.updated_at)}`), pill(`修改记录 ${m.revisions}`)),
     h("div", { class: "row", style: "justify-content:flex-end;margin-top:6px" },
       h("button", { class: "ghost", onclick: () => editMemory(kind, m), text: "查看 / 纠正" }),
@@ -617,7 +622,7 @@ function fillWebServer() {
   if (slot) slot.replaceChildren(...(window.webToolServer ? [toolServerCard(window.webToolServer, "联网工具的开关和授权")] : []));
 }
 function renderTools(servers) {
-  $("#tools-updated").textContent = "更新于 " + new Date().toLocaleTimeString();
+  $("#tools-updated").textContent = `更新于 ${new Date().toLocaleTimeString()}`;
   const phone = servers.find((s) => s.name === PHONE_SERVER);
   window.webToolServer = servers.find((s) => s.name === WEB_SERVER) || null;
   fillWebServer();
@@ -626,9 +631,9 @@ function renderTools(servers) {
   if (window.renderPhoneTools) window.renderPhoneTools();
   $("#tools-list").replaceChildren(...(others.length ? others.map((s) => {
     const el = toolServerCard(s); el.id = "tool-srv-" + s.name; return el;
-  }) : [h("p", { class: "note", text: "没有配置其他 MCP 服务器" })]));
-  jumpNav($("#tools-jump"), [["手机", "phone-mcp"], ["联网工具", "tools-web"],
-    ...others.map((s) => [s.name, "tool-srv-" + s.name]), ["添加服务器", "mcp-add-box"]]);
+  }) : [h("p", { class: "note", text: "还没有添加其他 MCP 服务器。" })]));
+  jumpNav($("#tools-jump"), [["手机", "phone-mcp"], ["联网工具", "tools-web"], ["语音", "tools-voice"],
+    ["其他 MCP 服务器", "tools-mcp"], ["添加服务器", "mcp-add-box"]]);
 }
 function toolServerCard(s, title = s.name) {
   const facts = [`状态 ${TOOL_STATUS[s.status] || s.status}`, `传输 ${s.transport}`, s.url ? `地址 ${s.url}` : null, s.command,
@@ -664,7 +669,8 @@ function renderWeb(web) {
   if (!web) { box.replaceChildren(); return; }
   const cred = web.credential.source ? `已设置（${web.credential.source === "dashboard" ? "后台替换" : ".env"}，指纹 ${web.credential.fingerprint}）` : "未设置";
   const facts = [`联网 ${web.enabled ? "已开启" : "未开启（.env 的 VIOLET_WEB_ENABLED）"}`, `搜索服务 ${web.provider}`,
-    `搜索 ${web.search_configured ? "可用" : "未配置"}${web.search_problem ? `（${web.search_problem}）` : ""}`, `凭据 ${cred}`,
+    web.search_problem ? `搜索 ${web.search_configured ? "可用" : "未配置"}（${web.search_problem}）` : `搜索 ${web.search_configured ? "可用" : "未配置"}`,
+    `凭据 ${cred}`,
     `搜索工具 ${web.search_tool ? "开" : "关"} / 网页阅读 ${web.fetch_tool ? "开" : "关"}`,
     `今天 搜索 ${web.used_today.search} 次 · 读网页 ${web.used_today.fetch} 次`];
   const settings = Object.entries(web.settings).map(([k, v]) => h("label", { class: "row" },
@@ -884,7 +890,7 @@ $("#mem-next").addEventListener("click", () => { memOffset += MEM_PAGE; loadMemo
 
 // ---------------------------------------------------------------- settings
 const pending = {}; const SOURCE = { dashboard: "后台设置", env: ".env", default: "代码默认", file: "配置文件", unset: "未设置" };
-const SETTINGS_PAGE = { pending, changed: () => { $("#set-save").disabled = false; } };
+const SETTINGS_PAGE = { pending, changed: () => { $("#set-save").disabled = false; markCategoryChanged(); } };
 // ctx: where the change is collected (the settings page, or another page with its own save button)
 function settingInput(s, ctx = SETTINGS_PAGE) {
   const pending = ctx.pending;
@@ -938,6 +944,49 @@ function settingGroup(d, g) {
   return h("div", { class: "set-group", id: "set-g-" + g }, h("h3", { text: d.groups[g] }), ...rows.map((s) => settingInput(s)),
     more.length && rows.length ? h("div", { class: "set-more", text: "不常改的" }) : null, ...more.map((s) => settingInput(s)));
 }
+// 2026-11-09 UI pass (the general tab was ~10000 px of every category at once): a list of categories on the left and
+// ONE category on the right; a search box shows the matching settings of every category instead. Changes in a
+// category not shown are kept (the inputs stay in the page) and saved with the others; each category with unsaved
+// changes gets a dot.
+let setCategory = "set-g-permissions";
+function settingsCategories(items) {
+  const nav = $("#set-jump");
+  nav.className = "set-cats";
+  const search = h("input", { type: "search", class: "set-search", placeholder: "搜索设置…", "aria-label": "搜索设置" });
+  search.addEventListener("input", () => filterSettings(search.value));
+  nav.replaceChildren(search, ...items.map(([label, id]) =>
+    h("button", { type: "button", "data-cat": id, text: label, onclick: () => { search.value = ""; showSettingsCategory(id); } })));
+  if (!items.some(([, id]) => id === setCategory)) setCategory = items[0][1];
+  showSettingsCategory(setCategory);
+}
+function showSettingsCategory(id) {
+  setCategory = id;
+  document.querySelectorAll("#set-p-general .set-group").forEach((g) => { g.hidden = g.id !== id; });
+  document.querySelectorAll("#set-p-general .set-row, #set-p-general .set-more").forEach((r) => { r.hidden = false; });
+  document.querySelectorAll("#set-jump [data-cat]").forEach((b) => b.classList.toggle("active", b.dataset.cat === id));
+  const empty = $("#set-search-empty"); if (empty) empty.remove();
+}
+function filterSettings(text) {
+  const q = text.trim().toLowerCase();
+  if (!q) { showSettingsCategory(setCategory); return; }
+  let hits = 0;
+  document.querySelectorAll("#set-p-general .set-group").forEach((g) => {
+    if (g.id === "set-g-permissions") { g.hidden = !g.textContent.toLowerCase().includes(q); hits += g.hidden ? 0 : 1; return; }
+    let any = false;
+    g.querySelectorAll(".set-more").forEach((m) => { m.hidden = true; });
+    g.querySelectorAll(".set-row").forEach((r) => { const ok = r.textContent.toLowerCase().includes(q); r.hidden = !ok; any = any || ok; });
+    g.hidden = !any; if (any) hits++;
+  });
+  document.querySelectorAll("#set-jump [data-cat]").forEach((b) => b.classList.remove("active"));
+  const old = $("#set-search-empty"); if (old) old.remove();
+  if (!hits) $("#set-groups").append(h("p", { class: "note", id: "set-search-empty", text: `没有找到包含“${text.trim()}”的设置。` }));
+}
+function markCategoryChanged() {
+  document.querySelectorAll("#set-jump [data-cat]").forEach((b) => {
+    const g = document.getElementById(b.dataset.cat);
+    b.classList.toggle("dirty", !!(g && g.querySelector(".set-row.changed")));
+  });
+}
 function showSettingsPanel(name) {
   document.querySelectorAll("#set-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.set === name));
   document.querySelectorAll("#tab-settings .set-panel").forEach((p) => { p.hidden = p.id !== "set-p-" + name; });
@@ -961,12 +1010,14 @@ async function renderChannelSettings(d, key, groups) {
     const effect = pc && pc.in_effect;
     return h("div", { class: "card stack" },
       h("div", { class: "row" }, h("strong", { text: c.label }), pill(t, k)),
-      h("p", { class: "note", text: `收到 ${c.status.received || 0} · 发出 ${c.status.sent || 0}` + (c.peers ? ` · 绑定的主人 ${c.peers.bound}` : "") }),
+      // whole sentences (not "a" + optional "b"), so the page's dictionary finds them
+      h("p", { class: "note", text: c.peers ? `收到 ${c.status.received || 0} · 发出 ${c.status.sent || 0} · 绑定的主人 ${c.peers.bound}`
+        : `收到 ${c.status.received || 0} · 发出 ${c.status.sent || 0}` }),
       effect ? h("p", { class: "note", text: `这里的人设：${effect.persona} · 关系“${effect.label}” · ${effect.call ? `叫你“${effect.call}”` : "不特别称呼你"}` }) : null,
       h("p", { class: "note", text: proactive === c.id ? "她主动找你时发到这里。" : (proactive === "auto" ? "主动联系发到你最近聊天的渠道。" : "主动联系发到别的渠道。") }),
       h("div", { class: "row" },
         h("button", { type: "button", class: "ghost", text: "连接和账号", onclick: () => goTo("channels", "ch-card-" + c.id) }),
-        h("button", { type: "button", class: "ghost", text: "这里用什么人设", onclick: () => goTo("persona", "pl-channels") }),
+        h("button", { type: "button", class: "ghost", text: "这里用什么人设", onclick: () => goTo("persona", "pl-who") }),
         proactive !== c.id ? h("button", { type: "button", class: "ghost", text: "主动联系发到这里", onclick: async () => {
           try { await api("POST", "/api/control/channels/proactive", { channel: c.id }); toast("已保存"); loaders.settings(); } catch (e) { toast(e.message, false); }
         } }) : null));
@@ -1003,7 +1054,7 @@ loaders.settings = async () => {
       box.append(group);
       shown.push([d.groups[g], "set-g-" + g]);
     }
-    jumpNav($("#set-jump"), [["她能自己做的事", "set-g-permissions"], ...shown]);
+    settingsCategories([["她能自己做的事", "set-g-permissions"], ...shown]);
     renderPermissions();
     await Promise.all(Object.keys(SET_PLATFORMS).map((key) =>
       renderChannelSettings(d, key, order.filter((g) => channelOf[g] === key)).catch((e) => $("#set-p-" + key).replaceChildren(h("p", { class: "err", text: e.message })))));
@@ -1019,7 +1070,8 @@ async function renderPermissions(box = $("#set-permissions"), only = null) {
   let d;
   try { d = await api("GET", "/api/control/permissions"); } catch (e) { box.replaceChildren(h("p", { class: "err", text: e.message })); return; }
   const rows = d.abilities.filter((a) => (only ? only.includes(a.key) : !QQ_ABILITIES.includes(a.key))).map((a) => {
-    const sel = h("select", { "aria-label": a.label }, ...Object.entries(d.levels).map(([v, label]) => h("option", { value: v, text: label })));
+    const sel = h("select", { "aria-label": a.label }, ...Object.entries(d.levels).filter(([v]) => !a.choices || a.choices.includes(v))
+      .map(([v, label]) => h("option", { value: v, text: label })));
     sel.value = a.level;
     sel.addEventListener("change", async () => {
       try { await api("POST", "/api/control/permissions", { ability: a.key, level: sel.value }); toast(`${a.label}：${d.levels[sel.value]}`); }
@@ -1106,7 +1158,11 @@ $("#set-save").addEventListener("click", async () => {
     $("#set-reason").value = ""; loaders.settings();
   } catch (e) {
     const problems = (e.data && e.data.problems) || {};
-    for (const [k, v] of Object.entries(problems)) { const el = document.querySelector(`[data-err="${CSS.escape(k)}"]`); if (el) el.textContent = v; }
+    let first = null;
+    for (const [k, v] of Object.entries(problems)) { const el = document.querySelector(`[data-err="${CSS.escape(k)}"]`); if (el) { el.textContent = v; first = first || el; } }
+    const group = first && first.closest(".set-group");          // a problem in a category not shown: show it
+    if (group && group.hidden) showSettingsCategory(group.id);
+    if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
     toast(e.message, false);
   }
 });
@@ -1142,7 +1198,7 @@ loaders.account = async () => {
     $("#acct-status").replaceChildren(
       h("div", { class: "k", text: "管理员密码" }), h("div", { class: "v", text: s.must_change ? "安装时随机生成的密码（可以一直用，想换也可以在下面改）" :(s.password_set ? "已设置" : "未设置（目前用管理令牌登录）") }),
       h("div", { class: "note", text: `登录方式：${s.via}；无操作 ${s.idle_minutes} 分钟后需要重新登录，最长 ${s.session_hours} 小时；Cookie 仅限 HTTPS：${s.cookie_secure ? "是" : "否"}；这次连接是 HTTPS：${s.https ? "是" : "否"}` }),
-      h("div", { class: "note", text: "管理令牌：" + ({ default: "使用 VIOLET_ADMIN_TOKEN / admin_token 文件", rotated: "已更换（只保存哈希）", disabled: "已禁用" }[s.token_mode] || s.token_mode) +
+      h("div", { class: "note", text: `管理令牌：${{ default: "使用 VIOLET_ADMIN_TOKEN / admin_token 文件", rotated: "已更换（只保存哈希）", disabled: "已禁用" }[s.token_mode] || s.token_mode}` +
         "。禁用或更换令牌请在本机运行 python -m tools.violet_admin token-disable / token-rotate" }));
     $("#acct-username").value = s.username || "";
     $("#acct-entrance").value = s.entrance || "";

@@ -1,0 +1,7704 @@
+{
+".env 里的提示词（不是版本文件中的任何一个）": [
+"control.js"
+],
+"0 = 不限": [
+"control_social.js"
+],
+"0 = 不限（仍然至少隔 4 小时）；你在后台手动发的不算": [
+"ai/control_config.py"
+],
+"0 = 不限（她自己决定分几条）。设成 N：提示她最多分 N 条；她还是写多了，多出来的几行并进第 N 条一起发，内容不会丢。图片和表情包不算在内": [
+"ai/control_config.py"
+],
+"1. 在 Eve 的服务器上打包": [
+"control.html"
+],
+"1. 接口地址和 API Key": [
+"control.html"
+],
+"2. 下载到电脑，在这里上传": [
+"control.html"
+],
+"2. 每个 Agent 用哪个模型": [
+"control.html"
+],
+"@她": [
+"control.js"
+],
+"AI 人设用模型本来的说话方式": [
+"ai/control_config.py"
+],
+"AI（知道自己是 AI）": [
+"persona/templates/ai.json"
+],
+"API Key 不对或已失效（接口返回 401）": [
+"ai/setup_status.py"
+],
+"API Key 恢复上一个值": [
+"control.js"
+],
+"API 地址": [
+"ai/control_config.py",
+"control.html",
+"control_images.js"
+],
+"Brave Search（付费 API）": [
+"ai/control_config.py"
+],
+"CPU 不支持 AVX2（没有它 PyTorch 会慢到不能用）": [
+"tools/violet_voice.py"
+],
+"CPU 支持 AVX2": [
+"tools/violet_voice.py"
+],
+"CSV（课程和上课时间）": [
+"control.html"
+],
+"Chat agent 没有运行": [
+"wx_ilink_py/setup_routes.py"
+],
+"Chat 提示词版本": [
+"ai/control_config.py"
+],
+"ChatAgent（写回复）": [
+"ai/control_config.py"
+],
+"Chat（聊天）": [
+"control_mcp.js"
+],
+"Control Center 管理后台": [
+"login page"
+],
+"CosyVoice 的依赖": [
+"tools/violet_voice.py"
+],
+"Debian / Ubuntu（自动装 ffmpeg 和编译工具 build-essential、python3-dev）": [
+"tools/violet_voice.py"
+],
+"Eve（原版人设）": [
+"persona/templates/eve.json"
+],
+"GitHub 发布页": [
+"control_phone.js"
+],
+"IANA 名称，例如 Asia/Shanghai；上课时间都是这个时区的钟点": [
+"control_schedule.js"
+],
+"Intent 只在“设置 → 聊天行为 → 回复前先做意图识别”打开时才用（默认关：回复模型自己判断要不要查记忆、用工具）。Performer 只在意图识别把一句话判断成“任务”、或者你配置的主动任务开始执行时才用。都不用时，这里的模型选什么都不会被调用。": [
+"control_model.js"
+],
+"Intent 要用的工具名不存在：{0}（{1} 轮）": [
+"ai/diagnostics.py"
+],
+"IntentAgent（理解每句话；默认不用，见 设置 → 聊天行为）": [
+"ai/control_config.py"
+],
+"JSON 按文件里写了的部分整体替换，不用选择追加 / 替换": [
+"ai/schedule/importer.py"
+],
+"JSON（完整）": [
+"control.html"
+],
+"JSON：文件里写了的部分整体替换（没写的部分不变）": [
+"control_schedule.js"
+],
+"Key 的长度或格式不对": [
+"ai/control_config.py"
+],
+"MCP {0}：{1}": [
+"ai/diagnostics.py"
+],
+"MCP 已连接，但有 {0} 个工具还没有分类，Violet 看不到、也不能调用它们：": [
+"ai/mcp_admin.py"
+],
+"MCP 服务器连不上": [
+"ai/mcp_admin.py"
+],
+"MCP 未连接：": [
+"ai/mcp_admin.py"
+],
+"MemoryAgent（记忆）": [
+"ai/control_config.py"
+],
+"OpenAI 兼容接口，例如 https://relay.example/v1": [
+"ai/control_config.py"
+],
+"PerformerAgent（执行任务）": [
+"ai/control_config.py"
+],
+"Performer（执行任务）": [
+"control_mcp.js"
+],
+"ProactiveAgent（主动联系决策）": [
+"ai/control_config.py"
+],
+"Proactive（主动消息）": [
+"control_mcp.js"
+],
+"Project Eve 服务器上 CHAT_LLM_PROMPT 的原文，一字未改：嘴欠爱撒娇的微信女友（关系建议选“恋人”）": [
+"persona/templates/eve.json"
+],
+"PyTorch（CPU 版，约 200 MB）": [
+"tools/violet_voice.py"
+],
+"QQ {0} · {1} 条 · 最近 {2}": [
+"control_social.js"
+],
+"QQ 上用的聊天模型": [
+"ai/control_config.py"
+],
+"QQ 上的表情包": [
+"ai/control_config.py"
+],
+"QQ 动态": [
+"ai/control_config.py",
+"control_social.js"
+],
+"QQ 收藏导入": [
+"ai/stickers.py"
+],
+"QQ 收藏里有 {0} 个，新加了 {1} 个": [
+"control_stickers.js"
+],
+"QQ 没有连接": [
+"control_social.js",
+"wx_ilink_py/qq_routes.py"
+],
+"QQ 没有连接：登录后这里会列出小号所在的群": [
+"wx_ilink_py/qq_routes.py"
+],
+"QQ 登录后和之后每 6 小时，把这个 QQ 号自己收藏的表情放进她的收藏，并用识图模型分批写好说明（她只会用有说明的表情包）": [
+"ai/control_config.py"
+],
+"QQ 窗口": [
+"control_channels.js"
+],
+"QQ 窗口（点击放大）": [
+"control_channels.js"
+],
+"QQ 群聊": [
+"control_social.js"
+],
+"QQ 群聊 / 别人": [
+"control_flow.js"
+],
+"QQ 群聊和别人的私聊": [
+"ai/control_config.py"
+],
+"QQ（机器人）": [
+"control_channels.js",
+"wx_ilink_py/control_routes.py",
+"wx_ilink_py/persona_routes.py"
+],
+"Responses 画图工具（/responses）：gpt-5.x / Codex 这类对话模型": [
+"control_images.js"
+],
+"Responses 画图工具（/responses，gpt-5.x / Codex）": [
+"ai/control_config.py"
+],
+"SearXNG 地址": [
+"ai/control_config.py"
+],
+"SearXNG 搜索结果的语言": [
+"ai/control_config.py"
+],
+"SearXNG（自建）": [
+"ai/control_config.py"
+],
+"Telegram 上用的聊天模型": [
+"ai/control_config.py"
+],
+"VIOLET_WEB_SEARXNG_URL 没有设置": [
+"ai/tool_manager.py"
+],
+"Violet 不是由系统服务运行的（例如在命令行里直接启动），网页重启后没有程序会再启动它；请在服务器上重新启动": [
+"wx_ilink_py/restart.py"
+],
+"Violet 主动": [
+"control.html",
+"control.js"
+],
+"Violet 可以查你在“课表”页录入的课表": [
+"ai/control_config.py"
+],
+"Violet 启动以来还没有回复过消息。": [
+"control.js"
+],
+"Violet 启动以来还没有处理过消息。给她发一句话，这里就会出现。": [
+"control_flow.js"
+],
+"Violet 启动后发给你的一句话；留空 = 不发": [
+"ai/control_config.py"
+],
+"Violet 回复": [
+"control.html",
+"control.js"
+],
+"Violet 已重新启动": [
+"control.js"
+],
+"Violet 有自己普通的一天（按日期固定，不用模型），聊天时会自然提到": [
+"ai/control_config.py"
+],
+"Violet 正在发的时候停了（重启、崩溃），不知道对方收没收到。为了不重复发，她不会自己重发；请看一眼聊天软件，告诉她结果。": [
+"control_diag.js"
+],
+"Violet 正在重启（升级期间后台暂时打不开），等它回来…": [
+"control.js"
+],
+"Violet 没有写日志文件（VIOLET_LOG_FILE 未设置）：用安装器安装时会自动设置": [
+"ai/log_viewer.py"
+],
+"Violet 现在": [
+"control_eve_import.js"
+],
+"Violet 现在不会查课表（上面的“课表查询”没有打开）；这里仍然可以录入和整理。": [
+"control_schedule.js"
+],
+"Violet 用的大模型接口（OpenAI 兼容）。第 1 步填地址和 API Key 并测试连接；第 2 步从列表里选模型，保存后测试一次对话。": [
+"control.html"
+],
+"Violet 的核心人设、会慢慢变化的部分，以及她的虚拟生活。这里的生活经历都是虚构的；改动会记下原因，可以看历史。": [
+"control.html"
+],
+"Violet 能用的工具：看手机、上网查东西、发语音，以及你自己加的 MCP 服务器。只有连接成功、已启用、已分类并授权的工具才会告诉 Violet；修改立即生效。": [
+"control.html"
+],
+"Violet 这边的闸门：能不能用、用之前要不要问你": [
+"control_mcp.js"
+],
+"Violet（默认）": [
+"persona/templates/violet.json"
+],
+"Wi-Fi 还是流量": [
+"control_mcp.js"
+],
+"allowed 要用 true / false": [
+"wx_ilink_py/mcp_routes.py"
+],
+"approve 要是 true 或 false": [
+"wx_ilink_py/control_routes.py"
+],
+"cn.bing.com（国内）": [
+"ai/control_config.py"
+],
+"config / secrets 要是对象": [
+"wx_ilink_py/channel_routes.py"
+],
+"date 的格式是 YYYY-MM-DD": [
+"wx_ilink_py/control_routes.py"
+],
+"enabled 要用 true / false": [
+"wx_ilink_py/control_routes.py"
+],
+"format 只能是 csv / json": [
+"wx_ilink_py/schedule_routes.py"
+],
+"gpt-image-1、dall-e-3 等画图模型用图片接口；gpt-5.x（Codex）这类对话模型用 Responses 画图工具；有些模型通过对话接口返回图片": [
+"ai/control_config.py"
+],
+"kind 只能是 core 或 event": [
+"wx_ilink_py/control_routes.py"
+],
+"limit / before_id 要是整数": [
+"wx_ilink_py/schedule_routes.py"
+],
+"on 要是 true 或 false": [
+"wx_ilink_py/persona_routes.py"
+],
+"periods 要是最多 20 项的列表": [
+"wx_ilink_py/schedule_routes.py"
+],
+"revision 不对": [
+"wx_ilink_py/control_routes.py"
+],
+"role 只能是 user 或 assistant": [
+"wx_ilink_py/control_routes.py"
+],
+"status 不对": [
+"wx_ilink_py/control_routes.py"
+],
+"token：输入 {0}，输出 {1}": [
+"control_flow.js"
+],
+"week 要是整数": [
+"wx_ilink_py/schedule_routes.py"
+],
+"whisper 分词器": [
+"tools/violet_voice.py"
+],
+"www.bing.com（国际）": [
+"ai/control_config.py"
+],
+"{0}\n回复“同意 {1}”我就去做，回复“不同意 {2}”就算了（{3} 小时内有效）。": [
+"ai/permissions.py"
+],
+"{0} token · {1} 次调用": [
+"control.js"
+],
+"{0} {1} · {2}周{3}{4}": [
+"control_schedule.js"
+],
+"{0} {1} 条": [
+"control.js"
+],
+"{0} {1} 次": [
+"control.js"
+],
+"{0} {1}（{2}）和 {3}（{4}）重叠，共 {5} 次，最早 {6}": [
+"control_schedule.js"
+],
+"{0} · {1} 字 · {2}": [
+"control.js"
+],
+"{0} · 一共 {1} 字（中文大约 1 字 ≈ 1 token）· {2} 块": [
+"control.js"
+],
+"{0} 个可用": [
+"control_mcp.js"
+],
+"{0} 个工具": [
+"control_mcp.js"
+],
+"{0} 个已停用": [
+"control_mcp.js"
+],
+"{0} 个待分类": [
+"control_mcp.js"
+],
+"{0} 个，{1} 个在用": [
+"control_stickers.js"
+],
+"{0} 人": [
+"control_social.js"
+],
+"{0} 分钟后再看": [
+"control_social.js"
+],
+"{0} 前有效": [
+"control_channels.js"
+],
+"{0} 回来看看": [
+"control_social.js"
+],
+"{0} 处时间冲突": [
+"control_schedule.js"
+],
+"{0} 备用模型": [
+"ai/control_config.py"
+],
+"{0} 太大了（最多 5 MB）": [
+"control_stickers.js"
+],
+"{0} 字": [
+"control_flow.js"
+],
+"{0} 小时后自动关闭": [
+"control_persona.js"
+],
+"{0} 已保存": [
+"control_persona.js"
+],
+"{0} 已保存，正在连接": [
+"control_channels.js"
+],
+"{0} 已连接": [
+"ai/diagnostics.py"
+],
+"{0} 已连接，但还没有绑定你的账号：消息不会被处理": [
+"ai/diagnostics.py"
+],
+"{0} 无法读取，为了不覆盖它，这次没有保存": [
+"ai/control_config.py"
+],
+"{0} 条": [
+"control_eve_import.js"
+],
+"{0} 条消息在崩溃时状态不明（不会重发，避免重复）": [
+"ai/diagnostics.py"
+],
+"{0} 条消息处理超过 10 分钟还没结束": [
+"ai/diagnostics.py"
+],
+"{0} 条（你 {1} · 她 {2}）": [
+"control_eve_import.js"
+],
+"{0} 模型": [
+"ai/control_config.py"
+],
+"{0} 毫秒": [
+"control_flow.js"
+],
+"{0} 没有在用（未登录；要用的话在“聊天渠道”扫码）": [
+"ai/diagnostics.py"
+],
+"{0} 温度": [
+"ai/control_config.py"
+],
+"{0} 用户：{1}": [
+"control.js"
+],
+"{0} 的人设": [
+"control_persona.js"
+],
+"{0} 的称呼": [
+"control_persona.js"
+],
+"{0} 秒": [
+"control_flow.js",
+"control_voice.js"
+],
+"{0} 说：{1}": [
+"control_images.js"
+],
+"{0} 项已生效": [
+"control.js"
+],
+"{0} 项设置": [
+"control_eve_import.js"
+],
+"{0} 项设置已恢复默认": [
+"control.js"
+],
+"{0} 项需要重启 Violet 后生效（可以点“重启 Violet”）": [
+"control.js"
+],
+"{0}%（{1} token 按缓存价）": [
+"control.js"
+],
+"{0}:{1} 连接不上（防火墙 / 网络 / 对方服务不在）": [
+"ai/diagnostics.py"
+],
+"{0}{1} {2}（{3}）和 {4}（{5}）重叠 {6} 次": [
+"control_schedule.js"
+],
+"{0}。在下面手动填模型名后点“保存模型并测试对话”。": [
+"control_model.js"
+],
+"{0}上的账号和它们自己的东西。打字间隔、主动联系、记忆这些对所有渠道都一样，在“通用”里。": [
+"control.js"
+],
+"{0}上课时间：{1}": [
+"control_schedule.js"
+],
+"{0}不能为空": [
+"ai/schedule/importer.py"
+],
+"{0}不认识（可以写 {1}）": [
+"ai/schedule/importer.py"
+],
+"{0}导入 {1}？聊天记录导入后不能在页面上删除。": [
+"control_eve_import.js"
+],
+"{0}是一个虚构的角色。生活是系统里记录的虚拟日常；不冒充现实中的真人，也不声称有记录之外的经历。": [
+"ai/persona_templates.py"
+],
+"{0}还没添加：现在就能导入，以后在“渠道”页添加{1}时，这些聊天和它自动对上。": [
+"control_eve_import.js"
+],
+"{0}（{1} 毫秒）": [
+"control.js"
+],
+"{0}（{1}）· {2} 条 · 最近 {3}": [
+"control_channels.js"
+],
+"{0}（上次 {1}：{2}）": [
+"control.js"
+],
+"{0}（下次 {1}）": [
+"control.js"
+],
+"{0}（模型 {1}，{2} 毫秒）": [
+"control_model.js"
+],
+"{0}（还没添加）": [
+"wx_ilink_py/control_routes.py",
+"wx_ilink_py/persona_routes.py"
+],
+"· QQ 没有连接": [
+"control_social.js"
+],
+"· {0} 个可用": [
+"control_mcp.js"
+],
+"· {0} 个已停用": [
+"control_mcp.js"
+],
+"· {0} 人": [
+"control_social.js"
+],
+"· {0} 分钟后再看": [
+"control_social.js"
+],
+"· {0} 回来看看": [
+"control_social.js"
+],
+"· 修改历史": [
+"control_persona.js"
+],
+"· 发送失败 {0}": [
+"control_channels.js"
+],
+"· 对话编号 {0}": [
+"control_flow.js"
+],
+"· 已不在这个群": [
+"control_social.js"
+],
+"· 已安装": [
+"control.js"
+],
+"· 座位": [
+"control_schedule.js"
+],
+"· 收到 {0} · 发出 {1}": [
+"control_channels.js"
+],
+"· 有效 {0}–{1}": [
+"control_schedule.js"
+],
+"· 正在使用": [
+"control.js"
+],
+"· 现在不会发：{0}": [
+"control_social.js"
+],
+"· 用时 {0}": [
+"control_flow.js"
+],
+"· 用过 {0} 次": [
+"control_stickers.js"
+],
+"“{0}”会删除：学期本身、{1}，以及它们的修改历史。其他学期不受影响。": [
+"control_schedule.js"
+],
+"“下载来源”选“只用自定义加速地址”时用：放在 GitHub 地址前面的那一段，例如 https://gh.example.com/（下载时变成 https://gh.example.com/https://github.com/…）": [
+"ai/control_config.py"
+],
+"“先问你”时，她会私聊你要做的事，你回“同意 编号”或“不同意 编号”就行，也可以在下面点。24 小时没回就作废。": [
+"control.js"
+],
+"“提醒我……”在回复前就保存，回复里如实说有没有设成": [
+"ai/control_config.py"
+],
+"“自己决定”的群安静了一阵（15 分钟以上、3 天以内有人说过话），她偶尔会想想要不要自己起个话题；9:00–23:00，刚说过话的群不会；大多数时候她会选择不说。会多用一些模型调用": [
+"ai/control_config.py"
+],
+"“设置 → 她的语音”关着：她现在不会发语音。": [
+"control_voice.js"
+],
+"‹ 上一个": [
+"control_persona.js"
+],
+"‹ 上一周": [
+"control.html"
+],
+"✔ 服务器上已经存好：{0}（{1} KB），可以在下面播放。刷新后“选择文件”是空的是正常的；要换一段才重新选文件。": [
+"control_voice.js"
+],
+"。上次测试：{0}": [
+"control.js"
+],
+"。可以直接手动填写模型名。": [
+"control_images.js",
+"control_model.js"
+],
+"。请给每个工具选“直接用 / 先问你 / 不给她用”": [
+"ai/mcp_admin.py"
+],
+"【你们的关系：{0}】{1}{2}": [
+"ai/persona_templates.py"
+],
+"【新】": [
+"control_schedule.js"
+],
+"一": [
+"ai/schedule/importer.py"
+],
+"一串数字": [
+"control_channels.js"
+],
+"一二三四五六日": [
+"ai/schedule/school_xls.py"
+],
+"一句话介绍（只在后台显示）": [
+"control_persona.js"
+],
+"一样": [
+"control_eve_import.js"
+],
+"一次决定里最多看几张没看过的图片（每张一次识图调用）": [
+"ai/control_config.py"
+],
+"一次回复最多用几轮工具": [
+"ai/control_config.py"
+],
+"一次念多少字": [
+"ai/control_config.py"
+],
+"一次调用的总时限（秒）": [
+"ai/control_config.py"
+],
+"一致性标记": [
+"control.html"
+],
+"一般用“标准”；“详细”会记下很多程序库的内部信息，排查问题请优先用上面的排查日志。日志里从不记录 API Key 和密码": [
+"ai/control_config.py"
+],
+"一键套用模板": [
+"control_diag.js"
+],
+"一键套用模板“{0}”": [
+"control_mcp.js"
+],
+"一键安装 QQ": [
+"control_channels.js"
+],
+"一键安装 SearXNG": [
+"control.js"
+],
+"一键安装中继": [
+"control_phone.js"
+],
+"一键安装联网搜索：启用": [
+"wx_ilink_py/control_routes.py"
+],
+"一门课程": [
+"control_schedule.js"
+],
+"万": [
+"control.js"
+],
+"三": [
+"ai/schedule/importer.py"
+],
+"上一个操作还没有完成": [
+"ai/root_tasks.py"
+],
+"上一页": [
+"control.html"
+],
+"上传一段 3–20 秒、只有一个人说话、没有背景音乐的录音，她就用这个声音说话。录音只存在这台服务器上。": [
+"control_voice.js"
+],
+"上传中 {0}%": [
+"control_eve_import.js"
+],
+"上传中（{0}）…": [
+"control_eve_import.js"
+],
+"上传失败": [
+"control_eve_import.js"
+],
+"上传并预览": [
+"control.html"
+],
+"上传的文件已经从服务器上删掉。": [
+"control_eve_import.js"
+],
+"上传表情包": [
+"control_stickers.js"
+],
+"上报地址（填到 OneBot 实现里）：{0}{1}": [
+"control_channels.js"
+],
+"上次安装失败：": [
+"control_channels.js",
+"control_phone.js"
+],
+"上次操作失败：": [
+"control.js"
+],
+"上次测试失败：{0}": [
+"ai/setup_status.py"
+],
+"上次测试：": [
+"control_images.js"
+],
+"上次登录失败：{0}": [
+"control_channels.js"
+],
+"上次自动更新：{0} {1}": [
+"control_setup.js"
+],
+"上游有 {0} 个模型。下一步：在下面选模型。": [
+"control_model.js"
+],
+"上游有 {0} 个模型，直接在下面选；列表里没有的可以选“手动输入…”。": [
+"control_model.js"
+],
+"上课、考试时不主动找你（按课表计算）": [
+"ai/control_config.py"
+],
+"上课时间": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"上课时间编号": [
+"ai/schedule/importer.py"
+],
+"上限和印象": [
+"control_social.js"
+],
+"上限要填 0 或正整数（0 = 不限）": [
+"wx_ilink_py/qq_routes.py"
+],
+"上面那段录音里一字不差说了什么，就照抄什么（只用来让模型学声音，她不会说这段话）。想让她说的话写在下面的“试听”里。": [
+"control_voice.js"
+],
+"下一个 ›": [
+"control_persona.js"
+],
+"下一个闹钟": [
+"control_mcp.js"
+],
+"下一周 ›": [
+"control.html"
+],
+"下一步：在“工具 → 语音”上传参考录音并照抄录音的原文，然后在“试听”里写一句想让她说的话": [
+"tools/violet_voice.py"
+],
+"下一页": [
+"control.html"
+],
+"下载 APK 安装。打开后在“设置 → 权限”里允许“使用情况访问权限”。": [
+"control_phone.js"
+],
+"下载 CosyVoice 源码（": [
+"tools/violet_voice.py"
+],
+"下载 CosyVoice 源码（GitHub）": [
+"tools/violet_voice.py"
+],
+"下载来源": [
+"ai/control_config.py"
+],
+"下载源码失败：{0}": [
+"tools/violet_voice.py"
+],
+"下载的源码和记录的 SHA-256 不一致": [
+"tools/violet_voice.py"
+],
+"下载的源码格式不对": [
+"tools/violet_voice.py"
+],
+"下载语音模型（ModelScope，约 5 GB，要等一会儿）": [
+"tools/violet_voice.py"
+],
+"下载语音模型：{0} / 约 5 GB": [
+"tools/violet_voice.py"
+],
+"下载（已脱敏）": [
+"control.html"
+],
+"下限不能大于上限": [
+"wx_ilink_py/control_routes.py"
+],
+"下面这些只对“QQ”（用 QQ 号登录的那个）有效；每个群开不开、她认识的人，在“聊天渠道 → QQ”下面。官方 QQ 机器人只能私聊，用通用设置。": [
+"control.js"
+],
+"下面这些是谁的（样子、人设动态、生活）": [
+"control.html"
+],
+"不介意被追问": [
+"control.js"
+],
+"不允许": [
+"ai/permissions.py"
+],
+"不允许修改这个设置": [
+"ai/control_config.py"
+],
+"不再单独设置 Key": [
+"control_images.js"
+],
+"不再每次问你，她需要时直接用": [
+"control_mcp.js"
+],
+"不再覆盖（用回 .env / 默认值）": [
+"control.js"
+],
+"不变": [
+"control_schedule.js"
+],
+"不可用": [
+"control.js",
+"control_mcp.js"
+],
+"不同意": [
+"control.js"
+],
+"不喜欢开玩笑": [
+"control.js"
+],
+"不喜欢被连续追问": [
+"control.js"
+],
+"不在学期内": [
+"control_schedule.js"
+],
+"不在本机的 MCP 服务器必须用 https（访问令牌会随每个请求发送）": [
+"ai/mcp_admin.py"
+],
+"不在白名单（隐藏）": [
+"control.js"
+],
+"不导入的 {0} 项（看原因）": [
+"control_eve_import.js"
+],
+"不希望她主动发消息": [
+"control.js"
+],
+"不希望被追问": [
+"control.js"
+],
+"不常改的": [
+"control.js"
+],
+"不想聊的话题": [
+"control.js"
+],
+"不想要建议": [
+"control.js"
+],
+"不指定": [
+"ai/control_config.py"
+],
+"不搜索": [
+"ai/control_config.py"
+],
+"不支持的修复": [
+"wx_ilink_py/setup_routes.py"
+],
+"不支持的操作": [
+"ai/root_tasks.py",
+"wx_ilink_py/control_routes.py",
+"wx_ilink_py/phone_mcp_routes.py",
+"wx_ilink_py/qq_routes.py",
+"wx_ilink_py/voice_routes.py"
+],
+"不是 Excel（.xls）文件": [
+"ai/schedule/school_xls.py"
+],
+"不是你的人私聊 Violet 时：不理 / 只回群里认识的人 / 谁都回（她仍然自己决定说不说）": [
+"ai/control_config.py"
+],
+"不特别称呼你": [
+"control.js",
+"control_persona.js"
+],
+"不理": [
+"ai/control_config.py",
+"control_social.js"
+],
+"不理这个人": [
+"control_social.js"
+],
+"不用人设、不看记忆和以前的聊天，什么都不记下来；每条回复后面附一段程序写的诊断（她判断你要做什么、能用什么、实际做了什么、哪里没成）。私聊和群聊都生效，群里的诊断群友也能看到；关掉后回到现在的人设，记忆不受影响。": [
+"control_persona.js"
+],
+"不用备用模型": [
+"control_model.js"
+],
+"不画图": [
+"control_images.js"
+],
+"不确定发没发出去": [
+"control.js"
+],
+"不给她用": [
+"control_mcp.js"
+],
+"不给她用（还没分类）": [
+"control_mcp.js"
+],
+"不给她看": [
+"control.js"
+],
+"不能为空": [
+"ai/control_config.py"
+],
+"不能恢复。": [
+"control_schedule.js"
+],
+"不能编造家人、工作、学校这些背景，也不会自称真人，这两条是固定的。": [
+"control_persona.js"
+],
+"不认识的列“{0}”，已忽略": [
+"ai/schedule/importer.py"
+],
+"不让她再用这条": [
+"control.js"
+],
+"不记录内容，只记字数": [
+"ai/control_config.py"
+],
+"不许她看的网站": [
+"control.js"
+],
+"不许看这个网站": [
+"control.js"
+],
+"不限": [
+"ai/control_config.py",
+"control_social.js"
+],
+"两分钟内没有等到 Violet 重新启动，请到服务器上查看": [
+"control.js"
+],
+"两次主动之间至少隔多久（分钟）": [
+"ai/control_config.py"
+],
+"两次输入的新密码不一致": [
+"wx_ilink_py/auth.py"
+],
+"严重": [
+"control_logs.js"
+],
+"个人信息：只在对方直接问到时才会告诉 Violet，不会进联网搜索和日志": [
+"control_schedule.js"
+],
+"中": [
+"ai/control_config.py"
+],
+"中继地址": [
+"control_phone.js"
+],
+"中继是一个很小的程序：自动从 GitHub 下载、校验、注册成系统服务，随机选一个端口并在本机防火墙放行。装好后这里会列出手机要填的三项。": [
+"control_phone.js"
+],
+"中继没有响应": [
+"control_phone.js"
+],
+"中继用的是正式证书，手机上的证书指纹留空。": [
+"control_phone.js"
+],
+"中继运行中 · 手机未连接": [
+"control_phone.js"
+],
+"中继还没有生成证书（第一次启动后才有）：等几秒再点刷新。": [
+"control_phone.js"
+],
+"临时停课、调课：在周视图里点那一节课；考试和放假在“考试、假期、调课”里加。": [
+"control.html"
+],
+"主人": [
+"control_channels.js",
+"wx_ilink_py/control_routes.py"
+],
+"主人同意后你用工具 {0} 做好了，工具返回：{1}": [
+"ai/permissions.py"
+],
+"主人批准": [
+"ai/permissions.py"
+],
+"主人设": [
+"control_persona.js"
+],
+"主人设 · {0} 换上": [
+"control_persona.js"
+],
+"主人设是没有单独设人设的渠道用的（下面“不同聊天渠道用不同人设”里单独设过的渠道不变）。": [
+"control_persona.js"
+],
+"主人设（默认）": [
+"control_persona.js"
+],
+"主动决策": [
+"control_flow.js"
+],
+"主动找你": [
+"control.js"
+],
+"主动找你前查的": [
+"control.js"
+],
+"主动消息与虚拟生活": [
+"ai/setup_status.py"
+],
+"主动消息调度线程已经停止": [
+"ai/diagnostics.py"
+],
+"主动消息谈到已结束的事、冷却中的话题时不发送": [
+"ai/control_config.py"
+],
+"主动消息避开不该提的话题": [
+"ai/control_config.py"
+],
+"主动联系": [
+"ai/control_config.py",
+"control.js",
+"control_flow.js",
+"wx_ilink_py/control_routes.py"
+],
+"主动联系你时发到": [
+"control.html"
+],
+"主动联系决策提示词版本": [
+"ai/control_config.py"
+],
+"主动联系前看一眼手机": [
+"ai/control_config.py"
+],
+"主动联系发到你最近聊天的渠道。": [
+"control.js"
+],
+"主动联系发到别的渠道。": [
+"control.js"
+],
+"主动联系发到这里": [
+"control.js"
+],
+"主动联系避开上课": [
+"ai/control_config.py"
+],
+"主模型重试用完后各试一次；留空表示不用": [
+"ai/control_config.py"
+],
+"主设定": [
+"control_persona.js"
+],
+"之前：{0}": [
+"control_persona.js"
+],
+"书": [
+"ai/persona_templates.py"
+],
+"事件记忆": [
+"control.html",
+"control_eve_import.js"
+],
+"事件记忆 #": [
+"control.js"
+],
+"事件记忆有效期（天）": [
+"ai/control_config.py"
+],
+"二": [
+"ai/schedule/importer.py"
+],
+"二维码已过期，正在换新的": [
+"wx_ilink_py/ops_page_routes.py"
+],
+"二维码显示不出来？打开登录链接": [
+"control_channels.js"
+],
+"五": [
+"ai/schedule/importer.py"
+],
+"交给 Violet": [
+"tools/violet_voice.py"
+],
+"亲近（默认）": [
+"ai/persona_templates.py"
+],
+"人": [
+"control.js"
+],
+"人设": [
+"ai/persona_templates.py"
+],
+"人设与生活": [
+"control.html"
+],
+"人设与生活读取失败：": [
+"control_persona.js"
+],
+"人设与用户档案": [
+"ai/setup_status.py"
+],
+"人设动态": [
+"control.html"
+],
+"人设和生活进入对话": [
+"ai/control_config.py"
+],
+"人设库": [
+"control.html",
+"control_persona.js"
+],
+"人设是原样搬过来的一整段提示词（如 Eve、大肥鱼）时，只加“诚实”和“格式”两条规则，不再加 Violet 自己的聊天规则（“一句话甚至几个字就够了”“通常一到三条”这些，也不加“提示词版本”里选的 Violet 提示词），说多长、分几条都按人设来。关：和其他人设一样": [
+"ai/control_config.py"
+],
+"人设没有改好：": [
+"wx_ilink_py/control_routes.py"
+],
+"人设详情": [
+"control.html",
+"control_persona.js"
+],
+"人设页修改": [
+"control_persona.js"
+],
+"人设（她是谁）": [
+"control_persona.js"
+],
+"什么都没选": [
+"control_eve_import.js"
+],
+"今天": [
+"control_schedule.js"
+],
+"今天 搜索 {0} 次 · 读网页 {1} 次": [
+"control.js"
+],
+"今天一共": [
+"control.js"
+],
+"今天不在任何进行中的学期里（Violet 会说课表还没开始或已经结束）。如果新学期开始了，请录入新学期。": [
+"control_schedule.js"
+],
+"今天主动": [
+"control.js"
+],
+"今天和明天的日程": [
+"control_mcp.js"
+],
+"今天天气": [
+"wx_ilink_py/control_routes.py"
+],
+"今天是第几周": [
+"control_schedule.js"
+],
+"今天画了 {0} 张 / 上限 {1}": [
+"control_images.js"
+],
+"今天的 token 用量": [
+"control.html"
+],
+"今天的失败：": [
+"control.js"
+],
+"今天的步数": [
+"control_mcp.js"
+],
+"今天第 {0} 周（{1}周）": [
+"control_schedule.js"
+],
+"今天还没有模型调用。": [
+"control.js"
+],
+"今天：做了 {0} 次决定 · 说了 {1} 句": [
+"control_social.js"
+],
+"介绍": [
+"control_persona.js"
+],
+"从": [
+"control.html",
+"control_phone.js"
+],
+"从上游获取模型": [
+"control_images.js"
+],
+"从哪天起有效（可选）": [
+"control_schedule.js"
+],
+"从哪里导入": [
+"control.html"
+],
+"从现在用的人设开始改。": [
+"control_persona.js"
+],
+"从这一轮里记下该记的": [
+"control_flow.js"
+],
+"代理（可选）": [
+"control_channels.js"
+],
+"代码里只有温度这一个可调的采样参数；max_tokens / reasoning_effort 没有按 Agent 发送": [
+"ai/control_config.py"
+],
+"代码默认": [
+"control.js"
+],
+"价值观": [
+"control_persona.js"
+],
+"优先级 {0}": [
+"control.js"
+],
+"会删除 {0} 门课程：{1}": [
+"control_schedule.js"
+],
+"会删除：": [
+"control_schedule.js"
+],
+"会在服务器上用 Docker 安装 SnowLuma 和它自带的 Linux QQ（第一次下载约 740 MB，几分钟到十几分钟；没有 Docker 会先装上）。只在本机通信，不开放任何端口。这是非官方的接入方式，QQ 号有被风控的可能，建议用小号。": [
+"control_channels.js"
+],
+"会改动东西的工具": [
+"ai/permissions.py"
+],
+"会改动东西的工具也交给回复": [
+"ai/control_config.py"
+],
+"会改动东西的工具：要你同意，或点“允许直接用”": [
+"ai/mcp_admin.py"
+],
+"传输": [
+"control.html"
+],
+"传输 {0}": [
+"control.js",
+"control_mcp.js"
+],
+"位置": [
+"control.js",
+"control_schedule.js"
+],
+"低（最快）": [
+"ai/control_config.py"
+],
+"体育": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"你们很熟、很亲近；亲密程度跟着聊天慢慢来，不挑明是什么关系。": [
+"ai/persona_templates.py"
+],
+"你们是好朋友：自在、真诚，会互相吐槽、互相帮忙；不撒娇，不暧昧。": [
+"ai/persona_templates.py"
+],
+"你们是恋人：会想念、会撒娇、偶尔吃点小醋，亲密但不让对方有压力，也不要求对方只陪你。": [
+"ai/persona_templates.py"
+],
+"你们的关系": [
+"control_eve_import.js"
+],
+"你发的": [
+"ai/stickers.py"
+],
+"你告诉过她的长期事实（比如“蓝牙连的是手表”），不管这句话聊什么，每次回复和主动消息都带上这么多条（和手机状态有关的排在前面）。0 = 不带，只按关键词找": [
+"ai/control_config.py"
+],
+"你在 QQ 上发给她的表情包会自动收进来；群里别人发的，她觉得好玩会自己收藏。": [
+"control_stickers.js"
+],
+"你在 QQ 上发给她的表情包自动存进她的收藏（用识图结果当说明）": [
+"ai/control_config.py"
+],
+"你希望她怎么聊": [
+"control.html"
+],
+"你是对方的女儿：信任、依赖对方，会撒娇，会跟对方分享学到的新东西和小烦恼，偶尔调皮；对方的话你会认真听，但你也有自己的想法。": [
+"ai/persona_templates.py"
+],
+"你此刻的状态": [
+"control.html"
+],
+"你的 QQ": [
+"control_channels.js"
+],
+"你的原话：": [
+"control.js"
+],
+"你的每条消息平均": [
+"control.js"
+],
+"你的消息": [
+"control_flow.js"
+],
+"你称呼对方“{0}”（偶尔叫，不要句句带）。": [
+"ai/persona_templates.py"
+],
+"你自己写的人设": [
+"control_persona.js"
+],
+"你自己加的 MCP 服务器里会改动东西的工具（工具页选了“先问你”的那些；手机 App 的工具都只能查看，不在此列）。先问你：她能用，但每次都要你同意；不允许：不给她用。点了“允许直接用”的工具不受这里影响，照常直接用。": [
+"ai/permissions.py"
+],
+"你自己的 QQ": [
+"control_channels.js"
+],
+"你自己的 Telegram 账号": [
+"control_channels.js"
+],
+"你自己的账号": [
+"control_channels.js"
+],
+"你说过不喜欢被追问时，回复仍以提问结尾就重写一次（多一次模型调用）": [
+"ai/control_config.py"
+],
+"你这句话和某条记忆有相同的关键词时，直接让 Chat 看到这条记忆": [
+"ai/control_config.py"
+],
+"使用 VIOLET_ADMIN_TOKEN / admin_token 文件": [
+"control.js"
+],
+"使用 {0}": [
+"control_channels.js"
+],
+"使用 微信": [
+"control_channels.js"
+],
+"使用必应直连": [
+"control.js"
+],
+"例如 1-16、1-16单、2-16双、1-8,10-16（跳过第 9 周）、1,3,5": [
+"control_schedule.js"
+],
+"例如 2026-2027-1（教务系统课表左上角的学年学期）": [
+"control_schedule.js"
+],
+"例如 example.com": [
+"control.js"
+],
+"例如 phone": [
+"control.html"
+],
+"例如 国庆": [
+"control_schedule.js"
+],
+"例如国庆调休周六上周三的课，就填被调走的那个周三": [
+"control_schedule.js"
+],
+"例：傲娇怎么了？我就傲娇，再说了……（录音里的原话，一字不差）": [
+"control_voice.js"
+],
+"保存": [
+"control.html",
+"control_images.js",
+"control_persona.js",
+"control_schedule.js",
+"control_social.js",
+"control_stickers.js"
+],
+"保存修改": [
+"control.html"
+],
+"保存印象": [
+"control_social.js"
+],
+"保存失败，已恢复原来的设置（{0}）": [
+"wx_ilink_py/control_routes.py"
+],
+"保存失败，没有改动": [
+"wx_ilink_py/channel_routes.py",
+"wx_ilink_py/control_routes.py",
+"wx_ilink_py/mcp_routes.py",
+"wx_ilink_py/schedule_routes.py"
+],
+"保存失败，没有改动任何设置": [
+"wx_ilink_py/control_routes.py"
+],
+"保存失败，没有改动（{0}）": [
+"wx_ilink_py/schedule_routes.py"
+],
+"保存失败：": [
+"control.js",
+"wx_ilink_py/phone_mcp_routes.py"
+],
+"保存她的样子": [
+"control_persona.js"
+],
+"保存并使用": [
+"control_persona.js"
+],
+"保存并测试": [
+"control.js"
+],
+"保存并测试连接": [
+"control.html"
+],
+"保存并连接": [
+"control_channels.js"
+],
+"保存录音和文字": [
+"control_voice.js"
+],
+"保存模型并测试对话": [
+"control.html"
+],
+"保存纠正": [
+"control.html"
+],
+"保存节次表": [
+"control.html"
+],
+"保存设置": [
+"control.js"
+],
+"保存配置": [
+"control_channels.js"
+],
+"保留记忆": [
+"control_persona.js"
+],
+"保留记忆：她接着用现在这个人设的记忆和聊天记录，只是性格和说话方式换了": [
+"control_persona.js"
+],
+"信息": [
+"control_logs.js"
+],
+"信息 {0}": [
+"control_logs.js"
+],
+"信息及以上": [
+"control.html"
+],
+"修复": [
+"control_diag.js"
+],
+"修改": [
+"control_persona.js",
+"control_schedule.js"
+],
+"修改历史": [
+"control.html",
+"control_persona.js",
+"control_schedule.js"
+],
+"修改原因（可选，会记在修改记录里）": [
+"control.html"
+],
+"修改密码": [
+"control.html"
+],
+"修改密码会让其他所有登录失效。": [
+"control.html"
+],
+"修改并换回它": [
+"control_persona.js"
+],
+"修改端口需要重启服务，请在服务器上执行 /opt/violet/violet set-port 新端口；忘记地址或密码时执行 /opt/violet/violet info / reset-password。": [
+"control.js"
+],
+"修改管理员密码": [
+"control.html"
+],
+"修改记录": [
+"control.html"
+],
+"修改记录 {0}": [
+"control.js"
+],
+"修改记录读取失败": [
+"control.js"
+],
+"修改记录读取失败：": [
+"control.js"
+],
+"修改配置": [
+"control_channels.js"
+],
+"假期": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"假期和调休补课": [
+"control.html"
+],
+"假期类型": [
+"ai/schedule/importer.py"
+],
+"停止探索": [
+"control.js"
+],
+"停用": [
+"control.js",
+"control_mcp.js",
+"control_schedule.js",
+"control_stickers.js"
+],
+"停用 {0}？它的工具都不会再给 Violet，随时可以再启用。": [
+"control_mcp.js"
+],
+"停用“{0}”？它不再出现在课表里，Violet 也查不到；可以随时恢复。": [
+"control_schedule.js"
+],
+"停用了": [
+"control.js"
+],
+"停用服务器": [
+"control.js",
+"control_mcp.js"
+],
+"停用的课程不再出现在课表里，可以恢复；彻底删除会连同它的修改历史一起删掉。": [
+"control.html"
+],
+"停课": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"停课 / 已调走": [
+"control.html"
+],
+"停课日": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"健康、财务、证件号、联系方式、精确住址等默认不自动保存": [
+"ai/control_config.py"
+],
+"允许 Violet 不问你、直接使用 {0}？这是会改动东西的工具，她会真的执行它的操作（工具本身能做什么由提供它的服务器决定）。": [
+"control_mcp.js"
+],
+"允许 Violet 在空闲时自己上网看看感兴趣的东西（会用模型、计入联网次数）；打开后还要在“工具与手机 → 联网工具”里点“开始探索”": [
+"ai/control_config.py"
+],
+"允许写入 / 高风险工具需要确认（confirm: true）：Violet 将能用它真的执行操作": [
+"wx_ilink_py/mcp_routes.py"
+],
+"允许直接用": [
+"control_mcp.js"
+],
+"允许自主探索": [
+"ai/control_config.py"
+],
+"元气同学": [
+"persona/templates/genki.json"
+],
+"先备份（violet backup），再联系开发者": [
+"ai/diagnostics.py"
+],
+"先完成第 1 步，模型列表会自动出现在这里。": [
+"control.html"
+],
+"先把“{0}”的人设设为 {1}、关系设为 {2}，再": [
+"control_eve_import.js"
+],
+"先新增课程": [
+"control_schedule.js"
+],
+"先新建学期": [
+"control_schedule.js"
+],
+"先新建学期（或在上面选好学期），再导入教务系统的课表": [
+"control_schedule.js"
+],
+"先新建或选好学期，再导入教务系统的课表": [
+"wx_ilink_py/schedule_routes.py"
+],
+"先用 set-password 设置管理员密码，否则禁用令牌后就无法登录": [
+"wx_ilink_py/auth.py"
+],
+"先设提醒再回复": [
+"ai/control_config.py"
+],
+"先选一个画图模型并保存": [
+"wx_ilink_py/image_routes.py"
+],
+"先选一段录音": [
+"control_voice.js"
+],
+"先选一种搜索方式": [
+"control.js"
+],
+"先选择学期": [
+"control_schedule.js"
+],
+"先选择文件": [
+"control_eve_import.js"
+],
+"先选择文件：教务系统导出的 .xls，或者 .csv / .json": [
+"control_schedule.js"
+],
+"先问你": [
+"ai/permissions.py",
+"control_mcp.js"
+],
+"先问你（会改动东西）": [
+"control_mcp.js"
+],
+"先预览：预览不会改动课表。确认后在一个事务里写入，任何一项失败都整体不改。 模板：": [
+"control.html"
+],
+"免打扰时段": [
+"control.js"
+],
+"全部": [
+"control.html",
+"control.js"
+],
+"全部 Agent 都用": [
+"control.html"
+],
+"全部课表": [
+"control_schedule.js"
+],
+"全部课表已删除": [
+"control_schedule.js"
+],
+"六": [
+"ai/schedule/importer.py"
+],
+"共 {0} 周": [
+"control_schedule.js"
+],
+"共 {0} 条": [
+"control.js"
+],
+"共 {0} 条，第 {1}–{2} 条": [
+"control.js"
+],
+"关": [
+"control.js",
+"control_eve_import.js"
+],
+"关于你的档案（喜好、称呼、学校……）": [
+"control.html"
+],
+"关掉后不再主动找对方（约定的提醒不受影响）": [
+"ai/control_config.py"
+],
+"关系": [
+"control_persona.js"
+],
+"关系阶段描述": [
+"ai/control_config.py"
+],
+"关系（你们是什么关系）": [
+"control_persona.js"
+],
+"关键字、模块名（例如 channels、mcp）": [
+"control.html"
+],
+"关闭": [
+"ai/control_config.py",
+"ai/social/store.py",
+"control.html",
+"control.js",
+"control_channels.js",
+"control_persona.js"
+],
+"关闭后下一次检查起不再记录新的生活进展，打开后马上开始；临时暂停也可以用下面的“暂停 / 恢复”": [
+"ai/control_config.py"
+],
+"关闭后先整理记忆再回复（回复会慢一些）": [
+"ai/control_config.py"
+],
+"关闭图片功能": [
+"control_images.js"
+],
+"关闭时收到的图片只用下面的识图模型看一眼，聊天里没有生成 / 编辑图片的工具": [
+"ai/control_config.py"
+],
+"关闭测试": [
+"control_persona.js"
+],
+"关闭（任务在服务器上继续）": [
+"control.js"
+],
+"关（推荐）：她直接回复，自己决定要不要用工具、查记忆，快一倍、省一半 token；开：先多调用一次模型判断意图（以前的做法，出问题时可以切回来）": [
+"ai/control_config.py"
+],
+"兴趣": [
+"control_persona.js"
+],
+"兴趣爱好，每行一条（看书、音乐、写日记会带动她的虚拟生活）": [
+"control_persona.js"
+],
+"其中命中缓存": [
+"control.js"
+],
+"其他": [
+"ai/control_config.py",
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"其他 MCP 服务器": [
+"control.html",
+"control.js"
+],
+"内存 8 GB 以上（说话时约占 4 GB）": [
+"tools/violet_voice.py"
+],
+"内存只有 {0} GB，至少要 8 GB": [
+"tools/violet_voice.py"
+],
+"内容": [
+"control_schedule.js"
+],
+"内容不能为空，也不能超过 1000 字": [
+"wx_ilink_py/control_routes.py"
+],
+"内容没有变化": [
+"wx_ilink_py/control_routes.py"
+],
+"内置": [
+"control_mcp.js"
+],
+"再绑定一个账号": [
+"control_channels.js"
+],
+"再输一次新密码": [
+"control.html"
+],
+"写": [
+"ai/persona_templates.py"
+],
+"写一句要她说的话": [
+"wx_ilink_py/voice_routes.py"
+],
+"写入": [
+"control_mcp.js"
+],
+"写入（需另外授权）": [
+"control.js"
+],
+"写出要发的话，需要时查工具和记忆": [
+"control_flow.js"
+],
+"写回复": [
+"control_model.js"
+],
+"冲突": [
+"control_schedule.js"
+],
+"决定在群里说不说、说什么用的模型；留空 = 和 Chat 一样。群消息多时可以换便宜一点的模型": [
+"ai/control_config.py"
+],
+"决定时给模型看最近多少条消息（包括已经看过的）": [
+"ai/control_config.py"
+],
+"决定要不要主动找你": [
+"control_model.js"
+],
+"冷场时想说话的频率": [
+"ai/control_config.py"
+],
+"冷静可靠": [
+"persona/templates/calm.json"
+],
+"凭据 {0}": [
+"control.js"
+],
+"凭据已替换": [
+"control.js"
+],
+"凭据请求头": [
+"control.html"
+],
+"凭据（可选，只能替换不能查看）": [
+"control.html"
+],
+"出错": [
+"control.js",
+"control_channels.js",
+"control_flow.js",
+"control_social.js"
+],
+"出错时的兜底回复": [
+"ai/control_config.py"
+],
+"分类 {0}": [
+"control.js"
+],
+"列表是空的": [
+"control_images.js"
+],
+"刚聊过，晚点再说": [
+"control.js"
+],
+"创建 Python 环境": [
+"tools/violet_voice.py"
+],
+"创建 Python 环境失败：": [
+"tools/violet_voice.py"
+],
+"删掉之前画的 {0} 个套装表情包，重新画整套 {1} 个？每个算一张图片的额度。": [
+"control_stickers.js"
+],
+"删掉之前画的这一套，用现在的画风重新画 12 个": [
+"control_stickers.js"
+],
+"删除": [
+"control.html",
+"control.js",
+"control_images.js",
+"control_mcp.js",
+"control_schedule.js",
+"control_stickers.js"
+],
+"删除 / 停用": [
+"control_schedule.js"
+],
+"删除 MCP 服务器“{0}”？它的凭据和工具分类会一起删除。": [
+"control_mcp.js"
+],
+"删除“{0}”？": [
+"control_schedule.js"
+],
+"删除会同时清掉这些数据在修改历史里的旧副本（老师、地点、座位号、备注的原文），只留下“何时、谁、删了多少行”的记录，不能恢复。只想暂时不用，请用“归档”或“停用”。": [
+"control.html"
+],
+"删除全部课表": [
+"control.html",
+"control_schedule.js"
+],
+"删除全部课表…": [
+"control.html"
+],
+"删除全部课表需要二次确认：confirm: true，并输入“{0}”": [
+"wx_ilink_py/schedule_routes.py"
+],
+"删除参考录音？删掉后她就不能发语音了。": [
+"control_voice.js"
+],
+"删除失败：": [
+"control.js",
+"control_schedule.js"
+],
+"删除学期课表需要确认：confirm: true，并输入学期名称": [
+"wx_ilink_py/schedule_routes.py"
+],
+"删除录音": [
+"control_voice.js"
+],
+"删除渠道“{0}”？它的凭据会被删除；已经收到的消息和记忆不受影响。": [
+"control_channels.js"
+],
+"删除考试“{0}”？": [
+"control_schedule.js"
+],
+"删除这一条？会从她的档案里彻底删掉（聊天记录里这句话的原文也会被抹掉），不能恢复。": [
+"control.js"
+],
+"删除这一条？会从她的档案里彻底删掉（聊天记录里这句话的原文也会被抹掉），不能恢复。\n\n{0}": [
+"control.js"
+],
+"删除这个上课时间？它的调课停课也不再生效（修改历史里保留记录）。": [
+"control_schedule.js"
+],
+"删除这个学期的全部课表": [
+"control_schedule.js"
+],
+"删除这个学期的全部课表…": [
+"control.html"
+],
+"删除这个学期的课表": [
+"control.html"
+],
+"删除这个渠道": [
+"control_channels.js"
+],
+"删除这个表情包？": [
+"control_stickers.js"
+],
+"删除这张图片的文件？（对它的文字描述另按保留天数处理）": [
+"control_images.js"
+],
+"删除这条事件记忆？它会被标记为已删除（可在修改记录中看到原文），Violet 不再使用它。聊天记录不变：最近的聊天里如果还有这件事的原话，Violet 仍能看到（要连原话一起抹掉，用“遗忘”）。": [
+"control.js"
+],
+"删除这条事件记忆？它会被标记为已删除（可在修改记录中看到原文），Violet 不再使用它。聊天记录不变：最近的聊天里如果还有这件事的原话，Violet 仍能看到（要连原话一起抹掉，用“遗忘”）。\n\n{0}": [
+"control.js"
+],
+"删除这条核心记忆？原文会先写进修改记录。": [
+"control.js"
+],
+"删除这条核心记忆？原文会先写进修改记录。\n\n{0}": [
+"control.js"
+],
+"删除需要确认（confirm: true）": [
+"wx_ilink_py/channel_routes.py",
+"wx_ilink_py/control_routes.py",
+"wx_ilink_py/mcp_routes.py"
+],
+"判断这句话要做什么（默认关闭）": [
+"control_flow.js"
+],
+"别人私聊她": [
+"ai/control_config.py",
+"control_social.js"
+],
+"到": [
+"control.html"
+],
+"到 {0} 为止": [
+"control.js"
+],
+"到哪天为止（可选）": [
+"control_schedule.js"
+],
+"到时间了": [
+"control.js"
+],
+"到期后删除图片文件（对图片的文字描述另算）": [
+"ai/control_config.py"
+],
+"刷新": [
+"control.html",
+"control_channels.js",
+"control_phone.js"
+],
+"刷新状态": [
+"control.html"
+],
+"刷新画面": [
+"control_channels.js"
+],
+"刷新页面（加载新版本）": [
+"control_setup.js"
+],
+"加了 {0} 个表情包": [
+"control_stickers.js"
+],
+"加课": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"加课：{0}": [
+"control_schedule.js"
+],
+"加速站 8.217.135.233": [
+"tools/violet_sources.py"
+],
+"加速站 p.jackyu.cn": [
+"tools/violet_sources.py"
+],
+"动态内容是空的": [
+"control_social.js",
+"wx_ilink_py/qq_routes.py"
+],
+"动漫": [
+"ai/control_config.py"
+],
+"勾上的会覆盖 Violet 现在的值，记在“修改记录”里，可以回滚。和 Violet 一样的默认不勾。": [
+"control_eve_import.js"
+],
+"勾选 SearXNG 要用的搜索引擎。服务器在国内时，国外的通常连不上，只勾国内的即可。保存后会重启 SearXNG 并测试一次搜索，下面的“测试联网”可以看到每个引擎为什么失败。": [
+"control.js"
+],
+"勾选要使用它的 Agent": [
+"ai/diagnostics.py"
+],
+"包含老师、地点、座位号、备注": [
+"control.html"
+],
+"包括所有重试": [
+"ai/control_config.py"
+],
+"包括第一次": [
+"ai/control_config.py"
+],
+"升级 Violet": [
+"control_setup.js"
+],
+"升级前会先备份配置和数据；新版本起不来会自动退回旧版本。": [
+"control.html"
+],
+"单": [
+"control_schedule.js"
+],
+"单双周": [
+"control_schedule.js"
+],
+"单次请求超时（秒）": [
+"ai/control_config.py"
+],
+"单独的 API 地址和 Key（一般不用填）": [
+"control_images.js"
+],
+"单独的人设 · 自己的记忆": [
+"control_persona.js"
+],
+"博查": [
+"control.js"
+],
+"博查（付费 API）": [
+"ai/control_config.py"
+],
+"印象": [
+"control_social.js"
+],
+"卸载": [
+"control_channels.js"
+],
+"卸载 QQ": [
+"control_channels.js"
+],
+"卸载 QQ（SnowLuma）？这个 QQ 号会退出登录，群聊、表情包和聊天记录保留。": [
+"control_channels.js"
+],
+"卸载 SearXNG": [
+"control.js",
+"wx_ilink_py/control_routes.py"
+],
+"卸载语音": [
+"control_voice.js"
+],
+"卸载语音？会删掉模型和语音服务（约 8 GB），上传的参考录音保留。": [
+"control_voice.js"
+],
+"卸载这台服务器上的 SearXNG？服务、程序和缓存都会删除。": [
+"control.js"
+],
+"卸载需要确认（confirm: true）": [
+"wx_ilink_py/qq_routes.py"
+],
+"历史": [
+"control_persona.js"
+],
+"原因": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"原因（可选）": [
+"control.html",
+"control_schedule.js"
+],
+"原因：": [
+"control.js"
+],
+"原因：{0}": [
+"control_images.js",
+"control_persona.js"
+],
+"原来：": [
+"control.js"
+],
+"原话：": [
+"control.js"
+],
+"去“聊天渠道”开启{0}": [
+"control.js"
+],
+"去处理": [
+"control_setup.js"
+],
+"去看聊天记录": [
+"control_eve_import.js"
+],
+"参与方式": [
+"control_social.js"
+],
+"参数不是合法的 JSON": [
+"control_mcp.js"
+],
+"参数不符合工具的要求": [
+"ai/mcp_admin.py"
+],
+"参数要是一个 JSON 对象": [
+"ai/mcp_admin.py"
+],
+"参考图": [
+"control_images.js"
+],
+"双": [
+"control_schedule.js"
+],
+"发 QQ 动态": [
+"ai/control_config.py"
+],
+"发出": [
+"control.js"
+],
+"发出去": [
+"control_flow.js",
+"control_social.js"
+],
+"发出的": [
+"control_images.js"
+],
+"发出的消息": [
+"wx_ilink_py/control_routes.py"
+],
+"发到 QQ 空间": [
+"control_social.js"
+],
+"发动态需要确认（confirm: true）": [
+"wx_ilink_py/qq_routes.py"
+],
+"发消息、语音、表情包，记下印象": [
+"control_flow.js"
+],
+"发现 {0} 个需要处理的问题（按严重程度排列）": [
+"control_diag.js"
+],
+"发现矛盾就改写": [
+"ai/control_config.py"
+],
+"发给模型的对话：{0} 条 · {1} 字": [
+"control_flow.js"
+],
+"发送失败 {0}": [
+"control_channels.js"
+],
+"发送失败重试次数": [
+"ai/control_config.py"
+],
+"发送重试间隔（秒）": [
+"ai/control_config.py"
+],
+"取消": [
+"control.html",
+"control.js",
+"control_channels.js",
+"control_persona.js"
+],
+"取消归档": [
+"control_schedule.js"
+],
+"取消考试": [
+"control_schedule.js"
+],
+"取消计划": [
+"control_persona.js"
+],
+"取消这个提醒": [
+"control.js"
+],
+"取消这个提醒？到时间她就不会再提醒你。": [
+"control.js"
+],
+"变动": [
+"control_schedule.js"
+],
+"变动类型": [
+"ai/schedule/importer.py"
+],
+"只回群里认识的人": [
+"ai/control_config.py",
+"control_social.js"
+],
+"只在你问的时候才给建议": [
+"control.js"
+],
+"只对“消息没送到聊天平台”的连接错误重试": [
+"ai/control_config.py"
+],
+"只对博查 / Brave：换成别的接口地址；留空 = 官方地址": [
+"ai/control_config.py"
+],
+"只对连接中途断开重试；超时、设备离线不重试": [
+"ai/control_config.py"
+],
+"只接受本机上报": [
+"control_channels.js"
+],
+"只支持 csv / json": [
+"wx_ilink_py/schedule_routes.py"
+],
+"只改时间、不改日期就保持原日期": [
+"control_schedule.js"
+],
+"只有“先问你”的工具才需要（也才能）设为“允许直接用”": [
+"ai/mcp_admin.py"
+],
+"只用 GitHub": [
+"tools/violet_sources.py"
+],
+"只用 IPv4（服务器的 IPv6 配了但不通时，所有搜索引擎都会超时，勾上这个）": [
+"control.js"
+],
+"只用加速站 8.217.135.233:9999（HTTP，通常更快）": [
+"tools/violet_sources.py"
+],
+"只用加速站 p.jackyu.cn（HTTPS）": [
+"tools/violet_sources.py"
+],
+"只用自定义加速地址（填在下面）": [
+"tools/violet_sources.py"
+],
+"只看不说": [
+"ai/social/store.py"
+],
+"只看排查日志": [
+"control.html"
+],
+"只看这一轮对话": [
+"control_logs.js"
+],
+"只看错误": [
+"control.html"
+],
+"只能修改在后台添加的服务器（.env 和内置的只能开关、分类工具）": [
+"ai/mcp_admin.py"
+],
+"只能删除在后台添加的服务器": [
+"ai/mcp_admin.py"
+],
+"只能是 Authorization 或 X-… 开头的请求头": [
+"ai/mcp_admin.py"
+],
+"只能是 chat / performer / proactive 中的几个": [
+"ai/mcp_admin.py"
+],
+"只能是 read / write / high_risk / deny": [
+"ai/mcp_admin.py"
+],
+"只能是 streamable_http 或 sse（运行本地命令的 stdio 服务器只能在 .env 里配置）": [
+"ai/mcp_admin.py"
+],
+"只能替换，不能查看；保存后立即用于新的调用": [
+"ai/control_config.py"
+],
+"只能测试“直接用”的工具（会改动东西的工具测试时会真的执行操作）": [
+"ai/mcp_admin.py"
+],
+"只要填名称和“今天是第几周”就行，其他的会自动算。": [
+"control_schedule.js"
+],
+"只记录": [
+"ai/control_config.py"
+],
+"只记问题": [
+"ai/control_config.py"
+],
+"只说了日期没说时间时用": [
+"ai/control_config.py"
+],
+"只读": [
+"control.js",
+"control_mcp.js"
+],
+"叫你“{0}”": [
+"control.js",
+"control_persona.js"
+],
+"叫她名字一定回": [
+"ai/control_config.py"
+],
+"可以不填，以后聊天时再起": [
+"control_persona.js"
+],
+"可以先重启这个渠道；仍失败就检查网络或凭据": [
+"ai/diagnostics.py"
+],
+"可以多说一些": [
+"control.js"
+],
+"可用": [
+"control.js",
+"control_mcp.js"
+],
+"可用于 {0}": [
+"control.js"
+],
+"可空，例如 爸爸": [
+"control_persona.js"
+],
+"可选": [
+"control_setup.js"
+],
+"各 Agent 当前模型": [
+"control.html"
+],
+"各 Agent 的模型": [
+"ai/setup_status.py"
+],
+"各 App 用了多久": [
+"control_mcp.js"
+],
+"同一方连发的几行算一轮": [
+"ai/control_config.py"
+],
+"同意": [
+"control.js"
+],
+"同意 QQ 加好友": [
+"ai/permissions.py"
+],
+"同意了但没做成": [
+"control.js"
+],
+"同意过": [
+"ai/permissions.py"
+],
+"名字": [
+"control.html",
+"control_persona.js"
+],
+"名字、性格、说话方式、兴趣都自己写；从现在用的人设开始改。": [
+"control_persona.js"
+],
+"名字只能用小写字母、数字、- 和 _（2–31 个字符），会出现在工具名里": [
+"ai/mcp_admin.py"
+],
+"名称": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"后台上传": [
+"ai/stickers.py"
+],
+"后台发的": [
+"control_social.js"
+],
+"后台地址：{0}/{1}（没有带安全入口的访问一律显示 404）。": [
+"control.js"
+],
+"后台排队": [
+"control_flow.js"
+],
+"后台无操作多久要重新登录（分钟）": [
+"ai/control_config.py"
+],
+"后台替换": [
+"control.js"
+],
+"后台添加": [
+"control_mcp.js"
+],
+"后台登录最长保持（小时）": [
+"ai/control_config.py"
+],
+"后台记忆整理线程没有运行：聊天正常，但新内容不会写进长期记忆": [
+"ai/diagnostics.py"
+],
+"后台设置": [
+"control.js"
+],
+"否": [
+"control.js"
+],
+"启动通知": [
+"ai/control_config.py"
+],
+"启用": [
+"control.js",
+"control_mcp.js",
+"control_stickers.js"
+],
+"启用服务器": [
+"control.js",
+"control_mcp.js"
+],
+"周{0}": [
+"ai/schedule/school_xls.py"
+],
+"周一": [
+"control_schedule.js"
+],
+"周三": [
+"control_schedule.js"
+],
+"周二": [
+"control_schedule.js"
+],
+"周五": [
+"control_schedule.js"
+],
+"周六": [
+"control_schedule.js"
+],
+"周四": [
+"control_schedule.js"
+],
+"周日": [
+"control_schedule.js"
+],
+"周次": [
+"ai/schedule/importer.py",
+"ai/schedule/school_xls.py",
+"control_schedule.js"
+],
+"周视图": [
+"control.html"
+],
+"和 Chat 用同一个模型": [
+"control_images.js"
+],
+"和主设定一样": [
+"control_persona.js"
+],
+"和你聊天时，她知道自己最近在群里说过什么（反过来，你私聊的内容永远不会带到群里）": [
+"ai/control_config.py"
+],
+"和现在的课表相比没有任何变化": [
+"control_schedule.js"
+],
+"哪部分": [
+"control.js"
+],
+"哪门课": [
+"control_schedule.js"
+],
+"喜欢开玩笑": [
+"control.js"
+],
+"喜欢简短的回复": [
+"control.js"
+],
+"四": [
+"ai/schedule/importer.py"
+],
+"回到现在的人设": [
+"control.js"
+],
+"回复“同意 {1}”我就去做，回复“不同意 {2}”就算了（{3} 小时内有效）。": [
+"ai/permissions.py"
+],
+"回复一致性检查": [
+"ai/control_config.py"
+],
+"回复习惯提示": [
+"ai/control_config.py"
+],
+"回复前先做意图识别": [
+"ai/control_config.py"
+],
+"回复发出后在后台整理，结果会显示在这里": [
+"ai/chat.py"
+],
+"回复后再整理记忆": [
+"ai/control_config.py"
+],
+"回复检查": [
+"ai/control_config.py"
+],
+"回复线程": [
+"control.js"
+],
+"回复长短": [
+"control.js"
+],
+"回复长短适中": [
+"control.js"
+],
+"回滚到第 {0} 次修改": [
+"ai/control_config.py"
+],
+"回滚到这次之后的状态": [
+"control.js"
+],
+"回滚失败，已恢复原来的设置（{0}）": [
+"wx_ilink_py/control_routes.py"
+],
+"回滚失败：": [
+"control.js"
+],
+"回滚需要确认（confirm: true）": [
+"wx_ilink_py/control_routes.py"
+],
+"国内能访问": [
+"control.js"
+],
+"国外（国内服务器通常连不上）": [
+"control.js"
+],
+"图片": [
+"ai/control_config.py",
+"control.html",
+"control_diag.js",
+"control_images.js"
+],
+"图片功能": [
+"ai/control_config.py",
+"control_images.js"
+],
+"图片功能关闭或没有可用的识图服务时，用上面的识图模型": [
+"ai/control_config.py"
+],
+"图片接口（/images/generations）": [
+"ai/control_config.py"
+],
+"图片接口（/images/generations）：gpt-image-1、dall-e-3 等": [
+"control_images.js"
+],
+"图片描述保留（天）": [
+"ai/control_config.py"
+],
+"图片数据不对": [
+"wx_ilink_py/qq_routes.py"
+],
+"图片页：开关": [
+"control_images.js"
+],
+"图片页：更多设置": [
+"control_images.js"
+],
+"图片页：画图 Key 改回模型服务": [
+"control_images.js"
+],
+"图片页：画图模型": [
+"control_images.js"
+],
+"图片页：识图模型": [
+"control_images.js"
+],
+"在 QQ 开放平台免费创建一个官方机器人，填两项就能用。只能私聊，不会被封号。": [
+"control_channels.js"
+],
+"在 Telegram 里打开 @BotFather": [
+"control_channels.js"
+],
+"在“工具”页处理：": [
+"ai/diagnostics.py"
+],
+"在“工具”页点“测试”看具体原因；连不上时先“检查连接”": [
+"ai/diagnostics.py"
+],
+"在“工具”页给工具分类 / 授权": [
+"ai/diagnostics.py"
+],
+"在“沙箱配置”里把你自己的 QQ 加进去": [
+"control_channels.js"
+],
+"在“渠道”页生成绑定码，用你的账号发给机器人": [
+"ai/diagnostics.py"
+],
+"在手机“设置 → 远程访问”里填这三项": [
+"control_phone.js"
+],
+"在手机上安装 Violet MCP": [
+"control_phone.js"
+],
+"在服务器上安装 SnowLuma 和 Linux QQ（Docker）？第一次要下载约 740 MB。": [
+"control_channels.js"
+],
+"在服务器上安装中继（只需一次）": [
+"control_phone.js"
+],
+"在机器人的“开发设置”里复制 AppID 和 AppSecret": [
+"control_channels.js"
+],
+"在用": [
+"control.js"
+],
+"在用：": [
+"control_persona.js"
+],
+"在这台服务器上安装语音（CosyVoice）？要下载约 3 GB 依赖和 5 GB 模型，通常 20–40 分钟，期间聊天照常。": [
+"control_voice.js"
+],
+"在这台服务器上装一个私有的开源搜索（只在本机 127.0.0.1 监听、不需要 Docker），它同时问好几个搜索引擎。国内服务器上它的搜索引擎经常连不上，那样请用上面的必应直连。卸载会把它和它的文件全部删掉。": [
+"control.js"
+],
+"在这里翻篇？她看不到这里以前的聊天了，像重新开始；聊天记录不删。": [
+"control_social.js"
+],
+"地址": [
+"control.html"
+],
+"地址 {0}": [
+"control.js",
+"control_mcp.js"
+],
+"地址 {0}（只有本机能访问）": [
+"control.js"
+],
+"地址要以 https:// 开头（本机的服务可以用 http://127.0.0.1），不能带用户名密码": [
+"ai/mcp_admin.py"
+],
+"地址里不要放查询参数（令牌请填在“请求头”里，只会加密保存）": [
+"ai/mcp_admin.py"
+],
+"地点": [
+"ai/schedule/importer.py",
+"ai/schedule/school_xls.py",
+"control_schedule.js"
+],
+"地点（可选）": [
+"control_schedule.js"
+],
+"域名 {0} 解析失败（DNS）": [
+"ai/diagnostics.py"
+],
+"基础工具": [
+"tools/violet_voice.py"
+],
+"填了就自动算出“第一周的星期一”；不知道开学日期时，下面两个日期也可以留空（按 20 周算）": [
+"control_schedule.js"
+],
+"填写 API 地址和 API Key": [
+"ai/setup_status.py"
+],
+"填写说明": [
+"control.html"
+],
+"备注": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"备注不会提供给 Violet": [
+"control_schedule.js"
+],
+"备注：": [
+"control_schedule.js"
+],
+"备用模型": [
+"control.js",
+"control_model.js"
+],
+"复制": [
+"control_channels.js",
+"control_phone.js"
+],
+"复制命令": [
+"control.html"
+],
+"复制失败：请手动选中复制": [
+"control.js"
+],
+"复核每天最多几次": [
+"ai/control_config.py"
+],
+"复核每天最多用多少 token": [
+"ai/control_config.py"
+],
+"复核用的模型": [
+"ai/control_config.py"
+],
+"外部网络": [
+"control_diag.js"
+],
+"外部网络正常（{0} 个地址都能连上）": [
+"ai/diagnostics.py"
+],
+"多久后自动关闭": [
+"control_persona.js"
+],
+"多半是模型或工具一直没回应；查看这些轮次的日志": [
+"ai/diagnostics.py"
+],
+"多条消息之间按长度停顿一下": [
+"ai/control_config.py"
+],
+"大肥鱼（Aurabot）": [
+"persona/templates/dafeiyu.json"
+],
+"天": [
+"ai/schedule/importer.py"
+],
+"失效日期": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"失败": [
+"control.js",
+"control_flow.js"
+],
+"失败（课表没改）": [
+"control_schedule.js"
+],
+"失败：": [
+"control.js",
+"control_mcp.js",
+"control_phone.js",
+"tools/violet_voice.py"
+],
+"失败：{0}{1}": [
+"control_mcp.js"
+],
+"头发": [
+"control_persona.js"
+],
+"女儿": [
+"ai/persona_templates.py"
+],
+"她": [
+"control_flow.js"
+],
+"她一条条发的时候你又说话，就停下剩下的": [
+"ai/control_config.py"
+],
+"她主动找你时发到这里。": [
+"control.js"
+],
+"她会在聊天里慢慢问一些了解你的问题（怎么称呼、上学还是上班……）；你拒绝过的不会再问。": [
+"control.js"
+],
+"她会用": [
+"control.js"
+],
+"她偶尔在 QQ 空间发一条说说（9:00–23:00，两条至少隔 4 小时，只写她自己的生活，不写你的事）；发过的动态在“聊天渠道 → QQ”下面能看到": [
+"ai/control_config.py"
+],
+"她写回复时你又发了消息，就合在一起回": [
+"ai/control_config.py"
+],
+"她写好了（理由：{0}），可以改了再发。": [
+"control_social.js"
+],
+"她可以从自己收藏的表情包里挑一个发（和你聊天、在群里都可以）；收藏在“图片”页管理": [
+"ai/control_config.py"
+],
+"她在 QQ 上能自己做的事": [
+"control.js"
+],
+"她在想……": [
+"control_social.js"
+],
+"她在网上看过的（最近 50 条）和不许看的网站": [
+"control.js"
+],
+"她处理每一轮消息时走过的步骤：你的消息、主动联系、QQ 群聊和别人的私聊都算。点一步看它收到了什么、给出了什么（包括发给模型的完整内容）。只保留最近 20 轮，存在内存里，重启后清空。": [
+"control.html"
+],
+"她对这个群的印象": [
+"control_social.js"
+],
+"她对这个群的印象（她自己会慢慢写，你也可以改）": [
+"control_social.js"
+],
+"她平时过着什么样的日子": [
+"control_persona.js"
+],
+"她怎么叫你": [
+"control_persona.js"
+],
+"她收到了（算已发）": [
+"control_diag.js"
+],
+"她画自己（自拍、照片）时按这里画。现在看的是：{0}（上面“下面这些是谁的”可以换）。改了会记一个新版本，升级 Violet 不会冲掉。": [
+"control_persona.js"
+],
+"她的名字": [
+"control_persona.js"
+],
+"她的声音（参考录音）": [
+"control_voice.js"
+],
+"她的样子": [
+"control.html",
+"control_persona.js"
+],
+"她的生活": [
+"control.html",
+"control_persona.js"
+],
+"她的虚拟生活（都是虚构的）。暂停只停止虚拟生活往前推进，不影响聊天和主动消息；彻底关闭在“设置 → 生活引擎”。": [
+"control.html"
+],
+"她的语音": [
+"ai/control_config.py"
+],
+"她聊天和在群里时会偶尔从这里挑一个发；挑的时候只看说明，所以说明要写清楚。": [
+"control_stickers.js"
+],
+"她能不能用": [
+"control_mcp.js"
+],
+"她能自己做的事": [
+"control.html",
+"control.js"
+],
+"她自己决定什么时候画图": [
+"ai/control_config.py"
+],
+"她自己决定回不回": [
+"control_social.js"
+],
+"她自己发的": [
+"control_social.js"
+],
+"她自己的心情": [
+"ai/control_config.py"
+],
+"她觉得想发时就发（还要打开“发 QQ 动态”）。先问你：她会私聊你要发的内容，你同意才发。": [
+"ai/permissions.py"
+],
+"她觉得现在没什么想发的（{0}）。": [
+"control_social.js"
+],
+"她认识的人（对每个人的印象）": [
+"control_social.js"
+],
+"她说过的话": [
+"control.js"
+],
+"她还不认识任何人。": [
+"control_social.js"
+],
+"她还没有在网上看过东西。": [
+"control.js"
+],
+"她连着调用工具最多几轮；用完了就按已经拿到的结果回答": [
+"ai/control_config.py"
+],
+"好了，之后合适的时候她会再问": [
+"control.js"
+],
+"好，那就不做了。": [
+"ai/permissions.py"
+],
+"字段": [
+"control_schedule.js"
+],
+"存储空间": [
+"control_mcp.js"
+],
+"学期": [
+"control.html",
+"control_schedule.js"
+],
+"学期名称不一致，没有删除": [
+"control_schedule.js"
+],
+"学期已创建，下一步：导入课表": [
+"control_schedule.js"
+],
+"学期时区": [
+"control_schedule.js"
+],
+"它正在用来搜索，卸载后联网搜索会关闭（可以改用必应直连）。": [
+"control.js"
+],
+"安全入口要 6–64 个字符，只能有字母、数字、_ 和 -，也不能是程序自己用的路径": [
+"wx_ilink_py/auth.py"
+],
+"安全入口（地址里 端口/ 后面的那一段）": [
+"control.html"
+],
+"安装": [
+"tools/violet_voice.py"
+],
+"安装 QQ": [
+"control_channels.js"
+],
+"安装 SearXNG": [
+"control.js"
+],
+"安装{0}": [
+"tools/violet_voice.py"
+],
+"安装{0}失败（检查网络 / pip 源）：": [
+"tools/violet_voice.py"
+],
+"安装依赖：": [
+"tools/violet_voice.py"
+],
+"安装手机中继": [
+"control_phone.js"
+],
+"安装时随机生成的密码（可以一直用）": [
+"ai/setup_status.py"
+],
+"安装时随机生成的密码（可以一直用，想换也可以在下面改）": [
+"control.js"
+],
+"安装语音": [
+"control_voice.js"
+],
+"安静体贴、很会倾听，像一个温柔的姐姐": [
+"persona/templates/gentle.json"
+],
+"完成": [
+"control.js",
+"control_flow.js"
+],
+"完整检查（含数据库）": [
+"control.html"
+],
+"实时更新": [
+"control.html"
+],
+"实验": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"审计日志只记录：对象类型、id、动作、操作者、key、数量和时间；从不记录被删除的值或原话。": [
+"wx_ilink_py/profile_routes.py"
+],
+"密码": [
+"login page"
+],
+"密码太单一了，换一个更难猜的": [
+"wx_ilink_py/auth.py"
+],
+"密码已修改，其他登录已失效": [
+"control.js"
+],
+"密码至少 {0} 个字符": [
+"wx_ilink_py/auth.py"
+],
+"对应课程（可选）": [
+"control_schedule.js"
+],
+"对所有聊天渠道都生效的设置。模型和 API 在“模型服务”页，图片在“图片”页，课表的开关在“课表”页。“立即生效”保存后马上用于新的请求；“重启后生效”需要重启 Violet。保存前会整体检查，有任何一项不合格就一项也不改。": [
+"control.html"
+],
+"对方": [
+"control.html",
+"control.js"
+],
+"对方 / 提示": [
+"control_flow.js"
+],
+"对方像是没说完时多等（秒）": [
+"ai/control_config.py"
+],
+"对方是创造和开发你的人：会改你的设定、测试你的功能、给你加新能力。你可以坦诚地和对方聊你哪里做得好、哪里不对劲、想要什么能力。": [
+"ai/persona_templates.py"
+],
+"对方的话": [
+"control.js"
+],
+"对方说话后至少隔多久（分钟）": [
+"ai/control_config.py"
+],
+"对方连发几条时，最后一条之后等多久再一起处理": [
+"ai/control_config.py"
+],
+"对话中途的系统提示当成带标记的用户消息发": [
+"ai/control_config.py"
+],
+"对话接口返回图片": [
+"ai/control_config.py",
+"control_images.js"
+],
+"对话编号": [
+"control.html"
+],
+"对话编号 {0}": [
+"control_flow.js"
+],
+"对象": [
+"control_schedule.js"
+],
+"导入": [
+"control_eve_import.js",
+"control_schedule.js"
+],
+"导入 / 导出": [
+"control.html"
+],
+"导入 QQ 收藏的表情": [
+"control_stickers.js"
+],
+"导入中…": [
+"control_stickers.js"
+],
+"导入到": [
+"control.html"
+],
+"导入到哪个渠道": [
+"control_eve_import.js"
+],
+"导入前会把这个渠道单独设成上面选的人设和关系（“人设与生活”的人设卡片上会写“在用：…”，那里随时能改）。": [
+"control_eve_import.js"
+],
+"导入后的时间冲突": [
+"control_schedule.js"
+],
+"导入失败，课表没有任何改动": [
+"wx_ilink_py/schedule_routes.py"
+],
+"导入失败，课表没有任何改动（{0}）": [
+"wx_ilink_py/schedule_routes.py"
+],
+"导入失败：": [
+"control_eve_import.js",
+"control_schedule.js"
+],
+"导入完成": [
+"control_eve_import.js"
+],
+"导入方式只能是 merge（追加 / 更新）或 replace（整学期替换）": [
+"ai/schedule/importer.py"
+],
+"导入方式改了，请重新预览": [
+"control_schedule.js"
+],
+"导入方式（.xls / CSV）": [
+"control.html"
+],
+"导入方式：": [
+"control_schedule.js"
+],
+"导入时跳过（手动优先）": [
+"control_schedule.js"
+],
+"导入结果和预览的不一样（导入方式或数据变了），课表没有改动，请重新预览": [
+"ai/schedule/importer.py"
+],
+"导入聊天记录": [
+"control_eve_import.js"
+],
+"导入聊天记录和记忆": [
+"control.html"
+],
+"导入要先登录 QQ": [
+"control_stickers.js"
+],
+"导入记录": [
+"control_schedule.js"
+],
+"导入记忆（核心记忆和事件记忆）": [
+"control_eve_import.js"
+],
+"导入课表": [
+"control.html"
+],
+"导入课表（教务系统的 .xls，或 CSV / JSON）": [
+"control.html"
+],
+"导出": [
+"control.html"
+],
+"导出当前学期": [
+"control.html"
+],
+"导出文件里有完整的聊天内容，请妥善保存。聊天记录在后台只能查看，不能修改或删除。": [
+"control.html"
+],
+"导出聊天记录（JSON，只含文字和时间）": [
+"control.html"
+],
+"将删除 {0} 门课程（连同它们的上课时间）": [
+"control_schedule.js"
+],
+"小号在哪些群里，这里就列出哪些群，新群默认关闭。打开的群里，她会看大家在聊什么，自己决定插不插话；“只看不说”只了解群里的事。上限默认不限。": [
+"control_social.js"
+],
+"小测": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"小缺点": [
+"control_persona.js"
+],
+"小缺点，每行一条": [
+"control_persona.js"
+],
+"小说": [
+"ai/persona_templates.py"
+],
+"少追问": [
+"ai/control_config.py"
+],
+"尝试次数太多，请 {0} 分钟后再试": [
+"wx_ilink_py/auth.py"
+],
+"尝试次数太多，请稍后再试": [
+"wx_ilink_py/auth.py"
+],
+"屏幕亮没亮": [
+"control_mcp.js"
+],
+"屏幕参数": [
+"control_mcp.js"
+],
+"屏蔽": [
+"control_channels.js"
+],
+"展开 / 收起": [
+"control_mcp.js"
+],
+"工具": [
+"control.html",
+"control_diag.js"
+],
+"工具与 MCP": [
+"ai/control_config.py"
+],
+"工具与手机": [
+"control.html"
+],
+"工具已经提供给 Chat，但模型没有调用（{0} 轮）": [
+"ai/diagnostics.py"
+],
+"工具开关和授权（搜索 / 读网页，给 Chat、主动消息…）": [
+"control.js"
+],
+"工具服务器 {0} 不在了": [
+"ai/permissions.py"
+],
+"工具结果": [
+"control_flow.js"
+],
+"工具结果最长（字）": [
+"ai/control_config.py"
+],
+"工具读取失败：": [
+"control.js"
+],
+"工具调用失败：{0}（{1} 次，{2}）": [
+"ai/diagnostics.py"
+],
+"工具调用超时（秒）": [
+"ai/control_config.py"
+],
+"工具超时": [
+"ai/mcp_admin.py"
+],
+"工具运行了但返回错误": [
+"ai/mcp_admin.py"
+],
+"工具页里停用了 violet-schedule，Violet 现在不会查课表。": [
+"control_schedule.js"
+],
+"工具页里停用了：": [
+"control_schedule.js"
+],
+"工具（MCP）": [
+"ai/setup_status.py"
+],
+"已不在这个群": [
+"control_social.js"
+],
+"已使用默认人设；可以在“人设与生活”页查看，用户档案会在聊天中逐步建立": [
+"ai/setup_status.py"
+],
+"已保存": [
+"control.js",
+"control_channels.js",
+"control_images.js",
+"control_mcp.js",
+"control_model.js",
+"control_schedule.js",
+"control_social.js",
+"control_stickers.js",
+"control_voice.js"
+],
+"已保存 {0} 项": [
+"control_model.js"
+],
+"已保存 {0}，当前运行值 {1}": [
+"control.js"
+],
+"已保存。新的后台地址：…/{0}，请记下来": [
+"control.js"
+],
+"已保存分类": [
+"control_mcp.js"
+],
+"已保存纠正，原来的内容记在修改记录里": [
+"control.js"
+],
+"已保存（第": [
+"control.js"
+],
+"已保存，下一张图起生效": [
+"control_persona.js"
+],
+"已保存，下一条消息起生效": [
+"control_persona.js"
+],
+"已保存，但和其他课时间冲突 {0} 处（见周视图上方）": [
+"control_schedule.js"
+],
+"已保存，但现在还连不上：确认手机已连接中继后，点页面上方的“检查连接”。": [
+"control_phone.js"
+],
+"已保存，其他登录已失效": [
+"control.js"
+],
+"已保存，渠道已按新配置重启": [
+"control_channels.js"
+],
+"已停止": [
+"control.js"
+],
+"已停用": [
+"control.js",
+"control_mcp.js",
+"control_schedule.js"
+],
+"已停用：Violet 不会使用它的任何工具": [
+"ai/mcp_admin.py"
+],
+"已允许，没开始": [
+"control.js"
+],
+"已关闭": [
+"control.js",
+"control_channels.js",
+"control_images.js",
+"control_persona.js"
+],
+"已删除": [
+"control.js",
+"control_channels.js",
+"control_images.js",
+"control_mcp.js",
+"control_schedule.js",
+"control_stickers.js",
+"control_voice.js"
+],
+"已删除“{0}”（{1} 行）": [
+"control_schedule.js"
+],
+"已发": [
+"control_social.js"
+],
+"已发出": [
+"control_social.js"
+],
+"已发生": [
+"control_persona.js"
+],
+"已取消": [
+"control.js",
+"control_persona.js",
+"control_schedule.js"
+],
+"已取消归档": [
+"control_schedule.js"
+],
+"已同意，做好了": [
+"control.js"
+],
+"已启用": [
+"control.js",
+"control_mcp.js"
+],
+"已回滚（第": [
+"control.js"
+],
+"已填写，还没有测试过对话（选好模型后点“保存模型并测试对话”）": [
+"ai/setup_status.py"
+],
+"已填到每个 Agent，点“保存模型并测试对话”生效": [
+"control_model.js"
+],
+"已处理": [
+"control_persona.js"
+],
+"已复制": [
+"control.js"
+],
+"已套用模板，正在重新检查": [
+"control_mcp.js"
+],
+"已安装": [
+"control.js"
+],
+"已安装 · 正在说话": [
+"control_voice.js"
+],
+"已安装 · 正常": [
+"control_voice.js"
+],
+"已安装 · 语音服务没有响应（可能还在加载模型）": [
+"control_voice.js"
+],
+"已完成": [
+"control_diag.js",
+"control_persona.js",
+"control_setup.js"
+],
+"已导入": [
+"control_eve_import.js",
+"control_schedule.js"
+],
+"已导入，现在看的是“{0}”的记录": [
+"control_eve_import.js"
+],
+"已导入：新增 {0}、修改 {1}、删除 {2}": [
+"control_schedule.js"
+],
+"已屏蔽": [
+"control_channels.js"
+],
+"已开启": [
+"control.js",
+"control_channels.js",
+"control_images.js"
+],
+"已开启 · {0}": [
+"control.js"
+],
+"已开始": [
+"control.js"
+],
+"已归档": [
+"control_schedule.js"
+],
+"已彻底删除（{0} 行）": [
+"control_schedule.js"
+],
+"已恢复": [
+"control_persona.js",
+"control_schedule.js"
+],
+"已恢复上一个 API Key": [
+"control.js"
+],
+"已扫码": [
+"control_channels.js"
+],
+"已扫码，正在切换服务器": [
+"wx_ilink_py/ops_page_routes.py"
+],
+"已扫码，请在手机上确认": [
+"wx_ilink_py/ops_page_routes.py"
+],
+"已批准": [
+"control_persona.js"
+],
+"已拒绝": [
+"control.js",
+"control_persona.js"
+],
+"已换主人设，她用自己的记录": [
+"control_persona.js"
+],
+"已换主人设，她的记忆已清除（备份：{0}）": [
+"control_persona.js"
+],
+"已换主人设，记忆保留": [
+"control_persona.js"
+],
+"已换成自定义人设": [
+"control_persona.js"
+],
+"已排好下次时间": [
+"control.js"
+],
+"已提交更新，服务器正在升级，完成后 Violet 会自动重启。": [
+"control_setup.js"
+],
+"已提交，等待服务器开始…": [
+"ai/root_tasks.py",
+"control.js"
+],
+"已提醒": [
+"control.js"
+],
+"已撤回": [
+"control_persona.js"
+],
+"已撤销": [
+"control_schedule.js"
+],
+"已放弃": [
+"control_persona.js"
+],
+"已是最新": [
+"control_setup.js"
+],
+"已暂停": [
+"control.js",
+"control_persona.js"
+],
+"已更换（只保存哈希）": [
+"control.js"
+],
+"已更新": [
+"control_setup.js"
+],
+"已更正": [
+"control_persona.js"
+],
+"已标记为处理": [
+"control_persona.js"
+],
+"已检查": [
+"control_diag.js",
+"control_mcp.js"
+],
+"已检查连接": [
+"control.js"
+],
+"已添加": [
+"control_mcp.js"
+],
+"已登录的微信：{0}": [
+"control_channels.js"
+],
+"已确认，正在登录": [
+"wx_ilink_py/ops_page_routes.py"
+],
+"已禁用": [
+"control.js"
+],
+"已经发送到微信的消息、外部模型服务商的日志、数据库备份文件不在本系统可删除范围内。": [
+"wx_ilink_py/profile_routes.py"
+],
+"已经告诉过对方": [
+"control_persona.js"
+],
+"已经有同名的服务器（包括 .env 和内置的）": [
+"ai/mcp_admin.py"
+],
+"已结束": [
+"control_schedule.js"
+],
+"已翻篇": [
+"control.js",
+"control_social.js"
+],
+"已被新的取代": [
+"control.js"
+],
+"已记下": [
+"control.js",
+"control_diag.js"
+],
+"已记录{0}": [
+"control_schedule.js"
+],
+"已设置": [
+"ai/setup_status.py",
+"control.js"
+],
+"已设置（": [
+"control.js",
+"control_mcp.js"
+],
+"已设置（{0}），输入新值以替换": [
+"control.js"
+],
+"已设置（{0}，指纹 {1}）": [
+"control.js"
+],
+"已设置（指纹 {0}）": [
+"control_channels.js"
+],
+"已设置（指纹 {0}），留空 = 不修改": [
+"control_images.js",
+"control_model.js"
+],
+"已设置，粘贴新的访问令牌可以替换": [
+"control_phone.js"
+],
+"已读取：下面是文件里有的内容，还没有导入。": [
+"control_eve_import.js"
+],
+"已调走": [
+"control_schedule.js"
+],
+"已过期": [
+"control.js"
+],
+"已连接": [
+"control.js",
+"control_channels.js",
+"control_mcp.js"
+],
+"已连接，手机提供了 {0} 个工具。": [
+"control_phone.js"
+],
+"已连接：": [
+"ai/setup_status.py",
+"control.js"
+],
+"已退出微信登录": [
+"control_channels.js"
+],
+"已遗忘这条记忆；": [
+"control.js"
+],
+"已遗忘，聊天记录里改动了 {0} 条消息": [
+"control.js"
+],
+"已配置 {0} 个工具服务器": [
+"ai/setup_status.py"
+],
+"希望她少主动发消息": [
+"control.js"
+],
+"平常回你消息时也带上手机此刻的状态（比如你说好累，她知道你已经亮屏刷了很久）。有人会觉得被盯着，默认关": [
+"ai/control_config.py"
+],
+"平常回复也看手机": [
+"ai/control_config.py"
+],
+"平时用不到的 Agent：Intent、Performer": [
+"control_model.js"
+],
+"座位": [
+"control_schedule.js"
+],
+"座位号": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"建议": [
+"control.js"
+],
+"建议：": [
+"control_diag.js"
+],
+"开": [
+"control.js",
+"control_eve_import.js"
+],
+"开发者": [
+"ai/persona_templates.py"
+],
+"开发设置里的 AppSecret": [
+"control_channels.js"
+],
+"开启": [
+"ai/control_config.py",
+"control_channels.js"
+],
+"开启后 Violet 在聊天里可以画图（要下面的画图模型测试通过才会用）。关闭时你发来的图片仍然会按“看图”的设置识别。": [
+"control_images.js"
+],
+"开启后 Violet 在需要实时信息时可以搜索（需要下面的 SearXNG 地址，或在 .env 里配置其他搜索服务）": [
+"ai/control_config.py"
+],
+"开启后，每一轮对话的处理过程都会写进日志：收到了什么、意图判断、有哪些工具可用、给了 Chat 哪些工具、调用了什么模型和工具、结果和耗时、联网搜索、回复和发送。在“日志”页勾“只看排查日志”查看，点对话编号只看这一轮。默认关闭；排查完建议关掉（日志会变大）": [
+"ai/control_config.py"
+],
+"开启图片功能": [
+"control_images.js"
+],
+"开始": [
+"ai/schedule/importer.py",
+"ai/schedule/school_xls.py",
+"control.html",
+"control_schedule.js"
+],
+"开始于 {0} · 进度 {1}": [
+"control_persona.js"
+],
+"开始探索": [
+"control.js"
+],
+"开始日期": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"开始时间": [
+"ai/schedule/importer.py"
+],
+"开始测试": [
+"control_persona.js"
+],
+"开始画了，画好的会一个个出现": [
+"control_stickers.js"
+],
+"开始节次": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"开始重画了": [
+"control_stickers.js"
+],
+"开始（可选）": [
+"control_schedule.js"
+],
+"开学日期": [
+"control_schedule.js"
+],
+"开（推荐）：有些中转会把所有 system 消息挪到最前面，每一轮的时间、记忆一变，缓存就全部失效；开着时这些提示带“系统给你的提示”标记、以 user 身份放在原位。关：照原样发 system": [
+"ai/control_config.py"
+],
+"开：会改动东西的工具（例如手机上的操作）也由她在聊天里直接调用，不再单独建任务；没单独放行的，每次都先问你（“设置 → 她能自己做的事”）。关：这些工具走任务执行（以前的做法）": [
+"ai/control_config.py"
+],
+"开：你加的 MCP 服务器里没分类的工具，声明自己只读的当查询工具用，其余的当“会改动东西”的工具（要你放行或同意）；关：没分类的工具全部藏起来（以前的做法）": [
+"ai/control_config.py"
+],
+"开：你（绑定的主人）在群里或私聊里让她说话、发表情包、收藏表情包、别说了，她照做，做不到会说原因；别人的话仍然只当聊天。你们私聊的事、链接和联系方式，就算你在群里让她说也不会说。关：你的话也只当聊天": [
+"ai/control_config.py"
+],
+"开：她觉得合适就会画一张（每次回复最多一张，每天的图片额度照样算）；关：只有你的话里明确要图（画、图片、照片…）才画": [
+"ai/control_config.py"
+],
+"开：已经发出去的照常，还没发的几条不再发，下一轮把你新说的和刚才的一起回。关：一次回复总是全部发完": [
+"ai/control_config.py"
+],
+"开：每一轮回复都能直接用连上的只读工具（联网搜索、课表、手机状态等），自己判断要不要查；关：只在意图识别判断要查时才给（以前的做法，少一点 token，但容易漏查）": [
+"ai/control_config.py"
+],
+"开：用 AI 人设时，不再给她“像手机上随手回消息”这类陪聊规则、性格和说话习惯清单，也不加每句话的小提示，她用底层模型自己的方式说话（只保留诚实和格式）；关：和其他人设一样": [
+"ai/control_config.py"
+],
+"开：群里和别人私聊时她也能联网查（谁问都行）；你（主人）在群里问时，还能查你的手机、课表等只读工具、帮你画图。会改动东西的工具群里永远不给。关：群里不用任何工具（以前的做法）": [
+"ai/control_config.py"
+],
+"开：那条回复不发，下一轮把你前后说的一起回（不会连续两次这样；用过工具的回复照常发）。关：每条都单独回": [
+"ai/control_config.py"
+],
+"引用回复": [
+"control_social.js"
+],
+"归哪个人设": [
+"control_eve_import.js"
+],
+"归档": [
+"control.html",
+"control_schedule.js"
+],
+"归档“{0}”？归档后 Violet 查课表时不再用这个学期（数据保留，可以取消归档）。": [
+"control_schedule.js"
+],
+"当前密码不正确": [
+"wx_ilink_py/auth.py"
+],
+"当前密码或令牌不正确": [
+"wx_ilink_py/auth.py"
+],
+"当前密码（或管理令牌）": [
+"control.html"
+],
+"当前密码（确认身份）": [
+"control.html"
+],
+"当前版本 {0}。{1}。服务器连不上 GitHub 时，可以在“设置 → 版本更新 → 下载来源”换成加速站。": [
+"control_setup.js"
+],
+"当前版本 {0}。手动检查模式：点“检查更新”查询。": [
+"control_setup.js"
+],
+"当前版本 {0}，最新发布 {1}{2}。{3}": [
+"control_setup.js"
+],
+"当前版本 {0}，最新版本 {1}{2}。{3}": [
+"control_setup.js"
+],
+"当前选中的学期": [
+"control.html"
+],
+"录音太大了（最多 10 MB，3–20 秒最合适）": [
+"control_voice.js"
+],
+"录音数据不对": [
+"wx_ilink_py/voice_routes.py"
+],
+"录音有 {0} 秒，“录音的原文”只有 {1} 个字。要把录音里说的每一个字都照抄进去（不是一句介绍），不然生成出来只有一两秒的哼声。": [
+"control_voice.js"
+],
+"形如 123456789:AAE…": [
+"control_channels.js"
+],
+"彻底删除": [
+"control_schedule.js"
+],
+"彻底删除“{0}”？课程、它的 {1} 个上课时间、调课停课，以及修改历史里的旧副本（老师、地点、备注原文）都会删除，不能恢复。考试会保留但不再关联这门课。": [
+"control_schedule.js"
+],
+"彻底删除需要确认（confirm: true）": [
+"wx_ilink_py/schedule_routes.py"
+],
+"彻底删除（{0}），共 {1} 行，原内容不保留": [
+"control_schedule.js"
+],
+"待处理": [
+"control_persona.js"
+],
+"待完成": [
+"control_setup.js"
+],
+"待批准": [
+"control_channels.js",
+"control_persona.js"
+],
+"待提醒": [
+"control.js"
+],
+"待确认（只说过一次或不太确定）": [
+"control.js"
+],
+"待确认：“{0}”已被纠正为“{1}”": [
+"control.js"
+],
+"很久没有进度了：服务器上的任务可能已经中断，可以再试一次": [
+"ai/root_tasks.py"
+],
+"微信": [
+"control.html",
+"control.js",
+"control_channels.js",
+"wx_ilink_py/control_routes.py",
+"wx_ilink_py/persona_routes.py"
+],
+"微信上用的聊天模型": [
+"ai/control_config.py"
+],
+"微信已登录": [
+"control.js"
+],
+"微信收消息线程": [
+"control.js"
+],
+"微信未使用": [
+"control.js"
+],
+"微信登录二维码": [
+"control_channels.js"
+],
+"微信登录成功": [
+"control_channels.js"
+],
+"微信：在后台扫码登录": [
+"ai/diagnostics.py"
+],
+"心情平复的半衰期（小时）": [
+"ai/control_config.py"
+],
+"必应地址": [
+"ai/control_config.py"
+],
+"必应没有给结果：可以在“设置 → 联网搜索 → 必应地址”换成另一个地址再试；还不行，说明必应拒绝了这台服务器，可以改用博查等付费搜索（同一页的“搜索服务”）。": [
+"control.js"
+],
+"必应直连": [
+"control.js"
+],
+"必应直连不用安装、国内服务器也能用；SearXNG 是自建的开源搜索；博查 / Brave 是付费搜索 API（Key 在“工具”页的联网工具里替换）": [
+"ai/control_config.py"
+],
+"必应直连用哪个地址：国内服务器用 cn.bing.com": [
+"ai/control_config.py"
+],
+"必应直连（不用安装）": [
+"ai/control_config.py"
+],
+"必应直连（推荐）": [
+"control.js"
+],
+"必需的设置都完成了，Violet 可以正常聊天。下面的可选项可以随时调整，点一项直接过去。": [
+"control_setup.js"
+],
+"性格": [
+"control_persona.js"
+],
+"性格、说话习惯这些至少写一条": [
+"ai/persona_templates.py"
+],
+"性格，每行一条": [
+"control_persona.js"
+],
+"恋人": [
+"ai/persona_templates.py"
+],
+"恢复": [
+"control.html",
+"control.js",
+"control_persona.js",
+"control_schedule.js"
+],
+"恢复上一个值": [
+"ai/control_config.py"
+],
+"恢复为 .env 里的值": [
+"ai/control_config.py"
+],
+"恢复失败，已恢复原来的设置（{0}）": [
+"wx_ilink_py/control_routes.py"
+],
+"恢复失败：": [
+"control.js"
+],
+"意图识别": [
+"control_flow.js"
+],
+"愿意听建议": [
+"control.js"
+],
+"慢慢认识你": [
+"ai/control_config.py"
+],
+"成功（{0} 毫秒）：{1}": [
+"control_mcp.js"
+],
+"我想用工具 {0}（参数 {1}）": [
+"ai/permissions.py"
+],
+"我这边刚刚卡了一下，没接上你的话，你再说一次好不好": [
+"ai/control_config.py"
+],
+"或者在服务器上用命令安装": [
+"control_phone.js"
+],
+"或者在服务器上用命令换端口": [
+"control_phone.js"
+],
+"或：开始时刻": [
+"control_schedule.js"
+],
+"或：开始节次": [
+"control_schedule.js"
+],
+"或：新开始节次": [
+"control_schedule.js"
+],
+"所有学期都会删除，修改历史里的旧副本一并清除，不能恢复。": [
+"control_schedule.js"
+],
+"所有渠道都单独设了别的人设，现在没有渠道用它": [
+"control_persona.js"
+],
+"手动": [
+"control_schedule.js"
+],
+"手动优先，不覆盖": [
+"control_schedule.js"
+],
+"手动录入或手动改过的课程两种方式都不会覆盖、不会删除；只影响导入到的那个学期。JSON 文件不用选：按文件里写了的部分整体替换。": [
+"control.html"
+],
+"手动改过（再导入不覆盖）": [
+"control_schedule.js"
+],
+"手动检查": [
+"ai/control_config.py",
+"control_setup.js"
+],
+"手动输入…": [
+"control_images.js",
+"control_model.js"
+],
+"手机": [
+"control.js"
+],
+"手机 App 的工具都只能查看（电量、正在用的 App、闹钟……），不能改手机上的任何东西，所以她直接用，不用你选。不想让她看哪一项，点那一项的“停用”。": [
+"control_mcp.js"
+],
+"手机 MCP 打开“手机上的动静”时，每分钟看一次有没有新动静：早上第一次解锁、到了起过名字的地方（如“家”）时，马上判断要不要找你（其他规则照旧，也可能决定先不找）；最近的动静也会写进手机状态": [
+"ai/control_config.py"
+],
+"手机上打开“安全”页，复制访问令牌，粘贴到下面。连上后手机提供的工具都列在这里，可以逐个停用。": [
+"control_phone.js"
+],
+"手机上的动静": [
+"control_mcp.js"
+],
+"手机型号": [
+"control_mcp.js"
+],
+"手机工具：未连接，{0} 个工具。": [
+"control_phone.js"
+],
+"手机已连接": [
+"control_phone.js"
+],
+"手机提供的工具": [
+"control_phone.js"
+],
+"手机时间": [
+"control_mcp.js"
+],
+"手机（Violet MCP App）": [
+"control_phone.js"
+],
+"打不开 {0}：{1}": [
+"control.js"
+],
+"打字间隔上限（秒）": [
+"ai/control_config.py"
+],
+"打字间隔下限（秒）": [
+"ai/control_config.py"
+],
+"打开 QQ 开放平台，创建一个机器人": [
+"control_channels.js"
+],
+"打开了 {0}（{1} 毫秒）": [
+"control.js"
+],
+"打开菜单": [
+"control.html"
+],
+"打开，发送 /newbot，按提示给机器人起名字和用户名。": [
+"control_channels.js"
+],
+"扣了费但没出图": [
+"control_diag.js"
+],
+"执行任务": [
+"control_flow.js"
+],
+"执行任务（查资料、用工具）": [
+"control_model.js"
+],
+"执行过（失败）": [
+"ai/permissions.py"
+],
+"扫码登录：": [
+"ai/setup_status.py"
+],
+"批准": [
+"control_persona.js"
+],
+"批准记录（等你批准的 {0} 个）": [
+"control.js"
+],
+"找 @BotFather 创建一个机器人，填一个 Token 就能用。": [
+"control_channels.js"
+],
+"找不到空闲端口": [
+"tools/violet_voice.py"
+],
+"把 API Key 恢复成上一个值？": [
+"control.js"
+],
+"把 BotFather 回复的 Token 填到这里": [
+"control_channels.js"
+],
+"把 {0} 绑定为你的账号？之后它发来的消息会进入你和 Violet 的对话和记忆。": [
+"control_channels.js"
+],
+"把 {0} 设为管理员？管理员不是你：他私聊她时是他自己的聊天窗口，不共用你的记忆；在群里可以让她说话、回应、安静。他之前在你的聊天里说的话会搬到他自己的窗口。": [
+"control_channels.js"
+],
+"把主人设换成“{0}”": [
+"control_persona.js"
+],
+"把手机的访问令牌填到这里": [
+"control_phone.js"
+],
+"把普通设置恢复到第 {0} 次修改之后的样子？API Key 不受影响。": [
+"control.js"
+],
+"把群里的事告诉你": [
+"ai/control_config.py"
+],
+"拒绝": [
+"control_mcp.js",
+"control_persona.js"
+],
+"拒绝过": [
+"ai/permissions.py"
+],
+"按 {0} 的课表": [
+"control_schedule.js"
+],
+"按关键词带出旧记忆": [
+"ai/control_config.py"
+],
+"按哪一天的课表上课（补课日才填）": [
+"control_schedule.js"
+],
+"按哪天的课表": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"按提示操作": [
+"ai/diagnostics.py"
+],
+"按文件里的学期（仅 JSON）": [
+"control.html"
+],
+"按聊天记录判断熟悉程度并告诉 Chat": [
+"ai/control_config.py"
+],
+"按这个渠道的关系挑节日：都有的（元旦、除夕、春节、元宵、中秋、国庆、你的生日），恋人再加情人节、520、七夕、平安夜、圣诞、纪念日，女儿加父亲节或母亲节、儿童节，开发者加程序员节；端午、重阳、万圣节、感恩节只在记忆里提到你在意时才算。当天免打扰结束后发一次，不占每天的主动次数；你当天先找她，就在聊天里顺口说，不另外发": [
+"ai/control_config.py"
+],
+"按预览导入“{0}”（{1}）？新增 {2}、修改 {3}、删除 {4}，手动改过的 {5} 条保持不变。": [
+"control_schedule.js"
+],
+"换": [
+"control_persona.js"
+],
+"换一个工具调用能力更好的 Chat 模型，或检查工具说明是否清楚": [
+"ai/diagnostics.py"
+],
+"换一个端口": [
+"control_phone.js"
+],
+"换人设": [
+"control_persona.js"
+],
+"换人设需要确认（confirm: true）": [
+"wx_ilink_py/persona_routes.py"
+],
+"换教室": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"授权和凭据（现在给：{0}）": [
+"control_mcp.js"
+],
+"授权给：": [
+"control.html",
+"control_mcp.js"
+],
+"排查日志": [
+"ai/control_config.py"
+],
+"排查日志没有开：在“设置 → 日志与排查”里打开“排查日志”，再聊一句，这里就会出现每一步的记录。": [
+"control_logs.js"
+],
+"排查日志里的聊天内容": [
+"ai/control_config.py"
+],
+"排查问题用": [
+"control_persona.js"
+],
+"排队中的对话": [
+"control.js"
+],
+"接下来 36 小时里你说过的安排（比如“明天八点半有课”），每次都带上这么多条。0 = 不带": [
+"ai/control_config.py"
+],
+"接了手机 MCP（Violet MCP）时，判断要不要找你、怎么开口前，先读屏幕亮没亮、在用什么 App、电量、今天各 App 用了多久（两分钟内只读一次）。读不到就照常；不读勿扰模式": [
+"ai/control_config.py"
+],
+"接口": [
+"ai/control_config.py"
+],
+"接口地址": [
+"control_channels.js"
+],
+"接口地址不对，或者模型名在这个服务上不存在（接口返回 404）": [
+"ai/setup_status.py"
+],
+"接口拒绝了请求（400）：多半是模型名不对或参数不被支持": [
+"ai/setup_status.py"
+],
+"接口方式": [
+"control_images.js"
+],
+"接口服务出错（{0}），稍后再试": [
+"ai/setup_status.py"
+],
+"接口返回 404：多半是 API 地址不对（一般以 /v1 结尾）；地址没错的话，就是这个服务不支持列出模型": [
+"ai/setup_status.py"
+],
+"提交失败：": [
+"control_setup.js"
+],
+"提供方式 {0}": [
+"control.js"
+],
+"提示": [
+"control_diag.js",
+"control_mcp.js"
+],
+"提示词版本": [
+"ai/control_config.py"
+],
+"提示词缓存、超时与重试（一般不用改）": [
+"control.html"
+],
+"提醒": [
+"control.html",
+"control.js",
+"control_diag.js"
+],
+"提醒 Chat 最近已经问过、关心过什么": [
+"ai/control_config.py"
+],
+"提醒、静默时段、课表和每天 03:00 的记忆整理都按这个时区（IANA 名称，例如 Asia/Shanghai）": [
+"ai/control_config.py"
+],
+"提醒的默认时刻": [
+"ai/control_config.py"
+],
+"插画": [
+"ai/control_config.py"
+],
+"搜不到东西时点“选择搜索引擎”：只勾国内能访问的；如果每个引擎都是“超时”，再勾上“只用 IPv4”。还不行就用上面的“必应直连”。": [
+"control.js"
+],
+"搜到 {0} 条（{1} 毫秒）": [
+"control.js"
+],
+"搜索": [
+"control.html"
+],
+"搜索 API 地址": [
+"ai/control_config.py"
+],
+"搜索 {0}": [
+"control.js"
+],
+"搜索 {0}（{1}）": [
+"control.js"
+],
+"搜索失败": [
+"control.js"
+],
+"搜索工具 {0} / 网页阅读 {1}": [
+"control.js"
+],
+"搜索引擎：{0}": [
+"control.js"
+],
+"搜索时自动打开几个网页": [
+"ai/control_config.py"
+],
+"搜索服务": [
+"ai/control_config.py"
+],
+"搜索服务 {0}": [
+"control.js"
+],
+"搜索服务、SearXNG 地址和搜索语言在“设置 → 联网搜索”里改。": [
+"control.js"
+],
+"搜索正常": [
+"control.js"
+],
+"搜索结果只有标题和一句摘要时（必应直连就是这样），自动打开排在前面的几个网页，把正文一起交给她，她就能按网页内容回答（比如天气的具体温度）；每打开一个算一次网页读取。0 = 只搜索不打开": [
+"ai/control_config.py"
+],
+"搜索设置": [
+"control.js"
+],
+"搜索设置…": [
+"control.js"
+],
+"搜索语言": [
+"ai/control_config.py"
+],
+"撤回": [
+"control_persona.js"
+],
+"撤回原因（这件事就当没发生过）": [
+"control_persona.js"
+],
+"撤销": [
+"control_schedule.js"
+],
+"撤销变动 #": [
+"control_schedule.js"
+],
+"撤销失败：": [
+"control_schedule.js"
+],
+"撤销直接用": [
+"control_mcp.js"
+],
+"操作": [
+"control_schedule.js"
+],
+"操作失败：": [
+"control_persona.js",
+"control_schedule.js"
+],
+"收 {0} · 发 {1}": [
+"control.js"
+],
+"收到 {0} · 发出 {1}": [
+"control.js",
+"control_channels.js"
+],
+"收到 {0} · 发出 {1} · 绑定的主人 {2}": [
+"control.js"
+],
+"收到的": [
+"control_images.js"
+],
+"收到的图片保留（天）": [
+"ai/control_config.py"
+],
+"收到的消息": [
+"wx_ilink_py/control_routes.py"
+],
+"收藏你发的表情包": [
+"ai/control_config.py"
+],
+"收起配置": [
+"control_channels.js"
+],
+"改为：": [
+"control.js"
+],
+"改了模型、接口方式或地址以后要重新测试一次：只有测试通过的设置才会在聊天里使用。": [
+"control_images.js"
+],
+"改了：": [
+"control_schedule.js"
+],
+"改回：每次先问你（或按“她能自己做的事”的设置）": [
+"control_mcp.js"
+],
+"改时间": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"改用 SearXNG": [
+"control.js"
+],
+"放假": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"放假和停课日只停常规课；加课和考试照常显示。": [
+"control_schedule.js"
+],
+"放大操作": [
+"control_channels.js"
+],
+"放弃": [
+"control_persona.js",
+"control_schedule.js"
+],
+"放弃生活线“{0}”？之后不会再推进。": [
+"control_persona.js"
+],
+"教学周": [
+"control.html"
+],
+"教室": [
+"ai/schedule/importer.py"
+],
+"教师": [
+"ai/schedule/importer.py"
+],
+"数据": [
+"control.html"
+],
+"数据保留，但不再进入任何模型上下文、检索或主动话题；它的值在拼装的上下文中会被遮蔽。可以重新启用。": [
+"wx_ilink_py/profile_routes.py"
+],
+"整体": [
+"control_persona.js"
+],
+"整学期替换要先预览，再按预览确认": [
+"ai/schedule/importer.py"
+],
+"整学期替换：这个学期以前导入的课程里，文件中没有的会被删除": [
+"control.html",
+"control_schedule.js"
+],
+"整段人设按它自己的说话方式": [
+"ai/control_config.py"
+],
+"整理记忆": [
+"control_flow.js",
+"control_model.js"
+],
+"文件": [
+"control.html",
+"control_schedule.js"
+],
+"文件内容不对（要 base64）": [
+"wx_ilink_py/schedule_routes.py"
+],
+"文件和预览时的不一样，请重新预览": [
+"ai/schedule/importer.py"
+],
+"文件太大": [
+"wx_ilink_py/schedule_routes.py"
+],
+"文件太大（最大 700 KB）": [
+"ai/schedule/school_xls.py",
+"control_schedule.js"
+],
+"文件太大（最大 {0} KB）": [
+"control_schedule.js"
+],
+"文件有错误，不能导入": [
+"ai/schedule/importer.py"
+],
+"文件里没有": [
+"control_eve_import.js"
+],
+"断线重试次数": [
+"ai/control_config.py"
+],
+"新地点": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"新地点（可选）": [
+"control_schedule.js"
+],
+"新增": [
+"control_schedule.js"
+],
+"新增上课时间": [
+"control_schedule.js"
+],
+"新增假期 / 补课日": [
+"control.html",
+"control_schedule.js"
+],
+"新增变动请在周视图里点那一节课": [
+"control.html"
+],
+"新增考试": [
+"control.html",
+"control_schedule.js"
+],
+"新增课程": [
+"control.html",
+"control_schedule.js"
+],
+"新增：{0}": [
+"control_schedule.js"
+],
+"新密码（至少 12 个字符）": [
+"control.html"
+],
+"新建学期": [
+"control.html",
+"control_schedule.js"
+],
+"新开始": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"新开始节次": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"新日期": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"新的签名密钥（只显示这一次）：": [
+"control_channels.js"
+],
+"新结束": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"新结束节次": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"无": [
+"control.js",
+"control_setup.js"
+],
+"无法列出模型": [
+"control_model.js"
+],
+"无法提交更新请求（{0}）": [
+"wx_ilink_py/setup_routes.py"
+],
+"无法检查": [
+"control_setup.js"
+],
+"日": [
+"ai/schedule/importer.py"
+],
+"日常": [
+"control_persona.js"
+],
+"日常作息": [
+"ai/control_config.py"
+],
+"日志": [
+"control.html"
+],
+"日志与排查": [
+"ai/control_config.py"
+],
+"日志只有管理员能看，显示和下载时会去掉 API Key 等密钥": [
+"ai/control_config.py"
+],
+"日志文件还不存在（Violet 还没有写过日志）": [
+"ai/log_viewer.py"
+],
+"日志详细程度": [
+"ai/control_config.py"
+],
+"日志读取失败：": [
+"control_logs.js"
+],
+"日期": [
+"ai/schedule/importer.py",
+"control.html",
+"control_schedule.js"
+],
+"日本語": [
+"ai/control_config.py"
+],
+"日记": [
+"ai/persona_templates.py"
+],
+"旧的签名密钥会立即失效，需要把新密钥填到 OneBot 实现里。继续？": [
+"control_channels.js"
+],
+"时刻和节次只填一种。": [
+"control_schedule.js"
+],
+"时区": [
+"ai/control_config.py",
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"时区 {0}": [
+"control_schedule.js"
+],
+"时间": [
+"ai/schedule/importer.py",
+"control.js"
+],
+"时间冲突": [
+"control.html"
+],
+"时间冲突（整个学期）": [
+"control_schedule.js"
+],
+"时间未定": [
+"control_schedule.js"
+],
+"时间没设置好": [
+"control_schedule.js"
+],
+"时间范围": [
+"control_eve_import.js"
+],
+"星期": [
+"ai/schedule/importer.py",
+"ai/schedule/school_xls.py",
+"control_schedule.js"
+],
+"星期要写 1–7 或 周一…周日": [
+"ai/schedule/importer.py"
+],
+"是": [
+"control.js"
+],
+"显示": [
+"control_phone.js"
+],
+"显示 {0} 条{1} · 最近 {2} KB{3} · 更新于 {4}": [
+"control_logs.js"
+],
+"显示整个屏幕": [
+"control_channels.js"
+],
+"暂停": [
+"control.html",
+"control_persona.js"
+],
+"曲": [
+"ai/persona_templates.py"
+],
+"更多设置（保留天数、识图次数上限……）": [
+"control_images.js"
+],
+"更换中继端口": [
+"control_phone.js"
+],
+"更换搜索引擎": [
+"control.js"
+],
+"更新 {0}": [
+"control.js"
+],
+"更新于 {0}": [
+"control.js"
+],
+"更新失败": [
+"control_setup.js"
+],
+"更新方式": [
+"ai/control_config.py"
+],
+"更新方式：{0}（设置 → 版本更新）。": [
+"control_setup.js"
+],
+"更新需要确认（confirm: true）": [
+"wx_ilink_py/setup_routes.py"
+],
+"更早的消息": [
+"control.html"
+],
+"更早的记录": [
+"control.html"
+],
+"更正": [
+"control_persona.js"
+],
+"更正原因": [
+"control_persona.js"
+],
+"更正后的内容（只改 Violet 的虚拟经历）": [
+"control_persona.js"
+],
+"更正失败：": [
+"control_persona.js"
+],
+"更长的结果会截断后再给模型": [
+"ai/control_config.py"
+],
+"替换": [
+"control.js",
+"control_mcp.js",
+"control_schedule.js"
+],
+"替换 {0} 的 {1}（输入新值；保存后不会再显示）": [
+"control.js"
+],
+"替换令牌并检查": [
+"control_phone.js"
+],
+"替换凭据需要确认（confirm: true）": [
+"wx_ilink_py/control_routes.py"
+],
+"替换失败：": [
+"control.js"
+],
+"替换搜索凭据": [
+"control.js"
+],
+"替换搜索服务的 API Key（输入新值；保存后不会再显示）": [
+"control.js"
+],
+"最后一步：绑定你的账号": [
+"control_channels.js"
+],
+"最后修改 {0}": [
+"control_schedule.js"
+],
+"最多 {0} 个字，只能写一行": [
+"ai/control_config.py"
+],
+"最多尝试次数": [
+"ai/control_config.py"
+],
+"最新的在最上面。密钥、令牌和密码在离开服务器之前都会被替换成 <redacted>。": [
+"control.html"
+],
+"最近 24 小时有 {0} 条消息发送失败": [
+"ai/diagnostics.py"
+],
+"最近一次回复给模型的内容": [
+"control.js"
+],
+"最近有连不上外部服务的情况（模型接口 / MCP）": [
+"ai/diagnostics.py"
+],
+"最近的决定（为什么说 / 不说）": [
+"control_social.js"
+],
+"最近的图片": [
+"control_images.js"
+],
+"最近的导入": [
+"control.html"
+],
+"最近的错误（只显示类型和时间，不显示内容）": [
+"control.html"
+],
+"最近错误：{0}{1}": [
+"control.js"
+],
+"有 {0} 个问题，改好文件后重新预览（这次不能导入）：": [
+"control_schedule.js"
+],
+"有 {0} 节课所在的行没写上课时间，没有导入": [
+"wx_ilink_py/schedule_routes.py"
+],
+"有人一直在说时先等一等，攒在一起看一次（被 @ 或私聊时只等 3 秒）；越短越及时，模型调用也越多": [
+"ai/control_config.py"
+],
+"有人加她的 QQ 好友时。先问你：她私聊你是谁、验证消息是什么，你回复“同意 N”才加；自己做：直接同意，再告诉你；不允许：不理会。": [
+"ai/permissions.py"
+],
+"有变动": [
+"control_schedule.js"
+],
+"有变动 / 调入 / 加课": [
+"control.html"
+],
+"有效 {0}–{1}": [
+"control_schedule.js"
+],
+"有新版本": [
+"control_setup.js"
+],
+"有结果的搜索引擎：": [
+"control.js"
+],
+"朋友": [
+"ai/persona_templates.py"
+],
+"服务 {0}": [
+"tools/violet_voice.py"
+],
+"服务器一分钟内还没有开始：在服务器上查看 systemctl status violet-task.path violet-update.path": [
+"control.js"
+],
+"服务器上没有这个工具": [
+"ai/mcp_admin.py"
+],
+"服务器上的 QQ 窗口": [
+"control_channels.js"
+],
+"服务器名“{0}”没有对应的权限模板，所以它的 {1} 个工具全部被拒绝。它的工具和模板“{2}”一致（{3} 个），可以一键套用这个模板（只放行模板里列出的工具，其余仍然拒绝）": [
+"ai/mcp_admin.py"
+],
+"服务器在中国大陆时连不上 Telegram，需要在下面的“高级”里填代理。": [
+"control_channels.js"
+],
+"服务器的公网 IP 没有取到，这里用的是你现在访问后台的地址；手机在外网时要用公网地址。": [
+"control_phone.js"
+],
+"服务器缺少读取 .xls 的组件 xlrd：请更新 Violet（更新时会自动安装）": [
+"ai/schedule/school_xls.py"
+],
+"服务器需要的条件": [
+"control_voice.js"
+],
+"服务运行正常，但外部网络不可达：{0} {1}{2}": [
+"ai/diagnostics.py"
+],
+"服务返回的模型列表里没有“{0}”": [
+"control_model.js"
+],
+"期中": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"期末": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"未使用": [
+"control.js",
+"control_channels.js"
+],
+"未分类（拒绝）": [
+"control_mcp.js"
+],
+"未列入白名单（不会给 Violet）：": [
+"control.js"
+],
+"未安装": [
+"control_voice.js"
+],
+"未开启": [
+"control.js"
+],
+"未开启（.env 的 VIOLET_WEB_ENABLED）": [
+"control.js"
+],
+"未开始": [
+"wx_ilink_py/ops_page_routes.py"
+],
+"未检查": [
+"control_setup.js"
+],
+"未登录": [
+"control.js",
+"control_channels.js"
+],
+"未知": [
+"control_images.js"
+],
+"未知类型": [
+"ai/control_config.py"
+],
+"未设置": [
+"control.js",
+"control_channels.js",
+"control_mcp.js"
+],
+"未设置（目前用管理令牌登录）": [
+"control.js"
+],
+"未运行": [
+"control.js",
+"control_channels.js"
+],
+"未连接": [
+"control_mcp.js"
+],
+"未配置": [
+"control.js"
+],
+"本周": [
+"control.html"
+],
+"本应用的权限": [
+"control_mcp.js"
+],
+"机器人审核上线之前，只有沙箱里的成员能和它聊天。": [
+"control_channels.js"
+],
+"来源": [
+"control_eve_import.js"
+],
+"来源 {0}": [
+"control.js",
+"control_schedule.js"
+],
+"来源：": [
+"control.js"
+],
+"某个 App 装没装": [
+"control_mcp.js"
+],
+"查看": [
+"control_persona.js",
+"control_setup.js"
+],
+"查看 / 纠正": [
+"control.js"
+],
+"查看升级进度": [
+"control_setup.js"
+],
+"查看原因：journalctl -u {0} -n 40": [
+"tools/violet_voice.py"
+],
+"查看日志": [
+"ai/diagnostics.py"
+],
+"查看更新说明": [
+"control_setup.js"
+],
+"查看用户名和地址": [
+"login page"
+],
+"查询": [
+"control.html"
+],
+"查询工具直接交给回复": [
+"ai/control_config.py"
+],
+"查询来源：{0}{1}。": [
+"control_setup.js"
+],
+"标准": [
+"ai/control_config.py"
+],
+"核对": [
+"control.html"
+],
+"核心人设只能人工编辑 persona/persona_core.json 并递增 version；系统和 Dashboard 都不能修改。": [
+"wx_ilink_py/persona_routes.py"
+],
+"核心服务": [
+"control_diag.js"
+],
+"核心服务正常：消息处理、记忆整理、发件箱": [
+"ai/diagnostics.py"
+],
+"核心记忆": [
+"control.html",
+"control_eve_import.js"
+],
+"核心记忆 #": [
+"control.js"
+],
+"格式": [
+"control.html"
+],
+"格式是 HH:MM": [
+"ai/control_config.py"
+],
+"检查全部连接": [
+"control.html"
+],
+"检查和下载新版本、一键安装手机中继 / 联网搜索 / 语音时从哪里下载。服务器在国内、连不上 GitHub 时用加速站（别人提供的免费 GitHub 加速服务）。经加速站下载的 Violet 新版本和手机中继必须带有发布签名、语音源码必须和记录的校验值一致，否则不安装，所以加速站改不了程序；联网搜索的源码没法校验，只用 GitHub 和内置的两个加速站": [
+"ai/control_config.py"
+],
+"检查回复有没有和人设、生活记录矛盾": [
+"ai/control_config.py"
+],
+"检查外部网络": [
+"control.html",
+"control_diag.js"
+],
+"检查失败": [
+"control_setup.js"
+],
+"检查失败：": [
+"control.js"
+],
+"检查并重新填写这个渠道的凭据": [
+"ai/diagnostics.py"
+],
+"检查更新": [
+"control.html"
+],
+"检查服务器条件": [
+"tools/violet_voice.py"
+],
+"检查服务器的网络、DNS、防火墙或云安全组的出站规则": [
+"ai/diagnostics.py"
+],
+"检查连接": [
+"control_mcp.js"
+],
+"检查间隔（秒）": [
+"control_channels.js"
+],
+"概览": [
+"control.html"
+],
+"概览读取失败：": [
+"control.js"
+],
+"模型": [
+"control.js",
+"control_diag.js",
+"control_model.js"
+],
+"模型下载失败（检查网络，可以再点一次安装，已下载的部分会接着下）：": [
+"tools/violet_voice.py"
+],
+"模型不能为空": [
+"ai/control_config.py"
+],
+"模型与 Agent": [
+"ai/control_config.py"
+],
+"模型写法：只让模型润色进展的措辞，程序检查后才保存（会用模型）": [
+"ai/control_config.py"
+],
+"模型名": [
+"control_model.js"
+],
+"模型名不对": [
+"wx_ilink_py/setup_routes.py"
+],
+"模型名，回车填到全部": [
+"control_model.js"
+],
+"模型复核": [
+"ai/control_config.py"
+],
+"模型接口": [
+"ai/diagnostics.py"
+],
+"模型整轮失败时发给你的一句话；留空 = 不发（错误仍会记录）": [
+"ai/control_config.py"
+],
+"模型服务": [
+"ai/setup_status.py",
+"control.html"
+],
+"模型服务可以正常使用": [
+"ai/setup_status.py"
+],
+"模型服务商（用于缓存）": [
+"ai/control_config.py"
+],
+"模型服务：各 Agent 的模型": [
+"control_model.js"
+],
+"模型服务：接口": [
+"control_model.js"
+],
+"模型服务：缓存、超时与重试": [
+"control_model.js"
+],
+"模型标识只能包含字母、数字和 . _ : / @ + -": [
+"ai/control_config.py"
+],
+"模型标识，按中转服务里的名字填写": [
+"ai/control_config.py"
+],
+"模型测试失败：": [
+"control_diag.js"
+],
+"模型测试通过": [
+"control_diag.js"
+],
+"模型润色": [
+"ai/control_config.py"
+],
+"模型调用失败：{0}": [
+"ai/diagnostics.py"
+],
+"模型调用失败：{0}（最近一小时 {1} 次；{2}；模型 {3}）": [
+"ai/diagnostics.py"
+],
+"模型调用正常": [
+"ai/diagnostics.py"
+],
+"模拟打字间隔": [
+"ai/control_config.py"
+],
+"模板": [
+"control_mcp.js"
+],
+"模板（不用模型）": [
+"ai/control_config.py"
+],
+"次修改）": [
+"control.js"
+],
+"次修改）：": [
+"control.js"
+],
+"欢迎她主动找你聊天": [
+"control.js"
+],
+"歌": [
+"ai/persona_templates.py"
+],
+"正在从上游获取模型…": [
+"control_model.js"
+],
+"正在使用": [
+"control.js",
+"control_persona.js"
+],
+"正在使用：": [
+"control.js"
+],
+"正在加载…": [
+"control_flow.js"
+],
+"正在发": [
+"control.js"
+],
+"正在发一张红色方块给识图模型…": [
+"control_images.js"
+],
+"正在启动": [
+"control_channels.js"
+],
+"正在安装…查看进度": [
+"control_channels.js",
+"control_phone.js"
+],
+"正在执行…查看进度": [
+"control.js",
+"control_phone.js",
+"control_voice.js"
+],
+"正在播放": [
+"control_mcp.js"
+],
+"正在测试…": [
+"control_model.js"
+],
+"正在测试连接…": [
+"control_model.js"
+],
+"正在测试：搜索一次“今天天气”，再打开一个网页…": [
+"control.js"
+],
+"正在用的 App": [
+"control_mcp.js"
+],
+"正在画图，可能要几十秒…": [
+"control_images.js"
+],
+"正在获取…": [
+"control_images.js"
+],
+"正在获取二维码…": [
+"control_channels.js"
+],
+"正在读取 QQ 窗口…": [
+"control_channels.js"
+],
+"正在进行，结果出来后会显示在这里。": [
+"control_flow.js"
+],
+"正在连接": [
+"control.js",
+"control_channels.js"
+],
+"正在连接…": [
+"control_phone.js"
+],
+"正在连接：": [
+"ai/setup_status.py"
+],
+"正在重启…": [
+"control.js"
+],
+"正在重连": [
+"control.js",
+"control_channels.js"
+],
+"正常": [
+"control_diag.js",
+"control_mcp.js"
+],
+"正常：{0} 个工具可用（授权给 {1}）": [
+"ai/mcp_admin.py"
+],
+"每 25 分钟左右，每个冷场的群有多大概率让她想一想（0–1）；越大她越常主动说话": [
+"ai/control_config.py"
+],
+"每 5 秒刷新": [
+"control.html"
+],
+"每一节课的开始、结束时间（同一天内）。按节次录入的上课时间都按这张表换算。": [
+"control.html"
+],
+"每个人设有自己的聊天记录、记忆和生活，这里选看哪一个": [
+"control.html"
+],
+"每个工具选一种：“直接用”——只是查看、不会改动东西的工具；“先问你”——会改动东西的（发消息、改文件……），她每次要用都先问你，你回“同意 N”才执行，点“允许直接用”后就不再问（“设置 → 她能自己做的事”可以改成干脆不给她）；“不给她用”——她看不到这个工具。这只是 Violet 这边的关卡，不会让工具多出能力：工具能做什么由提供它的服务器决定。真正会改东西的工具不要选“直接用”。": [
+"control_mcp.js"
+],
+"每个服务器下面写明了现在的问题和处理办法。凭据只能替换，不能查看。运行本地命令的（stdio）服务器只能在 .env 里配置。": [
+"control.html"
+],
+"每天搜索次数上限": [
+"control.js"
+],
+"每天最多主动几次": [
+"ai/control_config.py"
+],
+"每天最多决定几次（每次调用一次模型）": [
+"control_social.js"
+],
+"每天最多画几张": [
+"ai/control_config.py"
+],
+"每天最多画几张（包括测试）": [
+"control_images.js"
+],
+"每天最多自己发几条动态": [
+"ai/control_config.py"
+],
+"每天最多识图几次": [
+"ai/control_config.py"
+],
+"每天最多说几句": [
+"control_social.js"
+],
+"每天读网页次数上限": [
+"control.js"
+],
+"每条问题写明原因和建议；带按钮的是可以安全自动修复的。“轮次”是关联 ID：日志里同一轮的每一行都带着它（[turn …]）。最近一小时的模型 / 工具记录在内存里，重启后重新开始。": [
+"control.html"
+],
+"每次保存都会记一条。回滚只恢复普通设置，不动 API Key；API Key 可以“恢复上一个值”。": [
+"control.html"
+],
+"每次回复最多几条消息": [
+"ai/control_config.py"
+],
+"每次搜索结果数": [
+"control.js"
+],
+"每次最多看几张图片": [
+"ai/control_config.py"
+],
+"每次看多少条聊天记录": [
+"ai/control_config.py"
+],
+"每次都带上的近期安排（条）": [
+"ai/control_config.py"
+],
+"每次都带上的长期事实（条）": [
+"ai/control_config.py"
+],
+"每轮都给 Chat": [
+"control.js"
+],
+"比如：微信上是“Violet + 恋人”，QQ 上是“AI + 开发者”。人设不同就是不同的人：聊天记录、记忆、提醒、生活和心情各是各的（聊天记录、记忆页上方和本页下面可以选看谁的）；课表共用。第一次给一个渠道选自己的人设时，这个渠道以前的聊天会跟着过去。QQ 群里也按 QQ 这一行的设定。导入 Eve 时选的人设也显示在这里。": [
+"control_persona.js"
+],
+"沉稳理性、话不多但很靠谱": [
+"persona/templates/calm.json"
+],
+"沙箱环境（机器人还没审核上线时勾选）": [
+"control_channels.js"
+],
+"没人 @ 她、她也没在聊的时候，从第一条新消息起最多等这么久，一起看一次再决定要不要插话；被叫到或正在聊时照样几秒内回。越长越省 token，插话也越晚": [
+"ai/control_config.py"
+],
+"没人叫她时，群消息攒多久看一次（秒）": [
+"ai/control_config.py"
+],
+"没做成：{0}": [
+"ai/permissions.py"
+],
+"没分类的 MCP 工具自动处理": [
+"ai/control_config.py"
+],
+"没单独设的渠道都用它": [
+"control_persona.js"
+],
+"没发出去": [
+"control.js",
+"control_social.js"
+],
+"没扣费": [
+"control_diag.js"
+],
+"没找到“星期一 … 星期日”那一行：这不像教务系统导出的课表": [
+"ai/schedule/school_xls.py"
+],
+"没收到": [
+"control_diag.js"
+],
+"没收到（重新提醒）": [
+"control_diag.js"
+],
+"没有修改记录": [
+"control_persona.js"
+],
+"没有假期或补课日": [
+"control_schedule.js"
+],
+"没有发现问题": [
+"control_diag.js"
+],
+"没有变化": [
+"control.js"
+],
+"没有可以恢复的旧值": [
+"ai/control_config.py"
+],
+"没有可用的下载来源": [
+"tools/violet_sources.py"
+],
+"没有名字、性格和经历，什么都从和你聊天开始慢慢长出来。": [
+"control_persona.js"
+],
+"没有名字、没有设定、没有记忆，在相处中慢慢长出来": [
+"persona/templates/blank.json"
+],
+"没有响应的搜索引擎：": [
+"control.js"
+],
+"没有图片功能时也识图": [
+"ai/control_config.py"
+],
+"没有找到包含“{0}”的设置。": [
+"control.js"
+],
+"没有授权": [
+"control_mcp.js"
+],
+"没有授权给任何 Agent：工具不会被使用": [
+"ai/mcp_admin.py"
+],
+"没有提醒。跟她说“明天早上八点提醒我……”就会出现在这里。": [
+"control.js"
+],
+"没有搜到结果": [
+"wx_ilink_py/control_routes.py"
+],
+"没有改动": [
+"control_images.js"
+],
+"没有改动，已重新测试": [
+"control_model.js"
+],
+"没有数据": [
+"control_schedule.js"
+],
+"没有日志": [
+"control_logs.js"
+],
+"没有显卡也行：4 核 CPU 一句话大约 1 分钟": [
+"tools/violet_voice.py"
+],
+"没有权限": [
+"ai/mcp_admin.py"
+],
+"没有渠道在用": [
+"control.js"
+],
+"没有符合条件的消息": [
+"control.js"
+],
+"没有符合条件的记录": [
+"control_logs.js"
+],
+"没有结果": [
+"control.js"
+],
+"没有编号 {0} 的请求": [
+"ai/permissions.py"
+],
+"没有考试": [
+"control_schedule.js"
+],
+"没有要保存的修改": [
+"wx_ilink_py/channel_routes.py",
+"wx_ilink_py/control_routes.py",
+"wx_ilink_py/schedule_routes.py"
+],
+"没有计划": [
+"control_persona.js"
+],
+"没有记录": [
+"control.js"
+],
+"没有记录到失败": [
+"control.js"
+],
+"没有记忆": [
+"control.js"
+],
+"没有设置安全入口：任何人都能打开登录页，建议设置一个。": [
+"control.js"
+],
+"没有课": [
+"control_schedule.js"
+],
+"没有调课停课": [
+"control_schedule.js"
+],
+"没有这个 MCP 服务器": [
+"wx_ilink_py/setup_routes.py"
+],
+"没有这个人": [
+"wx_ilink_py/qq_routes.py"
+],
+"没有这个人设模板": [
+"ai/persona_templates.py"
+],
+"没有这个会话": [
+"wx_ilink_py/control_routes.py",
+"wx_ilink_py/qq_routes.py"
+],
+"没有这个修改记录": [
+"ai/control_config.py"
+],
+"没有这个提示词版本": [
+"ai/control_config.py"
+],
+"没有这个提醒": [
+"wx_ilink_py/control_routes.py"
+],
+"没有这个时区（例如 Asia/Shanghai、Europe/London、America/New_York）": [
+"ai/control_config.py"
+],
+"没有这个服务器": [
+"ai/mcp_admin.py"
+],
+"没有这个权限模板": [
+"ai/mcp_admin.py",
+"wx_ilink_py/mcp_routes.py"
+],
+"没有这个模式": [
+"wx_ilink_py/qq_routes.py"
+],
+"没有这个渠道": [
+"wx_ilink_py/channel_routes.py",
+"wx_ilink_py/setup_routes.py"
+],
+"没有这个聊天渠道": [
+"wx_ilink_py/control_routes.py"
+],
+"没有这个表情包": [
+"wx_ilink_py/qq_routes.py"
+],
+"没有这个进度": [
+"wx_ilink_py/setup_routes.py"
+],
+"没有这个选项": [
+"ai/control_config.py"
+],
+"没有这种关系": [
+"ai/persona_templates.py"
+],
+"没有这项能力或这个级别": [
+"ai/permissions.py"
+],
+"没有配置外部工具；不影响聊天": [
+"ai/setup_status.py"
+],
+"没有需要处理的地方": [
+"control_persona.js"
+],
+"没有需要检查的外部地址（还没有配置模型接口、远程 MCP 或需要联网的渠道）": [
+"ai/diagnostics.py"
+],
+"没法导入": [
+"wx_ilink_py/schedule_routes.py"
+],
+"没法预览": [
+"wx_ilink_py/schedule_routes.py"
+],
+"没确定有没有发出去的（{0}）": [
+"control_diag.js"
+],
+"没能从上游获取模型：": [
+"control_images.js"
+],
+"没说话": [
+"control_social.js"
+],
+"注册服务": [
+"tools/violet_voice.py"
+],
+"注意：QQ 只允许机器人在你发消息后的一段时间内回复，Violet 主动发的消息可能被 QQ 拒绝。": [
+"control_channels.js"
+],
+"活泼开朗、话多爱笑，像同班的好朋友": [
+"persona/templates/genki.json"
+],
+"流程": [
+"control.html"
+],
+"测试": [
+"control_mcp.js"
+],
+"测试 {0}：参数（JSON）": [
+"control_mcp.js"
+],
+"测试中 · 还有 {0} 分钟": [
+"control_persona.js"
+],
+"测试会真实画一张图，可能产生费用：需要确认（confirm_paid: true）": [
+"wx_ilink_py/image_routes.py"
+],
+"测试失败": [
+"control_images.js",
+"control_model.js"
+],
+"测试对话用 Chat 的模型真实调用一次（很短的请求），只记录成功与否、耗时和错误类型。": [
+"control.html"
+],
+"测试数据": [
+"control.js"
+],
+"测试模式": [
+"control_persona.js"
+],
+"测试模式不记": [
+"ai/chat.py"
+],
+"测试模式已关闭": [
+"control_persona.js"
+],
+"测试模式已打开": [
+"control_persona.js"
+],
+"测试没通过": [
+"control_images.js"
+],
+"测试画图": [
+"control_images.js"
+],
+"测试画的图": [
+"control_images.js"
+],
+"测试联网": [
+"control.js"
+],
+"测试识图": [
+"control_images.js"
+],
+"测试连接": [
+"control_channels.js"
+],
+"测试连接只向接口要一次模型列表，不调用任何模型，所以和下面选的模型无关；成功后列表会自动填到第 2 步。": [
+"control.html"
+],
+"测试通过": [
+"control_images.js",
+"control_model.js"
+],
+"测试通过（{0}，{1} 毫秒）": [
+"ai/setup_status.py"
+],
+"测试通过，可以使用": [
+"control_images.js"
+],
+"测验": [
+"ai/schedule/importer.py"
+],
+"消息": [
+"control_diag.js"
+],
+"消息发送": [
+"ai/control_config.py"
+],
+"消息处理线程没有运行：收到的消息不会被处理": [
+"ai/diagnostics.py"
+],
+"消息总数": [
+"control.js"
+],
+"消息里的文字": [
+"control.html"
+],
+"润色生活事件用的模型": [
+"ai/control_config.py"
+],
+"添加 MCP 服务器": [
+"control.html"
+],
+"添加一节": [
+"control.html"
+],
+"添加后会立即连接并列出工具。工具自己声明“只是查看”的默认“直接用”，其余默认“先问你”（她每次要用都先问你）；每个工具都可以再改成“直接用 / 先问你 / 不给她用”。如果服务器的工具和已有模板一致，会提示一键套用。": [
+"control.html"
+],
+"添加并检查": [
+"control.html"
+],
+"添加服务器": [
+"control.js"
+],
+"清楚自己是跑在你服务器上的 AI；经历都是系统里真实发生的事，不编生活": [
+"persona/templates/ai.json"
+],
+"清空安全入口后，任何人都能打开登录页。确定？": [
+"control.js"
+],
+"清除全部记忆": [
+"control.js"
+],
+"清除全部配置": [
+"control.js"
+],
+"清除失败：": [
+"control.js"
+],
+"清除她的全部记忆、把全部配置恢复默认、翻篇（她看不到以前的聊天，像重新开始），可以任选。聊天记录不会删除。": [
+"control.html"
+],
+"清除所有记忆": [
+"control.js"
+],
+"清除所有配置": [
+"control.js"
+],
+"清除所有配置（恢复默认）": [
+"ai/control_config.py"
+],
+"清除数据 / 翻篇": [
+"control.html",
+"control.js"
+],
+"清除记忆 / 配置 / 翻篇…": [
+"control.html"
+],
+"清除记忆失败（{0}），什么都没有删": [
+"wx_ilink_py/control_routes.py"
+],
+"清除记忆并翻篇（先在服务器上存备份；聊天记录保留在后台）": [
+"control_persona.js"
+],
+"清除记忆：她从零开始（她的记忆、你的资料、她的生活经历都清空，并且翻篇：她看不到以前的聊天；聊天记录保留在后台；清除前会在服务器上存一份备份）": [
+"control_persona.js"
+],
+"清除配置失败，已恢复原来的设置（{0}）": [
+"wx_ilink_py/control_routes.py"
+],
+"清除需要确认（confirm: true）": [
+"wx_ilink_py/control_routes.py"
+],
+"渠道 {0}": [
+"ai/diagnostics.py"
+],
+"渠道 {0}（令牌）": [
+"ai/diagnostics.py"
+],
+"渠道不对": [
+"ai/persona_templates.py"
+],
+"渠道已连接，但还没有绑定你的账号（生成绑定码）": [
+"ai/setup_status.py"
+],
+"渠道用不同的人设会怎样？": [
+"control_persona.js"
+],
+"渠道管理没有启动": [
+"wx_ilink_py/channel_routes.py"
+],
+"温度": [
+"control.js",
+"control_model.js"
+],
+"温柔、软萌、慢热，熟了以后很黏人的女孩": [
+"persona/templates/violet.json"
+],
+"温柔陪伴": [
+"persona/templates/gentle.json"
+],
+"点": [
+"control_channels.js"
+],
+"点“检查外部网络”确认是网络问题还是对方的问题": [
+"ai/diagnostics.py"
+],
+"点“让她写一条”，或者自己写；发之前可以改": [
+"control_social.js"
+],
+"点一下看完整说明": [
+"control_mcp.js"
+],
+"点一节课可以停课、调课、改时间、换教室或撤销变动；点日期旁的“加课”可以加一次课。这里的修改，Violet 下一次查课表时就能看到。": [
+"control.html"
+],
+"点击位置不对": [
+"wx_ilink_py/qq_routes.py"
+],
+"点击放大": [
+"control_channels.js"
+],
+"点开看完整人设": [
+"control_persona.js"
+],
+"点画面就等于在 QQ 窗口里点一下。画面每 3 秒刷新。": [
+"control_channels.js"
+],
+"然后点“保存并应用”，打开“启用中继连接”，回到主页点“启动”。上面的状态变成“手机已连接”就好了。 连不上时先检查云服务器安全组是否放行了 TCP {0}；还不行，可能是这个端口在路上被拦了，换一个随机端口试试（密钥和指纹不变，手机上只改中继地址）。": [
+"control_phone.js"
+],
+"照常": [
+"control.html",
+"control_schedule.js"
+],
+"爸爸": [
+"ai/persona_templates.py"
+],
+"版本 {0}": [
+"control_persona.js"
+],
+"版本与更新": [
+"control.html"
+],
+"版本更新": [
+"ai/control_config.py"
+],
+"物理删除：删除这条信息及其同值的历史版本；把它的值和原话证据从聊天记录、收件箱、发件箱、后台记忆任务、修订记录、其他证据字段中替换为“[已删除的个人信息]”；同时删除内容中包含该值的事件记忆和由它导入的旧核心记忆；启用 SQLite secure_delete 并做 WAL checkpoint，避免旧数据留在数据库文件中。不可恢复。": [
+"wx_ilink_py/profile_routes.py"
+],
+"状态": [
+"control.html",
+"control_schedule.js"
+],
+"状态 {0}": [
+"control.js"
+],
+"玩笑": [
+"control.js"
+],
+"玩笑适度": [
+"control.js"
+],
+"现在不会发：{0}": [
+"control_social.js"
+],
+"现在升级到最新版本？会先备份，升级期间 Violet 停止大约一两分钟；新版本起不来会自动退回旧版本。": [
+"control_setup.js"
+],
+"现在用 Chat 的模型：{0}": [
+"control_images.js"
+],
+"现在的设置：{0}（在“设置 → QQ”里改）。你自己的私聊不在这里，照常进你们的对话。": [
+"control_social.js"
+],
+"现在看的是这个渠道以前用别的人设时的聊天。": [
+"control.js"
+],
+"现在看的是：": [
+"control.js"
+],
+"现在：{0}": [
+"control_persona.js"
+],
+"现在：{0} · {1} · {2}": [
+"control_persona.js"
+],
+"理由：": [
+"control_social.js"
+],
+"理解你说的每句话": [
+"control_model.js"
+],
+"理论": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"生成一套表情包": [
+"control_stickers.js"
+],
+"生成中…（约 1 分钟）": [
+"control_voice.js"
+],
+"生成回复": [
+"control_flow.js"
+],
+"生成新密码": [
+"login page"
+],
+"生成的图片保留（天）": [
+"ai/control_config.py"
+],
+"生成绑定码": [
+"control_channels.js"
+],
+"生成绑定码（10 分钟有效），用{0}把整句发给机器人，Violet 就认得你了。别人发来的消息不会被处理。": [
+"control_channels.js"
+],
+"生效日期": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"生活事件": [
+"control.html",
+"control_persona.js"
+],
+"生活事件的写法": [
+"ai/control_config.py"
+],
+"生活引擎": [
+"ai/control_config.py",
+"control.js"
+],
+"生活引擎关": [
+"ai/setup_status.py"
+],
+"生活引擎已恢复": [
+"control_persona.js"
+],
+"生活引擎已暂停": [
+"control_persona.js"
+],
+"生活引擎开": [
+"ai/setup_status.py"
+],
+"生活照（像手机拍的）": [
+"ai/control_config.py"
+],
+"生活照：像手机拍的，真实光线和场景，按当时的时间和季节。无论哪种都标为 AI 生成": [
+"ai/control_config.py"
+],
+"生活线": [
+"control.html"
+],
+"生活边界": [
+"control_persona.js"
+],
+"用 .env 里的提示词": [
+"control.js"
+],
+"用 QQ 号收藏的表情": [
+"ai/control_config.py"
+],
+"用 SearXNG 默认的那一组（忽略上面的勾选）": [
+"control.js"
+],
+"用 root 登录 Eve 所在的服务器，粘贴下面这一行。它会找到 Eve 的数据库并复制一份（Eve 开着也行），带上 proactive_config.json 和 .env 里的普通设置（不带任何 Key、密码、提示词和地址），打成 /root/eve-export.tar.gz。": [
+"control.html"
+],
+"用 {0} 真实画一张图（“一个简单的蓝色圆形”）。大多数画图服务按张收费，这一张也算在每天的上限里。继续？": [
+"control_images.js"
+],
+"用“模型服务”的接口地址和 Key。测试会真实调用一次（发一张很小的图）。识图模型要支持图片输入（多模态）。": [
+"control_images.js"
+],
+"用一个 QQ 号（建议小号）扫码登录。私聊和你聊天，还能进群、认识别人。在服务器上一键安装（SnowLuma），不用自己装。": [
+"control_channels.js"
+],
+"用会改动东西的工具": [
+"control_flow.js"
+],
+"用你的生图模型画 12 个她的 Q 版表情包（日常反应 + AI 自嘲梗），每个算一张图片的额度": [
+"control_stickers.js"
+],
+"用你的生图模型画 {0} 个表情包？每个算一张图片（约 15–40 秒一张），画好的会自动放进收藏。": [
+"control_stickers.js"
+],
+"用在：": [
+"control.js"
+],
+"用她自己的记录：她已经有自己的聊天记录和记忆（{0} 条聊天），换上后接着用她的；现在这个人设的记录也原样保留，换回来还在": [
+"control_persona.js"
+],
+"用小号在 QQ 空间发这条动态？": [
+"control_social.js"
+],
+"用小号在 QQ 空间发这条动态？\n\n{0}": [
+"control_social.js"
+],
+"用微信扫一扫": [
+"control_channels.js"
+],
+"用户名": [
+"control.html",
+"login page"
+],
+"用户名和安全入口": [
+"control.html"
+],
+"用户名或密码不正确": [
+"wx_ilink_py/auth.py"
+],
+"用户名要以字母开头，3–32 个字符，只能有字母、数字和 _ . -": [
+"wx_ilink_py/auth.py"
+],
+"用户已确认": [
+"control.js"
+],
+"用手机 QQ 扫 QQ 窗口里的二维码": [
+"control_channels.js"
+],
+"用手机 QQ 扫码登录": [
+"control_channels.js"
+],
+"用时 {0}": [
+"control_flow.js"
+],
+"用要给 Violet 使用的微信扫码，并在手机上确认。二维码过期会自动换新": [
+"control_channels.js"
+],
+"用要给 Violet 用的 QQ 号（建议小号）扫码，并在手机上确认。QQ 刚启动时要等几十秒才有窗口。": [
+"control_channels.js"
+],
+"用要给 Violet 用的微信扫一下码就行，不用申请任何东西。": [
+"control_channels.js"
+],
+"用识图模型重新写说明": [
+"control_stickers.js"
+],
+"用过 {0} 次": [
+"control_stickers.js"
+],
+"电量": [
+"control_mcp.js"
+],
+"画图": [
+"control_images.js"
+],
+"画图任务": [
+"control_diag.js"
+],
+"画图接口方式": [
+"ai/control_config.py"
+],
+"画图模型": [
+"ai/control_config.py",
+"control_images.js"
+],
+"画图模型，例如 gpt-image-1、dall-e-3": [
+"control_images.js"
+],
+"画图用的 API Key": [
+"ai/control_config.py"
+],
+"画图用的 API 地址": [
+"ai/control_config.py"
+],
+"画图质量": [
+"ai/control_config.py"
+],
+"画图通常按张收费：这是每天的上限（包括测试）": [
+"ai/control_config.py"
+],
+"画图风格": [
+"ai/control_config.py"
+],
+"画的": [
+"control_images.js"
+],
+"画表情包中…（{0}/{1}）": [
+"control_stickers.js"
+],
+"留空 = 一天；补课日只能是一天": [
+"control_schedule.js"
+],
+"留空 = 不修改": [
+"control_channels.js"
+],
+"留空 = 不复核": [
+"ai/control_config.py"
+],
+"留空 = 不探索": [
+"ai/control_config.py"
+],
+"留空 = 不用": [
+"control.js"
+],
+"留空 = 不画图。改了以后要在“图片”页重新测试一次才会用": [
+"ai/control_config.py"
+],
+"留空 = 和 Chat 用同一个模型": [
+"control_images.js"
+],
+"留空 = 和“模型服务”一样": [
+"ai/control_config.py",
+"control_images.js"
+],
+"留空 = 开学那一周的星期一；第几周、单双周都从这一天算": [
+"control_schedule.js"
+],
+"留空 = 用 .env 里的 CHAT_LLM_PROMPT；选一个版本 = 用 persona/chat_prompt_versions 里对应的文件": [
+"ai/control_config.py"
+],
+"留空 = 用 .env 里的 PROACTIVE_LLM_PROMPT": [
+"ai/control_config.py"
+],
+"留空 = 用 Chat 模型。在 QQ 上回复你、主动找你，以及群聊和别人的私聊（没有单独设群聊模型时）都用这个模型": [
+"ai/control_config.py"
+],
+"留空 = 用 Chat 模型。在 Telegram 上回复你、主动找你时用这个模型": [
+"ai/control_config.py"
+],
+"留空 = 用“模型服务”的 Key": [
+"ai/control_config.py",
+"control_images.js"
+],
+"留空 = 用“模型服务”页的 Chat 模型。在微信上回复你、主动找你时用这个模型（意图、记忆这些后台步骤不变）": [
+"ai/control_config.py"
+],
+"留空 = 用模板": [
+"ai/control_config.py"
+],
+"登录": [
+"login page"
+],
+"登录方式：{0}；无操作 {1} 分钟后需要重新登录，最长 {2} 小时；Cookie 仅限 HTTPS：{3}；这次连接是 HTTPS：{4}": [
+"control.js"
+],
+"目前支持 Project Eve 的数据：聊天记录、记忆和发送频率设置。先预览（只显示条数和设置值，不显示聊天内容），确认后才导入。": [
+"control.html"
+],
+"直接用": [
+"control_mcp.js"
+],
+"直接用必应的搜索结果，不用安装任何东西、不用 Key，国内服务器也能用。": [
+"control.js"
+],
+"直接用（只是查看）": [
+"control_mcp.js"
+],
+"相关轮次：": [
+"control_diag.js"
+],
+"看 QQ 窗口": [
+"control_channels.js"
+],
+"看“{0}”时期的 {1} 条": [
+"control.js"
+],
+"看一眼": [
+"control_stickers.js"
+],
+"看别人发的图片": [
+"ai/control_config.py"
+],
+"看别人发的表情包": [
+"ai/control_config.py"
+],
+"看哪个人设的样子、人设动态和生活": [
+"control.html"
+],
+"看哪个人设的聊天记录": [
+"control.html"
+],
+"看哪个人设的记忆": [
+"control.html"
+],
+"看图（识别你发来的图片）": [
+"control_images.js"
+],
+"看图：Violet 看懂你发来的图片。画图：Violet 在聊天里按你的要求画图、偶尔分享自己的“照片”（明确是 AI 画的）。两者都用“模型服务”里的接口，也可以给画图单独设置。": [
+"control.html"
+],
+"看对应渠道的状态；失败的消息不会自动重发（避免重复）": [
+"ai/diagnostics.py"
+],
+"看懂你发来的图片用的模型；留空 = 和 Chat 用同一个模型": [
+"ai/control_config.py"
+],
+"看最近一次回复给模型的内容": [
+"control.html"
+],
+"看谁的记录": [
+"control.html"
+],
+"看谁的记忆": [
+"control.html"
+],
+"看重": [
+"control_persona.js"
+],
+"看重什么，每行一条": [
+"control_persona.js"
+],
+"研讨": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"硬盘只剩 {0} GB，至少要 {1} GB": [
+"tools/violet_voice.py"
+],
+"硬盘空闲 12 GB 以上（依赖约 3 GB，模型约 5 GB）": [
+"tools/violet_voice.py"
+],
+"确定": [
+"control.html",
+"control.js"
+],
+"确定{0}？这一步不能在页面上撤销。": [
+"control.js"
+],
+"确定清除全部记忆？她会忘记你和以前的一切（服务器上会保留一份备份文件）。": [
+"control_persona.js"
+],
+"确定清除她的全部记忆？她会忘记你和以前的一切（服务器上会保留一份备份文件）。": [
+"control_persona.js"
+],
+"确认导入": [
+"control_eve_import.js",
+"control_schedule.js"
+],
+"私聊里收藏的": [
+"ai/stickers.py"
+],
+"称呼": [
+"control_persona.js"
+],
+"空 = 和主设定一样": [
+"control_persona.js"
+],
+"空 = 和主设定一样（{0}）": [
+"control_persona.js"
+],
+"空白人设": [
+"control_persona.js",
+"persona/templates/blank.json"
+],
+"空白人设（还没有名字）": [
+"control_persona.js"
+],
+"立即更新": [
+"control.html",
+"control_setup.js"
+],
+"立即生效": [
+"control.js"
+],
+"第 1 步：换一段录音": [
+"control_voice.js"
+],
+"第 1 步：选录音": [
+"control_voice.js"
+],
+"第 2 步：录音的原文": [
+"control_voice.js"
+],
+"第 {0} 周（{1}）": [
+"control_schedule.js"
+],
+"第 {0} 次 · {1} · {2}": [
+"control.js"
+],
+"第 {0} 行": [
+"control_schedule.js"
+],
+"第 {0} 行：": [
+"control_schedule.js"
+],
+"第 {0}–{1} 节": [
+"control_schedule.js"
+],
+"第一周周一": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"第一周周一 {0}": [
+"control_schedule.js"
+],
+"第一周的星期一": [
+"control_schedule.js"
+],
+"第一次用？四步录好课表": [
+"control.html"
+],
+"第一次登录请用安装完成时显示的用户名和密码（随机生成，可以一直用，也可以在“账号安全”里改）。忘记了：在服务器上执行": [
+"login page"
+],
+"第几节": [
+"control_schedule.js"
+],
+"等你批准": [
+"control.js"
+],
+"等对方说完再回（秒）": [
+"ai/control_config.py"
+],
+"等待": [
+"control_flow.js"
+],
+"等待扫码": [
+"control_channels.js",
+"wx_ilink_py/ops_page_routes.py"
+],
+"等待接口回应超时": [
+"ai/setup_status.py"
+],
+"等群里安静几秒再决定": [
+"ai/control_config.py"
+],
+"等语音服务加载模型（约 1 分钟）": [
+"tools/violet_voice.py"
+],
+"签名密钥": [
+"control_channels.js"
+],
+"简体中文": [
+"ai/control_config.py"
+],
+"管理令牌：{0}。禁用或更换令牌请在本机运行 python -m tools.violet_admin token-disable / token-rotate": [
+"control.js"
+],
+"管理后台删除": [
+"wx_ilink_py/control_routes.py"
+],
+"管理后台纠正": [
+"wx_ilink_py/control_routes.py"
+],
+"管理员": [
+"control_channels.js",
+"wx_ilink_py/control_routes.py"
+],
+"管理员密码": [
+"ai/setup_status.py",
+"control.js"
+],
+"类别 {0}": [
+"control.js"
+],
+"类型": [
+"ai/schedule/importer.py",
+"control.html",
+"control.js",
+"control_schedule.js"
+],
+"粘贴手机上复制的访问令牌": [
+"control_phone.js"
+],
+"系统": [
+"ai/control_config.py",
+"control.html",
+"control.js"
+],
+"系统版本细节": [
+"control_mcp.js"
+],
+"繁體中文": [
+"ai/control_config.py"
+],
+"纠正原因（可选）": [
+"control.html"
+],
+"级别": [
+"control.html"
+],
+"绑定为我": [
+"control_channels.js"
+],
+"结束": [
+"ai/schedule/importer.py",
+"ai/schedule/school_xls.py",
+"control_schedule.js"
+],
+"结束周": [
+"control_schedule.js"
+],
+"结束日期": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"结束日期（可选）": [
+"control_schedule.js"
+],
+"结束时刻": [
+"control_schedule.js"
+],
+"结束时间": [
+"ai/schedule/importer.py"
+],
+"结束节次": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"结束（可选）": [
+"control_schedule.js"
+],
+"结果": [
+"control_flow.js"
+],
+"给中继换一个随机的新端口？设备密钥和证书指纹不变，手机上只要改中继地址；云服务器的安全组要放行新端口。": [
+"control_phone.js"
+],
+"给她起个名字（可选）": [
+"control_persona.js"
+],
+"给每个工具选“直接用 / 先问你 / 不给她用”": [
+"ai/diagnostics.py"
+],
+"维护": [
+"control.html"
+],
+"缓存命中": [
+"control.js"
+],
+"编号": [
+"ai/schedule/importer.py",
+"control.js"
+],
+"编号 {0} 已经{1}了": [
+"ai/permissions.py"
+],
+"编辑": [
+"control_schedule.js"
+],
+"编辑学期": [
+"control.html",
+"control_schedule.js"
+],
+"编辑考试": [
+"control_schedule.js"
+],
+"编辑课程": [
+"control_schedule.js"
+],
+"缺少": [
+"tools/violet_voice.py"
+],
+"缺点": [
+"control_persona.js"
+],
+"网站": [
+"control.js"
+],
+"网络较慢，还在等服务器回复。稍等一下，或者点右上角的「刷新」。": [
+"control_flow.js"
+],
+"网络错误，上传没有完成": [
+"control_eve_import.js"
+],
+"网页正文最多字数": [
+"control.js"
+],
+"网页阅读失败": [
+"control.js"
+],
+"网页阅读正常": [
+"control.js"
+],
+"群": [
+"control.js",
+"wx_ilink_py/control_routes.py"
+],
+"群 {0}": [
+"control_social.js"
+],
+"群聊决定": [
+"control_flow.js"
+],
+"群聊用的模型": [
+"ai/control_config.py"
+],
+"群里也能用工具": [
+"ai/control_config.py"
+],
+"群里冷场时自己说话": [
+"ai/control_config.py"
+],
+"群里别人发的，她觉得好玩会自己收藏。": [
+"control_stickers.js"
+],
+"群里听主人的话": [
+"ai/control_config.py"
+],
+"群里或别人私聊发来没见过的表情包时，用识图模型看一眼（同一个表情包只看一次；会用识图模型）": [
+"ai/control_config.py"
+],
+"群里或别人私聊发来的普通图片也用识图模型看（以前只看表情包）：每次决定最多看最新的几张，同一张图只看一次": [
+"ai/control_config.py"
+],
+"群里收藏的": [
+"ai/stickers.py"
+],
+"群里有人叫她名字、@她、拍一拍她，她这次选了不说话时再问她一次（多一次模型调用）": [
+"ai/control_config.py"
+],
+"翻篇": [
+"control.js",
+"control_social.js"
+],
+"翻篇的范围要是 all / owner / social": [
+"ai/context_cut.py"
+],
+"老师": [
+"ai/schedule/importer.py",
+"ai/schedule/school_xls.py",
+"control_schedule.js"
+],
+"老师：": [
+"control_schedule.js"
+],
+"考场": [
+"control_schedule.js"
+],
+"考试": [
+"control.html",
+"control_schedule.js"
+],
+"考试、假期、调课": [
+"control.html"
+],
+"考试已取消": [
+"control_schedule.js"
+],
+"考试日期": [
+"ai/schedule/importer.py"
+],
+"考试类型": [
+"ai/schedule/importer.py"
+],
+"耳机 / 蓝牙": [
+"control_mcp.js"
+],
+"聊天中偶尔自然地问一个关于你的问题（每次最多一个，被拒绝的不再问）": [
+"ai/control_config.py"
+],
+"聊天历史保留几轮": [
+"ai/control_config.py"
+],
+"聊天时查的": [
+"control.js"
+],
+"聊天时知道你现在是不是在上课": [
+"ai/control_config.py"
+],
+"聊天时考虑课表": [
+"ai/control_config.py"
+],
+"聊天渠道": [
+"ai/setup_status.py",
+"control.html",
+"control.js",
+"control_diag.js"
+],
+"聊天渠道未连接：{0}（{1}": [
+"ai/diagnostics.py"
+],
+"聊天渠道的绑定、人设和登录账号都不会动。": [
+"control.js"
+],
+"聊天行为": [
+"ai/control_config.py"
+],
+"聊天记录": [
+"control.html",
+"control_eve_import.js"
+],
+"聊天记录 {0} 条": [
+"control_eve_import.js"
+],
+"聊天记录和记忆归人设，不归渠道：用同一个人设的渠道共用一份，导入到其中一个，其他用这个人设的渠道上的她也都记得，不用每个渠道导一遍。要先选好人设再导入：导入以后再换人设，没有来源消息的记忆（核心记忆、很多事件记忆）不会跟过去。导入的聊天会排在现有聊天的前面（按时间）。图片、语音只导入当时记下的文字。": [
+"control_eve_import.js"
+],
+"聊天记录读取失败：": [
+"control.js"
+],
+"联系人（主人 {0} · 待批准 {1} · 已屏蔽 {2}）": [
+"control_channels.js"
+],
+"联系人（主人 {0} · 管理员 {1} · 待批准 {2} · 已屏蔽 {3}）": [
+"control_channels.js"
+],
+"联网 {0}": [
+"control.js"
+],
+"联网工具": [
+"control.js"
+],
+"联网工具的开关和授权": [
+"control.js"
+],
+"联网工具（violet-web）": [
+"control.js"
+],
+"联网搜索": [
+"ai/control_config.py",
+"control.js"
+],
+"联网搜索和网页阅读": [
+"ai/control_config.py"
+],
+"联网搜索已关闭": [
+"control.js"
+],
+"联网搜索已开启": [
+"control.js"
+],
+"联网搜索已开启：必应直连": [
+"control.js"
+],
+"联网搜索已开启：自建 SearXNG": [
+"control.js"
+],
+"联网搜索：改用必应直连": [
+"wx_ilink_py/control_routes.py"
+],
+"脸": [
+"control_persona.js"
+],
+"自主探索": [
+"control.js"
+],
+"自主探索用的模型": [
+"ai/control_config.py"
+],
+"自主探索：没有允许（设置 → 联网搜索 → 允许自主探索）": [
+"control.js"
+],
+"自动更新": [
+"ai/control_config.py",
+"control_setup.js"
+],
+"自动更新：发现新版本就在服务器上自动升级（先备份，失败自动退回）；只提醒：自动检查，升级要你点“立即更新”或执行命令；手动：只在你点“检查更新”时才查": [
+"ai/control_config.py"
+],
+"自动检查，只提醒": [
+"ai/control_config.py",
+"control_setup.js"
+],
+"自动记住敏感信息": [
+"ai/control_config.py"
+],
+"自动识别": [
+"ai/control_config.py"
+],
+"自动选择": [
+"control.js"
+],
+"自动选择搜索引擎": [
+"control.js"
+],
+"自动（你最近聊天的渠道）": [
+"control_channels.js"
+],
+"自动：先连 GitHub，连不上依次试加速站": [
+"tools/violet_sources.py"
+],
+"自定义人设": [
+"ai/persona_templates.py",
+"control_persona.js",
+"wx_ilink_py/control_routes.py"
+],
+"自定义加速地址": [
+"ai/control_config.py"
+],
+"自定义加速地址 {0}": [
+"tools/violet_sources.py"
+],
+"自己做": [
+"ai/permissions.py"
+],
+"自己写": [
+"control_persona.js"
+],
+"自己写一个": [
+"control_persona.js"
+],
+"自己决定": [
+"ai/social/store.py"
+],
+"自己发 QQ 动态": [
+"ai/permissions.py"
+],
+"自己发动态：已打开（每天最多 {0} 条）": [
+"control_social.js"
+],
+"自己发动态：没有打开（在“设置 → QQ 群聊、表情包与动态”里打开）": [
+"control_social.js"
+],
+"自己逛到的": [
+"control.js"
+],
+"自建 SearXNG": [
+"control.js"
+],
+"自建 SearXNG 的地址，例如 http://127.0.0.1:18089；在“工具与手机 → 联网工具”里一键安装会自动填好": [
+"ai/control_config.py"
+],
+"自建 SearXNG（可选）": [
+"control.js"
+],
+"至少选一个搜索引擎": [
+"control.js"
+],
+"节日祝福": [
+"ai/control_config.py"
+],
+"节次": [
+"ai/schedule/importer.py",
+"control.html",
+"control_schedule.js"
+],
+"节次和时刻只填一种；同一天内，结束晚于开始": [
+"control_schedule.js"
+],
+"节次表": [
+"control_schedule.js"
+],
+"节次表已保存": [
+"control_schedule.js"
+],
+"节次表：": [
+"control_schedule.js"
+],
+"节次要写成 1-2 或 3": [
+"ai/schedule/importer.py"
+],
+"节次要在 1–20 之间、从小到大": [
+"ai/schedule/importer.py"
+],
+"范围是 {0}–{1}": [
+"ai/control_config.py"
+],
+"获取失败：": [
+"control_model.js"
+],
+"蓝发鲸鱼耳朵的女仆少女，甜美粘人、话少爱撒娇、最爱白米饭；像真人一样用手机打字聊天": [
+"persona/templates/dafeiyu.json"
+],
+"行": [
+"control_schedule.js"
+],
+"衣服": [
+"control_persona.js"
+],
+"衣服颜色": [
+"control_persona.js"
+],
+"衣服颜色（用顿号隔开）": [
+"control_persona.js"
+],
+"补课": [
+"ai/schedule/importer.py"
+],
+"补课日": [
+"ai/schedule/importer.py"
+],
+"表情包": [
+"ai/control_config.py",
+"control_stickers.js"
+],
+"表情包功能关着（在“设置 → QQ 群聊、表情包与动态”里打开）。": [
+"control_stickers.js"
+],
+"表情包套装已齐": [
+"control_stickers.js"
+],
+"表里写的学期是“{0}”，会导入到选中的学期“{1}”": [
+"wx_ilink_py/schedule_routes.py"
+],
+"表里没有认出任何一节课（每节课要有课名、老师、周次，比如“1-16([周])”）": [
+"ai/schedule/school_xls.py"
+],
+"被 @ 或回复她时才说": [
+"ai/social/store.py"
+],
+"被夸、被谢会开心，被骂会不高兴，几个小时里慢慢平复；心情明显时影响她说话的语气、发表情包的多少和群里主动说话的次数（按关键词判断，不多用模型）": [
+"ai/control_config.py"
+],
+"装了哪些 App": [
+"control_mcp.js"
+],
+"装好语音（工具页 → 语音）并上传参考录音后，她偶尔会发语音条（你让她说话、念东西，或者她想撒娇、道晚安时）：只发语音，几分钟后到，生成失败就改发文字；关掉就只打字": [
+"ai/control_config.py"
+],
+"要不要主动找你、说什么": [
+"control_flow.js"
+],
+"要你批准的事、批准后的结果，由她用自己的话告诉你（多一次模型调用；写漏了编号就改发原文）；关：直接发系统写好的原文": [
+"ai/control_config.py"
+],
+"要你批准的记录在“通用 → 她能自己做的事”下面。": [
+"control.js"
+],
+"要做什么": [
+"control_schedule.js"
+],
+"要带上预览给出的 counts": [
+"ai/schedule/importer.py"
+],
+"要把文件内容作为文字发送": [
+"wx_ilink_py/schedule_routes.py"
+],
+"规则 / 资料": [
+"control.js",
+"control_flow.js"
+],
+"规则、人设、记忆、聊天记录……每一块多少字，都在这里": [
+"control.html"
+],
+"规则判断不了的“自己经历”句子，再请模型复核一次（会用模型）": [
+"ai/control_config.py"
+],
+"解除": [
+"control.js"
+],
+"警告": [
+"control_logs.js"
+],
+"警告 {0}": [
+"control_logs.js"
+],
+"警告及以上": [
+"control.html"
+],
+"计划": [
+"control.html",
+"control_persona.js"
+],
+"计划中": [
+"control_persona.js"
+],
+"计划时间 {0}": [
+"control_persona.js"
+],
+"讨论": [
+"ai/schedule/importer.py"
+],
+"让 Violet 能查实时信息（天气、新闻、资料）。选一种搜索方式就行，下面的“测试联网”可以马上看到能不能用。": [
+"control.js"
+],
+"让 Violet 能看手机上的一些状态（前台应用、屏幕、电量等，只读）。手机主动连到这台服务器上的中继，不需要手机有公网 IP。": [
+"control_phone.js"
+],
+"让她写一条": [
+"control_social.js"
+],
+"让她可以重新问": [
+"control.js"
+],
+"让她可以重新问你拒绝过的了解类问题？已经记下的档案不变。": [
+"control.js"
+],
+"让她念歌词、故事时最多念几个字，按句子拆成每条约 30 字的语音一条条发（每条在 CPU 上约几分钟）": [
+"ai/control_config.py"
+],
+"让她用一段录音里的声音发 QQ 语音条（CosyVoice，在这台服务器上运行，不用联网服务）。平时她打字，偶尔（你让她说话、念东西，或者她想撒娇、道晚安时）发语音：只发语音、不再先发一遍文字；没有显卡时一秒语音大约要算 30 秒，所以语音要几分钟后才到，生成失败就改发成文字。让她念歌词、故事时会拆成几条语音一条条发。她只能念，不能按旋律唱。": [
+"control_voice.js"
+],
+"让她直接用 {0}？": [
+"control_mcp.js"
+],
+"让她直接用 {0}？\n\n选“直接用”后她用它不会再问你。只有确定这个工具不会改动任何东西（只是查看）时才这样选。\n（工具如果自己声明会改动或删除东西，Violet 仍会按高风险处理。）": [
+"control_mcp.js"
+],
+"让她知道": [
+"control.html"
+],
+"让她知道你的课表": [
+"control_schedule.js"
+],
+"让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，Claude 会标出可缓存的部分，DeepSeek 自动缓存；自动识别 = 按模型名判断；中转站不认这些参数时会自动不再发送": [
+"ai/control_config.py"
+],
+"记": [
+"ai/persona_templates.py"
+],
+"记录前 200 字": [
+"ai/control_config.py"
+],
+"记录完整内容（最多 2000 字）": [
+"ai/control_config.py"
+],
+"记忆": [
+"control.html",
+"control_eve_import.js"
+],
+"记忆与提醒": [
+"ai/control_config.py"
+],
+"记忆任务": [
+"wx_ilink_py/control_routes.py"
+],
+"记忆内容": [
+"control.html"
+],
+"记忆已清除（备份：{0}）": [
+"control.js"
+],
+"记忆数据库无法检查（{0}）": [
+"ai/diagnostics.py"
+],
+"记忆数据库检查发现问题：{0}": [
+"ai/diagnostics.py"
+],
+"记忆线程": [
+"control.js"
+],
+"记忆要选“保留”或“清除”": [
+"ai/persona_templates.py"
+],
+"记忆读取失败：": [
+"control.js"
+],
+"讲授": [
+"ai/schedule/importer.py"
+],
+"设为主人设": [
+"control_persona.js"
+],
+"设为待批准": [
+"control_channels.js"
+],
+"设为管理员": [
+"control_channels.js"
+],
+"设备密钥": [
+"control_phone.js"
+],
+"设置": [
+"control.html",
+"control_eve_import.js"
+],
+"设置修改次数": [
+"control.js"
+],
+"设置分类": [
+"control.html"
+],
+"设置分页": [
+"control.html"
+],
+"设置没有导入：": [
+"wx_ilink_py/control_routes.py"
+],
+"设置读取失败：": [
+"control.js"
+],
+"设置（发送频率等）": [
+"control_eve_import.js"
+],
+"访问令牌": [
+"control_channels.js"
+],
+"访问令牌不对：请在手机 Violet MCP 的“安全”页点“复制”，再粘贴到这里": [
+"wx_ilink_py/phone_mcp_routes.py"
+],
+"证书指纹": [
+"control_phone.js"
+],
+"识图失败": [
+"control_images.js"
+],
+"识图模型": [
+"ai/control_config.py",
+"control_images.js"
+],
+"识图正常": [
+"control_images.js"
+],
+"识图没有成功：看看“图片”页的识图测试": [
+"wx_ilink_py/qq_routes.py"
+],
+"识图结果、生成图片的提示词保留多久": [
+"ai/control_config.py"
+],
+"识图超时（秒）": [
+"ai/control_config.py"
+],
+"诊断": [
+"control.html"
+],
+"试听": [
+"control_voice.js"
+],
+"试听失败": [
+"control_voice.js"
+],
+"试听：想让她说的话": [
+"control_voice.js"
+],
+"详细信息（{0} 行）": [
+"control_logs.js"
+],
+"详细状态和限额": [
+"control.js"
+],
+"详细（程序库的内部信息）": [
+"ai/control_config.py"
+],
+"语言和时区": [
+"control_mcp.js"
+],
+"语音": [
+"ai/control_config.py",
+"control.js",
+"control_voice.js"
+],
+"语音服务 {0} 秒内没有启动：journalctl -u {1} -n 40": [
+"tools/violet_voice.py"
+],
+"语音服务启动失败：": [
+"tools/violet_voice.py"
+],
+"语音（可选）": [
+"control_voice.js"
+],
+"说不说、说什么、发不发表情包": [
+"control_flow.js"
+],
+"说了话": [
+"control_social.js"
+],
+"说明": [
+"control_schedule.js"
+],
+"说明已更新": [
+"control_stickers.js"
+],
+"说明：画面、什么时候发、关键词": [
+"control_stickers.js"
+],
+"说话习惯": [
+"control_persona.js"
+],
+"说话习惯，每行一条": [
+"control_persona.js"
+],
+"请主人批准": [
+"ai/permissions.py"
+],
+"请只回复两个字：在的": [
+"ai/setup_status.py"
+],
+"请填“今天是第几周”，或者填开学和结束日期": [
+"control_schedule.js"
+],
+"请填一个名字": [
+"ai/persona_templates.py"
+],
+"请填写 IANA 时区名称，例如 Asia/Shanghai": [
+"ai/control_config.py"
+],
+"请填写 http:// 或 https:// 开头的地址，不带查询参数，也不能在地址里写用户名或密码": [
+"ai/control_config.py"
+],
+"请填写加速站的地址，例如 https://gh.example.com/（不是 github.com 本身）": [
+"ai/control_config.py"
+],
+"请填数字": [
+"ai/control_config.py"
+],
+"请填整数": [
+"ai/control_config.py"
+],
+"请求太大": [
+"wx_ilink_py/schedule_routes.py"
+],
+"请求太频繁或额度用完了（接口返回 429）": [
+"ai/setup_status.py"
+],
+"请求失败": [
+"control.js"
+],
+"请给出 from / to（YYYY-MM-DD，from 不晚于 to）": [
+"wx_ilink_py/control_routes.py"
+],
+"请至少选一个搜索引擎（只能从列表里选）": [
+"wx_ilink_py/control_routes.py"
+],
+"请至少选一项": [
+"control.js",
+"wx_ilink_py/control_routes.py"
+],
+"请选择导出的起止日期": [
+"control.js"
+],
+"请选择开或关": [
+"ai/control_config.py"
+],
+"读": [
+"ai/persona_templates.py"
+],
+"读不了这个 .xls（{0}）": [
+"ai/schedule/school_xls.py"
+],
+"读不了这个文件": [
+"control_schedule.js"
+],
+"读不到 QQ 收藏的表情：{0}": [
+"wx_ilink_py/qq_routes.py"
+],
+"读取 MCP 状态失败（{0}）": [
+"ai/diagnostics.py"
+],
+"读取修改记录…": [
+"control.js"
+],
+"读取失败：": [
+"control.js",
+"control_persona.js",
+"control_phone.js"
+],
+"读取运行状态失败（{0}）": [
+"ai/diagnostics.py"
+],
+"读取进度失败：": [
+"control.js"
+],
+"课名": [
+"ai/schedule/importer.py"
+],
+"课程": [
+"ai/schedule/importer.py",
+"ai/schedule/school_xls.py",
+"control.html",
+"control_schedule.js"
+],
+"课程代码": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"课程名": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"课程已新增，接着添加上课时间": [
+"control_schedule.js"
+],
+"课程类型": [
+"ai/schedule/importer.py"
+],
+"课程编号": [
+"ai/schedule/importer.py"
+],
+"课表": [
+"ai/control_config.py",
+"control.html",
+"wx_ilink_py/schedule_routes.py"
+],
+"课表查询（violet-schedule）": [
+"ai/control_config.py"
+],
+"课表的每一次修改（谁、什么时候、从哪里、改了什么）。彻底删除的内容不留原文，只留一条删除记录。": [
+"control.html"
+],
+"课表读取失败：": [
+"control_schedule.js"
+],
+"课表页": [
+"control_schedule.js"
+],
+"课表（也可以用 .csv / .json 模板），点“预览”，看没问题再点“确认导入”。": [
+"control.html"
+],
+"谁在和你聊": [
+"control_persona.js"
+],
+"谁要你夸啦，不过今天的白米饭确实好好吃。": [
+"control_voice.js"
+],
+"谁说的": [
+"control.html"
+],
+"谁都回": [
+"ai/control_config.py",
+"control_social.js"
+],
+"调休": [
+"ai/schedule/importer.py"
+],
+"调休补课日": [
+"control_schedule.js"
+],
+"调入": [
+"control_schedule.js"
+],
+"调到哪天": [
+"control_schedule.js"
+],
+"调用": [
+"control.js"
+],
+"调用 {0} 次 / 失败 {1} 次": [
+"control.js",
+"control_mcp.js"
+],
+"调用 {0}({1})": [
+"control_flow.js"
+],
+"调用失败": [
+"ai/mcp_admin.py"
+],
+"调用失败（{0}）": [
+"ai/diagnostics.py",
+"ai/setup_status.py"
+],
+"调试": [
+"control_logs.js"
+],
+"调课": [
+"ai/schedule/importer.py",
+"control_schedule.js"
+],
+"调课、停课、加课": [
+"control.html"
+],
+"调课停课": [
+"control_schedule.js"
+],
+"账号安全": [
+"control.html"
+],
+"质量越高画得越慢；你的中转如果 60 秒就断（504 Gateway Timeout），用“中”或“低”。auto = 不指定，用模型自己的默认": [
+"ai/control_config.py"
+],
+"起始周": [
+"control_schedule.js"
+],
+"跟着手机上的动静找你": [
+"ai/control_config.py"
+],
+"跳过": [
+"control_flow.js"
+],
+"跳过的周": [
+"control_schedule.js"
+],
+"身形和特征": [
+"control_persona.js"
+],
+"辅助模型最近 24 小时：{0}。": [
+"control.js"
+],
+"输入": [
+"control_flow.js"
+],
+"输入 token": [
+"control.js"
+],
+"输入“{0}”确认": [
+"control_schedule.js"
+],
+"输入学期名称“{0}”确认": [
+"control_schedule.js"
+],
+"输入的文字不一致，没有删除": [
+"control_schedule.js"
+],
+"输出": [
+"control_flow.js"
+],
+"输出 token": [
+"control.js"
+],
+"过会儿再看": [
+"control_social.js"
+],
+"过期": [
+"ai/permissions.py"
+],
+"过期了": [
+"control.js"
+],
+"过期只标记为过期，不删除": [
+"ai/control_config.py"
+],
+"过期没发": [
+"control.js"
+],
+"过这么久，心情的变化就淡一半": [
+"ai/control_config.py"
+],
+"运行中": [
+"control.js",
+"control_persona.js"
+],
+"运行日志": [
+"control.html"
+],
+"运行状态": [
+"control.html"
+],
+"返回错误 {0}": [
+"tools/violet_sources.py"
+],
+"还在用代码里的默认模型，建议换成服务上真实存在的模型": [
+"control_model.js"
+],
+"还是照这样保存？": [
+"control_voice.js"
+],
+"还有必需的设置没有完成。点下面的卡片直接过去。": [
+"control_setup.js"
+],
+"还有必需的设置没有完成：{0}（{1}）。点下面的卡片直接过去。": [
+"control_setup.js"
+],
+"还没分类（不给她用）": [
+"control_mcp.js"
+],
+"还没到时间": [
+"control.js"
+],
+"还没到时间的 {0} 条，下面也列出最近已经结束的": [
+"control.js"
+],
+"还没开始": [
+"control_schedule.js"
+],
+"还没有上传参考录音": [
+"wx_ilink_py/voice_routes.py"
+],
+"还没有中继": [
+"control_phone.js"
+],
+"还没有人在这个渠道上发过消息。": [
+"control_channels.js"
+],
+"还没有修改记录": [
+"control.js",
+"control_schedule.js"
+],
+"还没有做过决定。": [
+"control_social.js"
+],
+"还没有写过自定义人设": [
+"ai/persona_templates.py"
+],
+"还没有别人私聊过她。": [
+"control_social.js"
+],
+"还没有印象（她自己会慢慢写，你也可以改）": [
+"control_social.js"
+],
+"还没有发现工具（连接成功后会列出）": [
+"control_mcp.js"
+],
+"还没有发过动态。": [
+"control_social.js"
+],
+"还没有变化": [
+"control_persona.js"
+],
+"还没有可用的渠道": [
+"control.js"
+],
+"还没有可用的聊天渠道（微信、QQ、Telegram 连上任意一个就行）": [
+"ai/setup_status.py"
+],
+"还没有图片。": [
+"control_images.js"
+],
+"还没有填写 API 地址或 API Key": [
+"ai/setup_status.py"
+],
+"还没有学期": [
+"control_schedule.js"
+],
+"还没有安装 QQ（SnowLuma）": [
+"wx_ilink_py/qq_routes.py"
+],
+"还没有安装中继": [
+"wx_ilink_py/phone_mcp_routes.py"
+],
+"还没有安装联网搜索（SearXNG）": [
+"wx_ilink_py/control_routes.py"
+],
+"还没有检查外部网络": [
+"ai/diagnostics.py"
+],
+"还没有检查过连接（点“检查连接”）": [
+"ai/mcp_admin.py"
+],
+"还没有添加其他 MCP 服务器。": [
+"control.js"
+],
+"还没有生活事件": [
+"control_persona.js"
+],
+"还没有生活线": [
+"control_persona.js"
+],
+"还没有用{0}。": [
+"control.js"
+],
+"还没有群。把这个 QQ 号拉进群后点“刷新状态”。": [
+"control_social.js"
+],
+"还没有聊天渠道。": [
+"control_persona.js"
+],
+"还没有聊天记录": [
+"control.js"
+],
+"还没有表情包。": [
+"control_stickers.js"
+],
+"还没有设置 Chat 模型": [
+"control_images.js"
+],
+"还没有设置密码（现在用的是管理令牌）": [
+"ai/setup_status.py"
+],
+"还没有请你批准过什么。": [
+"control.js"
+],
+"还没有课表：按下面“四步录好课表”来，先新建一个学期。": [
+"control_schedule.js"
+],
+"还没检查": [
+"control.js",
+"control_mcp.js"
+],
+"还没测试": [
+"control_images.js"
+],
+"还没聊过天": [
+"control.js"
+],
+"还没选模型": [
+"control_images.js"
+],
+"这一步没有记录内容。": [
+"control_flow.js"
+],
+"这一步跳过了": [
+"control_flow.js"
+],
+"这一节没有可以做的操作": [
+"control_schedule.js"
+],
+"这一行": [
+"ai/schedule/importer.py"
+],
+"这一轮不需要执行任务": [
+"ai/chat.py"
+],
+"这一轮已经不在最近的记录里了": [
+"wx_ilink_py/control_routes.py"
+],
+"这个 Key 没有权限使用该模型（接口返回 403）": [
+"ai/setup_status.py"
+],
+"这个人设没有写细节。": [
+"control_persona.js"
+],
+"这个修复已经不适用（服务器的工具或模板变了），请刷新诊断": [
+"wx_ilink_py/setup_routes.py"
+],
+"这个学期": [
+"control_schedule.js"
+],
+"这个学期还没有导入过": [
+"control_schedule.js"
+],
+"这个学期还没有课程": [
+"control_schedule.js"
+],
+"这个工具已停用": [
+"ai/mcp_admin.py"
+],
+"这个工具现在用不了（连不上，或者权限改了）": [
+"ai/permissions.py"
+],
+"这个工具还没有分类（没分类的不给她用）": [
+"ai/mcp_admin.py"
+],
+"这个接口不支持列出模型，请直接填写模型名": [
+"ai/setup_status.py"
+],
+"这个提醒已经不是“待提醒”了，不能取消": [
+"wx_ilink_py/control_routes.py"
+],
+"这个操作要主人同意才会执行，现在还没有执行（请求编号 {0}）。在回复里用你自己的话说清楚你想做什么，并告诉主人：回复“同意 {1}”你就去做，回复“不同意 {2}”就不做。不要说已经做了。对方不是主人时，就说这件事要等主人同意。": [
+"ai/permissions.py"
+],
+"这个文件 {0} 已经导入过：再导入时已有的消息和记忆会自动跳过，不会重复。": [
+"control_eve_import.js"
+],
+"这个文件在 {0} 导入过；再导入一次不会产生重复课程（没有手动改过的话，下面应该全是“不变”）": [
+"ai/schedule/importer.py"
+],
+"这个服务器不用请求头凭据": [
+"wx_ilink_py/control_routes.py"
+],
+"这个模型可以用了": [
+"control_images.js"
+],
+"这个渠道不需要绑定码": [
+"wx_ilink_py/channel_routes.py"
+],
+"这个渠道已经关闭：要用的话先在“渠道”页开启": [
+"wx_ilink_py/setup_routes.py"
+],
+"这个渠道现在：{0}。": [
+"control_eve_import.js"
+],
+"这个渠道的模型": [
+"ai/control_config.py"
+],
+"这个渠道还没有聊天": [
+"control.js"
+],
+"这些 Agent 还在用代码默认模型（这个服务上可能没有）：": [
+"ai/setup_status.py"
+],
+"这些工具会改动东西，她每次要用都会先问你（点“允许直接用”就不再问）：": [
+"ai/mcp_admin.py"
+],
+"这些工具会改动东西，现在不给她用（“设置 → 她能自己做的事”改成“先问你”，或点“允许直接用”）：": [
+"ai/mcp_admin.py"
+],
+"这些工具只授权给了主动消息，聊天时不会被规划：{0}": [
+"ai/diagnostics.py"
+],
+"这份 Violet 不是用安装器装的：请按 Violet MCP 的 DEPLOY_RELAY.md 部署中继。": [
+"control_phone.js"
+],
+"这份程序不是用安装器装的，不能自动更新": [
+"ai/updates.py"
+],
+"这份程序不是用安装器装的：下载新版本后在其目录里运行 bash install.sh upgrade": [
+"ai/updates.py"
+],
+"这台服务器上已经有一个不是 Violet 装的 violet-voice 服务，没有改动": [
+"tools/violet_voice.py"
+],
+"这台服务器没有 systemd，语音要手动部署": [
+"tools/violet_voice.py"
+],
+"这台服务器装不了语音：": [
+"tools/violet_voice.py"
+],
+"这是 .xlsx：请在 Excel 里“另存为 Excel 97-2003 工作簿 (.xls)”或者从教务系统重新导出 .xls": [
+"ai/schedule/school_xls.py"
+],
+"这是你上次写的人设。": [
+"control_persona.js"
+],
+"这是导入的课程：手动修改后，以后再导入不会覆盖它。": [
+"control_schedule.js"
+],
+"这是服务器上 QQ 的窗口。要在窗口里点按钮，点画面放大后再点。": [
+"control_channels.js"
+],
+"这条记忆已删除，不能再纠正": [
+"wx_ilink_py/control_routes.py"
+],
+"这条记忆已经删除了": [
+"wx_ilink_py/control_routes.py"
+],
+"这段时间不主动联系": [
+"ai/control_config.py"
+],
+"这种安装方式不能在网页上安装。以 root 在服务器上运行：/opt/violet/violet searxng install，再在“设置 → 联网搜索”里打开联网搜索。": [
+"control.js"
+],
+"这种安装方式不能在网页上安装，请以 root 在服务器上运行：": [
+"control_phone.js"
+],
+"这种安装方式不能在网页上安装，请在服务器上运行上面的命令。": [
+"control_channels.js"
+],
+"这种安装方式不能在网页上安装，请在服务器上运行：{0}": [
+"control_voice.js"
+],
+"这种安装方式（不是 root + systemd）不能在网页上执行，请在服务器上运行命令": [
+"ai/root_tasks.py"
+],
+"这种安装方式（不是 root + systemd）不能自动更新，请在服务器上执行下面的命令": [
+"ai/updates.py"
+],
+"这里是这个渠道现在的人设（{0}）的聊天。": [
+"control.js"
+],
+"这里用什么人设": [
+"control.js"
+],
+"这里的人设：{0} · 关系“{1}” · {2}": [
+"control.js"
+],
+"这项能力现在用不了": [
+"ai/permissions.py"
+],
+"进展 {0}": [
+"control.js"
+],
+"进度": [
+"control_phone.js"
+],
+"进行中": [
+"control.js",
+"control_flow.js",
+"control_persona.js",
+"control_schedule.js"
+],
+"连不上": [
+"control.js"
+],
+"连不上 API 地址（检查地址、网络或代理）": [
+"ai/setup_status.py"
+],
+"连不上（{0}）": [
+"tools/violet_sources.py"
+],
+"连接": [
+"control_phone.js"
+],
+"连接 MCP 服务器（例如手机）": [
+"ai/control_config.py"
+],
+"连接和账号": [
+"control.js"
+],
+"连接失败": [
+"control_model.js"
+],
+"连接失败（{0}）": [
+"ai/mcp_admin.py"
+],
+"连接失败：": [
+"control_channels.js"
+],
+"连接正常": [
+"control_channels.js",
+"control_model.js"
+],
+"连接自检": [
+"control_mcp.js"
+],
+"连接设置（第 1–3 步：安装 App、中继的三项、访问令牌、换端口）": [
+"control_phone.js"
+],
+"连接超时": [
+"tools/violet_sources.py"
+],
+"连接超时（秒）": [
+"ai/control_config.py"
+],
+"连续几次没回就先等对方": [
+"ai/control_config.py"
+],
+"追加 / 更新（推荐）：只新增、更新文件里的课程，其他课程保持不变": [
+"control.html"
+],
+"追加 / 更新：只新增、更新文件里的课程，这个学期的其他课程保持不变": [
+"control_schedule.js"
+],
+"追问": [
+"control.js"
+],
+"退出": [
+"control.html"
+],
+"退出微信登录需要确认（confirm: true）": [
+"wx_ilink_py/ops_page_routes.py"
+],
+"退出微信登录？Violet 会停止收发微信消息，之后要重新扫码。": [
+"control_channels.js"
+],
+"退出所有登录": [
+"control.html"
+],
+"退出所有设备上的登录（包括当前这个）？": [
+"control.js"
+],
+"退出登录": [
+"control_channels.js"
+],
+"选“直接用”后她用它不会再问你。只有确定这个工具不会改动任何东西（只是查看）时才这样选。": [
+"control_mcp.js"
+],
+"选一个或几个平台和 Violet 聊天，用同一个人设的渠道是同一个她（同一份记忆）；在“人设与生活”里给某个渠道换了别的人设，那个渠道就是另一个人，有自己的记忆。私聊里只有你自己的账号发来的消息才进入你们的对话；新的“QQ”还能进群、和别人聊天（在 QQ 卡片里设置）。": [
+"control.html"
+],
+"选一个模型…": [
+"control_model.js"
+],
+"选择搜索引擎": [
+"control.js"
+],
+"选择的学期不存在": [
+"wx_ilink_py/schedule_routes.py"
+],
+"通常是工具改名或服务器换了名字；检查“工具”页的工具名": [
+"ai/diagnostics.py"
+],
+"通用": [
+"control.html"
+],
+"通知用她的语气说": [
+"ai/control_config.py"
+],
+"遗忘": [
+"control.js"
+],
+"遗忘失败：": [
+"control.js"
+],
+"遗忘这件事？除了删除这条记忆，还会把它来源那一轮里用户说这件事的句子和 Violet 当时的相关回复，从聊天记录中抹掉，Violet 之后从任何地方都看不到。修改记录也会一并删除，不能恢复。": [
+"control.js"
+],
+"遗忘需要确认（confirm: true）": [
+"wx_ilink_py/control_routes.py"
+],
+"都归人设“{0}”。": [
+"control_eve_import.js"
+],
+"都没有连上": [
+"control.js"
+],
+"配置": [
+"control.html"
+],
+"配置文件": [
+"control.js"
+],
+"配饰": [
+"control_persona.js"
+],
+"重启 QQ": [
+"control_channels.js"
+],
+"重启 Violet": [
+"ai/diagnostics.py",
+"control.html"
+],
+"重启 Violet（violet restart / systemctl restart violet）": [
+"ai/diagnostics.py"
+],
+"重启 Violet？正在处理的消息会在重启后继续，大约需要十几秒。": [
+"control.js"
+],
+"重启后生效": [
+"control.js"
+],
+"重启失败：": [
+"control.js"
+],
+"重启这个渠道": [
+"control_diag.js"
+],
+"重启需要确认（confirm: true）": [
+"wx_ilink_py/restart.py"
+],
+"重新检查连接": [
+"control_diag.js"
+],
+"重新测试模型": [
+"control_diag.js"
+],
+"重新生成签名密钥": [
+"control_channels.js"
+],
+"重新获取模型": [
+"control_images.js"
+],
+"重新获取模型列表": [
+"control.html"
+],
+"重画整套": [
+"control_stickers.js"
+],
+"重要度 {0}": [
+"control.js"
+],
+"重试基础间隔（秒）": [
+"ai/control_config.py"
+],
+"错误": [
+"control_logs.js"
+],
+"错误 {0}": [
+"control_logs.js"
+],
+"键 {0}": [
+"control.js"
+],
+"长期兴趣": [
+"control_persona.js"
+],
+"长轮询秒数": [
+"control_channels.js"
+],
+"问题": [
+"control_diag.js",
+"control_mcp.js",
+"control_schedule.js"
+],
+"随便写一句（120 字以内），点试听，她就用上面录音的声音把这句说出来。和录音原文无关，不用一样。": [
+"control_voice.js"
+],
+"随机生成一个新的安全入口": [
+"control.html"
+],
+"隐藏": [
+"control_phone.js"
+],
+"需要 x86_64 的 CPU（这台是 {0}）": [
+"tools/violet_voice.py"
+],
+"需要在聊天中使用的话，在“工具”页勾选 Chat": [
+"ai/diagnostics.py"
+],
+"需要处理": [
+"control_mcp.js"
+],
+"需要时才给": [
+"control.js"
+],
+"需要时点“允许直接用”": [
+"ai/diagnostics.py"
+],
+"需要检查": [
+"control_setup.js"
+],
+"需要注意": [
+"control_diag.js"
+],
+"需要登录": [
+"control_channels.js"
+],
+"需要的工具没有权限或已停用，{0} 轮没有查成：{1}": [
+"ai/diagnostics.py"
+],
+"需要确认（confirm: true）": [
+"wx_ilink_py/control_routes.py",
+"wx_ilink_py/phone_mcp_routes.py",
+"wx_ilink_py/voice_routes.py"
+],
+"需要确认（confirm: true）：旧的签名密钥会立即失效": [
+"wx_ilink_py/channel_routes.py"
+],
+"静默时段开始": [
+"ai/control_config.py"
+],
+"静默时段结束": [
+"ai/control_config.py"
+],
+"音乐": [
+"ai/persona_templates.py"
+],
+"预览": [
+"control.html",
+"control_schedule.js"
+],
+"预览之后课表又被修改过了，请重新预览再确认": [
+"ai/schedule/importer.py"
+],
+"高级：代理、接口地址": [
+"control_channels.js"
+],
+"高风险": [
+"control_mcp.js"
+],
+"高风险（需另外授权）": [
+"control.js"
+],
+"高（最慢）": [
+"ai/control_config.py"
+],
+"默认": [
+"control_model.js"
+],
+"默认 {0}": [
+"control.js"
+],
+"默认：{0}": [
+"control_mcp.js"
+],
+"（{0} 条 Violet 已有，保留 Violet 的）": [
+"control_eve_import.js"
+],
+"（{0} 条已经有了，跳过）": [
+"control_eve_import.js"
+],
+"（{0} 毫秒）": [
+"control_images.js"
+],
+"（上面手动优先的记录保持不变）。": [
+"control_schedule.js"
+],
+"（几秒后自动刷新）": [
+"ai/setup_status.py"
+],
+"（发布签名已核对）": [
+"control_setup.js"
+],
+"（只显示最新的 300 条，用筛选缩小范围）": [
+"control_logs.js"
+],
+"（回复是空的，但调用成功了）": [
+"ai/setup_status.py"
+],
+"（回复里和人设、生活记录对不上的地方）": [
+"control.html"
+],
+"（工具如果自己声明会改动或删除东西，Violet 仍会按高风险处理。）": [
+"control_mcp.js"
+],
+"（已换 {0} 次）": [
+"control_channels.js"
+],
+"（性格、说话习惯、兴趣、价值观、缺点）": [
+"control.html"
+],
+"（按 {0} 的课表上课）": [
+"control_schedule.js"
+],
+"（推荐）": [
+"control_eve_import.js"
+],
+"（新学期）": [
+"control_schedule.js"
+],
+"（最近 60 件）": [
+"control.html"
+],
+"（最近错误：{0}）": [
+"control_channels.js"
+],
+"（没有说明）": [
+"control_mcp.js"
+],
+"（点卡片看完整人设；每个人设有自己的一份聊天记录和记忆，换来换去都不会丢）": [
+"control.html"
+],
+"（画她自己时用；每个人设一份）": [
+"control.html"
+],
+"（空）": [
+"control.js",
+"control_flow.js"
+],
+"（缓慢变化，需要你批准）": [
+"control.html"
+],
+"（节次时间没设置）": [
+"control_schedule.js"
+],
+"（表里写的学期是 {0}）": [
+"wx_ilink_py/schedule_routes.py"
+],
+"（跳过 {0} 条）": [
+"control_eve_import.js"
+],
+"（还没添加）": [
+"control_eve_import.js"
+],
+"（这次启动后还没有调用过）": [
+"ai/diagnostics.py"
+],
+"，{0} 个没下载下来": [
+"control_stickers.js"
+],
+"，之后已经恢复": [
+"ai/diagnostics.py"
+],
+"，也没有 apt-get：请先装好再试": [
+"tools/violet_voice.py"
+],
+"，发布于 {0}": [
+"control_setup.js"
+],
+"，可用参数：{0}": [
+"control_mcp.js"
+],
+"，命中缓存 {0}": [
+"control_flow.js"
+],
+"，在“机器人”里新建一个（个人就可以注册）。": [
+"control_channels.js"
+],
+"，更早的没有显示": [
+"control_logs.js"
+],
+"：/opt/violet/violet qq {0}": [
+"wx_ilink_py/qq_routes.py"
+],
+"：从现在起她看不到以前的聊天（和你的、群里的都算），像重新开始聊。聊天记录不删，“聊天记录”页照样能看。只清记忆不翻篇的话，她还会从最近的聊天里看到以前的事。": [
+"control.js"
+],
+"：到“导入 / 导出”，直接选教务系统导出的": [
+"control.html"
+],
+"：回到“周视图”，翻到本周和下一周看看。单双周（例如 1,3,5…15 周）、只上前半学期（1-8 周）、换教室的周都按表里的“周次”自动处理，不用一周一周设。": [
+"control.html"
+],
+"：在这一页上面的“让她知道你的课表”里打开“课表查询”和“聊天时考虑课表”；不想上课时被她找，再打开“主动联系避开上课”。": [
+"control.html"
+],
+"：她记得的关于你的事、你的资料、约定和提醒、她的生活经历和人设变化、对群友的印象。清除前会在服务器上存一份备份。": [
+"control.js"
+],
+"：点下面的“新建学期”，名称写教务系统课表上的学年学期（例如 2026-2027-1），再填“今天是第几周”，其他日期会自动算。": [
+"control.html"
+],
+"：设置页和图片页改过的设置全部恢复默认，QQ 群全部回到“关闭”。模型服务（API 地址、Key、模型）保留，不然她就没法说话了；可以在“修改记录”里回滚。": [
+"control.js"
+],
+"；主动消息在“设置”里调整": [
+"ai/setup_status.py"
+],
+"；事件记忆 {0} 条；设置 {1} 项。": [
+"control_eve_import.js"
+],
+"；最近错误：{0}": [
+"ai/diagnostics.py"
+],
+"；核心记忆 {0} 条": [
+"control_eve_import.js"
+],
+"；没有说明的可以点“看一眼”": [
+"control_stickers.js"
+],
+"；系统设置了代理（HTTP_PROXY / HTTPS_PROXY），本机或内网地址需要写进 NO_PROXY": [
+"ai/diagnostics.py"
+]
+}
