@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 PART_KINDS = ("text", "emoji", "sticker", "image", "voice", "file", "video", "location", "link", "quote", "mention",
-              "unsupported")
+              "forward", "unsupported")          # forward (2026-11-10): a forwarded chat log (QQ)
 
 STATES = ("stopped", "starting", "connected", "reconnecting", "needs_login", "error", "disabled")
 

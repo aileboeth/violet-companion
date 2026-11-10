@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS social_media (
 );
 CREATE INDEX IF NOT EXISTS idx_social_media_message ON social_media(message_id);
 CREATE INDEX IF NOT EXISTS idx_social_media_key ON social_media(file_key);
+-- 2026-11-10: what her small QQ touches already did, once each (ai/social/qq_life.py: a like on a post, the day's
+-- profile like, the day's signature)
+CREATE TABLE IF NOT EXISTS social_done (
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    detail TEXT,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
 -- 0.7.9: her QQ 空间 posts (ai/social/qzone.py)
 CREATE TABLE IF NOT EXISTS social_posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,14 +159,16 @@ class SocialStore:
     def add_message(self, conversation_id: int, *, content: str, sender_id: str | None = None,
                     sender_name: str | None = None, is_self: bool = False, message_type: str = "text",
                     platform_msg_id: str | None = None, reply_to: str | None = None, mentions_self: bool = False,
-                    created_at: str | None = None) -> int | None:
-        """The new row id, or None when this platform message was stored before (redelivery after a reconnect)."""
+                    created_at: str | None = None, sender_role: str | None = None) -> int | None:
+        """The new row id, or None when this platform message was stored before (redelivery after a reconnect).
+        sender_role (2026-11-10): "owner" / "admin" of a QQ group, else None."""
         at = created_at or self.db.now()
+        role = sender_role if sender_role in ("owner", "admin") else None
         cursor = self.db.execute(
             "INSERT OR IGNORE INTO social_messages (conversation_id, platform_msg_id, sender_id, sender_name, is_self, "
-            "message_type, content, reply_to, mentions_self, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "message_type, content, reply_to, mentions_self, created_at, sender_role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (int(conversation_id), platform_msg_id, sender_id, sender_name, 1 if is_self else 0, message_type, content,
-             reply_to, 1 if mentions_self else 0, at))
+             reply_to, 1 if mentions_self else 0, at, role))
         if not cursor.rowcount:
             return None
         self.db.execute("UPDATE social_conversations SET last_message_at = ?, updated_at = ? WHERE id = ?",

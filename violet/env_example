@@ -379,6 +379,12 @@ VIOLET_STICKER_LOOK=1
 VIOLET_QZONE_ENABLED=0
 # 每天最多自己发几条动态；0 = 不限（后台手动发的不算）
 VIOLET_QZONE_DAILY=1
+# QQ 语音消息先用 QQ 自己的语音转文字（SnowLuma fetch_ptt_text）再给她看；转不了就照旧显示“一段语音”
+VIOLET_QQ_VOICE_TO_TEXT=1
+# 主人 QQ 私聊里回复前显示“对方正在输入…”（set_input_status）
+VIOLET_QQ_TYPING=1
+# QQ 重新连上后，补看掉线期间（最近 6 小时）群里的消息：只存下来，下一条消息时她一起看
+VIOLET_QQ_CATCH_UP=1
 
 # ── 图片系统（第六阶段）──────────────────────────────────────────────────────
 # 总开关。关闭时（默认）收图沿用旧的 ai/vision.py，聊天里没有任何图片工具。

@@ -522,7 +522,9 @@ def test_snowluma_install_reinstall_and_uninstall_with_fakes(tmp_path):
     assert ["docker", "rm", "-f", sl.CONTAINER] in host.ran                # the old container replaced
 
     removed = sl.uninstall(layout, again, run=host.run, which=host.which, napcat_unit=old_unit)
-    assert f"容器 {sl.CONTAINER}" in removed and f"镜像 {sl.IMAGE}" in removed
+    # 2026-11-10: the image stays (SnowLuma's image went offline; it could not be downloaded again)
+    assert f"容器 {sl.CONTAINER}" in removed and f"镜像 {sl.IMAGE}" not in removed
+    assert ["docker", "rmi", sl.IMAGE] not in host.ran                    # (a mirror's extra name was removed)
     assert not sl.folder(layout).exists() and "snowluma" not in again and not sl.export_path(layout.data).exists()
 
 

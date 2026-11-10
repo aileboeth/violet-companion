@@ -1,7 +1,7 @@
 """`violet qq install | uninstall | status | restart` -- QQ on a personal account for Violet (channel "QQ").
 
-2026-10-29 (user: NapCat's risk control got too strict): SnowLuma (github.com/SnowLuma/SnowLuma, OneBot v11,
-source-available, non-commercial use) instead of NapCat. It is run the way its authors recommend: their Docker image,
+2026-10-29 (user: NapCat's risk control got too strict): SnowLuma (github.com/SnowLuma/SnowLuma, OneBot v11; MIT
+since 2026-11 -- it said "non-commercial" before) instead of NapCat. It is run the way its authors recommend: their Docker image,
 which holds the official Linux QQ of the version SnowLuma's hooks were made for (and stops QQ's silent hot update),
 a virtual screen and a VNC server for it. QQ can only be logged in by scanning the QR code in its own window, so the
 channels page shows that window (ai/channels/vnc.py over the VNC port).
@@ -17,8 +17,15 @@ channels page shows that window (ai/channels/vnc.py over the VNC port).
   violet-qq                      system account the container runs QQ as (SNOWLUMA_UID; group = Violet's group)
   <data>/control/snowluma.json   what Violet needs (WebSocket address and token, VNC port and password), 0640
 
-A NapCat that Violet 0.7.8 / 0.7.9 installed is removed first (remove_napcat). uninstall removes all of it (container,
-image, folder, account, export); `uninstall --purge` of Violet calls it. Standard library only; run as root.
+A NapCat that Violet 0.7.8 / 0.7.9 installed is removed first (remove_napcat). uninstall removes the container, the
+folder, the account and the export; `uninstall --purge` of Violet calls it and removes the image too. Standard library
+only; run as root.
+
+2026-11-10: SnowLuma's repository and its Docker Hub image went offline (only the DaoCloud mirror still had the image).
+So the image is never thrown away by `violet qq uninstall` (it could not be downloaded again), an image already on
+this server is used as it is (no download), and a saved copy can be loaded instead of downloading:
+`violet qq install --image-file /root/snowluma-v2.2.1.tar.gz` (made with `docker save … | gzip`), or such a file put
+into <root>/snowluma-image/ (looked for by itself, also by the channels page's install button).
 """
 
 from __future__ import annotations
@@ -36,9 +43,12 @@ from pathlib import Path
 from typing import Any, Callable
 
 IMAGE = "motricseven7/snowluma:v2.2.1"
-# 0.7.56: two more public mirrors; sources that do not answer are skipped before pulling
-MIRRORS = ("", "docker.1ms.run/", "docker.xuanyuan.me/", "docker.m.daocloud.io/", "docker.1panel.live/",
+# 0.7.56: two more public mirrors; sources that do not answer are skipped before pulling. 2026-11-10: the image is
+# gone from Docker Hub; DaoCloud still had it (checked on the user's server), so it is tried first
+MIRRORS = ("docker.m.daocloud.io/", "", "docker.1ms.run/", "docker.xuanyuan.me/", "docker.1panel.live/",
            "hub.rat.dev/")
+IMAGE_FILE_DIR = "snowluma-image"           # <root>/snowluma-image/*.tar(.gz): a saved copy of the image
+IMAGE_FILE_SUFFIXES = (".tar", ".tar.gz", ".tgz")
 IMAGE_MB = 740
 STALL_SECONDS = 240                 # no new bytes for 4 minutes: the source is stuck
 SLOW_AFTER, SLOW_BPS = 150, 300 * 1024      # after 2.5 minutes under 300 KB/s: try another (not in the last round)
@@ -354,6 +364,39 @@ def pull(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], on_lin
                         (f"\n连不上、没有试：{'、'.join(skipped)}" if skipped else ""))
 
 
+def image_present(run: Callable[..., Any], image: str = IMAGE) -> bool:
+    """2026-11-10: the image is on this server already (then nothing is downloaded)."""
+    done = run(["docker", "image", "inspect", "--format", "{{.Id}}", image], capture_output=True, text=True)
+    return getattr(done, "returncode", 1) == 0 and bool((getattr(done, "stdout", "") or "").strip())
+
+
+def find_image_file(layout: Any, explicit: str | os.PathLike[str] | None = None) -> Path | None:
+    """2026-11-10: a saved copy of the image to load instead of downloading: the given file, else the newest
+    *.tar / *.tar.gz / *.tgz in <root>/snowluma-image/. Raises SnowlumaError for a given file that is not there."""
+    if explicit:
+        path = Path(explicit)
+        if not path.is_file():
+            raise SnowlumaError(f"找不到镜像文件 {path}")
+        return path
+    folder_ = layout.root / IMAGE_FILE_DIR
+    try:
+        files = [p for p in folder_.iterdir() if p.is_file() and p.name.endswith(IMAGE_FILE_SUFFIXES)]
+    except OSError:
+        return None
+    return max(files, key=lambda p: p.stat().st_mtime) if files else None
+
+
+def load_image(path: Path, run: Callable[..., Any], stream: Callable[..., tuple[int, str]],
+               on_line: Callable[[str], None], env: dict, image: str = IMAGE) -> str:
+    """`docker load` of a saved copy (gzip or plain tar); it must hold the image Violet runs."""
+    code, tail = stream(["docker", "load", "-i", str(path)], on_line, env)
+    if code != 0:
+        raise SnowlumaError(f"镜像文件 {path.name} 载入失败：" + _last(tail, 4))
+    if not image_present(run, image):
+        raise SnowlumaError(f"镜像文件 {path.name} 里没有 {image}")
+    return f"镜像文件 {path.name}"
+
+
 def container_label(run: Callable[..., Any]) -> str | None:
     """None: no container of that name; "" : one that is not Violet's; else Violet's label."""
     done = run(["docker", "inspect", "-f", "{{index .Config.Labels \"%s\"}}" % LABEL_KEY, CONTAINER],
@@ -390,12 +433,44 @@ def desktop_up(port: int, timeout: float = 3.0) -> bool:
 
 # ------------------------------------------------------------------------------------------------ install
 
+def _download(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], on_line: Callable[[str], None],
+              env: dict, progress: Progress | None, start_percent: int, layout: Any) -> str:
+    """The image from Docker Hub or a mirror (0.7.56: real MB in the progress; a source that hangs or crawls is
+    left). 2026-11-10: when no source has it, the error says how to use a saved copy instead."""
+    _say(progress, max(start_percent, 20), f"下载 SnowLuma 镜像（含 Linux QQ，约 {IMAGE_MB} MB）")
+    watched = None
+    if stream is _stream:                            # the real server (tests give their own stream)
+        measure = disk_used(run)
+        total = [0]                                  # bytes of the sources before the current one
+
+        def watched(cmd, prefix, may_leave_slow):
+            def report(got, bps):                    # 0.7.56: real MB instead of "one step per log line, up to 84 %"
+                mb = (total[0] + got) / 1048576
+                _say(progress, 20 + min(64, int(mb / IMAGE_MB * 64)),
+                     f"下载 SnowLuma 镜像：已下 {mb:.0f} / 约 {IMAGE_MB} MB · 每秒 {bps / 1024:.0f} KB · 来自 {_name(prefix)}")
+            start = measure()
+            try:
+                return stream_watched(cmd, lambda line: None, env, measure=measure, report=report,
+                                      may_leave_slow=may_leave_slow)
+            finally:
+                total[0] += max(0, measure() - start)
+    try:
+        return pull(run, stream, on_line, env, check=reachable if watched else None, watched=watched)
+    except SnowlumaError as exc:
+        raise SnowlumaError(f"{exc}\n（SnowLuma 的官方镜像已经下线。手上有备份的镜像文件（docker save 导出的 .tar.gz）时，"
+                            f"把它放进 {layout.root / IMAGE_FILE_DIR}/ 再安装，或者用 "
+                            f"/opt/violet/violet qq install --image-file /root/snowluma-v2.2.1.tar.gz）") from None
+
+
 def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str], bool],
             run: Callable[..., Any] = subprocess.run, fetch: Callable[..., bytes] = _fetch,
             stream: Callable[..., tuple[int, str]] = _stream, progress: Progress | None = None,
             wait: float = START_WAIT, rng: random.Random | None = None, which: Callable[[str], Any] = shutil.which,
-            check_desktop: Callable[[int], bool] | None = None, napcat_unit: Path = NAPCAT_UNIT) -> dict[str, Any]:
-    """Install (or reinstall: keeps ports, tokens and the QQ login) SnowLuma and start it. Updates `state`."""
+            check_desktop: Callable[[int], bool] | None = None, napcat_unit: Path = NAPCAT_UNIT,
+            image_file: str | os.PathLike[str] | None = None) -> dict[str, Any]:
+    """Install (or reinstall: keeps ports, tokens and the QQ login) SnowLuma and start it. Updates `state`.
+    2026-11-10: the image on this server is used as it is; else a saved copy (image_file / <root>/snowluma-image/);
+    else it is downloaded."""
     base = folder(layout)
     previous = state.get("snowluma") or {}
     notes: list[str] = []
@@ -423,24 +498,15 @@ def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str
     label = container_label(run)
     if label == "":
         raise SnowlumaError(f"这台服务器上已经有一个不是 Violet 建的容器 {CONTAINER}，没有改动")
-    _say(progress, max(seen[0], 20), f"下载 SnowLuma 镜像（含 Linux QQ，约 {IMAGE_MB} MB）")
-    watched = None
-    if stream is _stream:                            # the real server (tests give their own stream)
-        measure = disk_used(run)
-        total = [0]                                  # bytes of the sources before the current one
-
-        def watched(cmd, prefix, may_leave_slow):
-            def report(got, bps):                    # 0.7.56: real MB instead of "one step per log line, up to 84 %"
-                mb = (total[0] + got) / 1048576
-                _say(progress, 20 + min(64, int(mb / IMAGE_MB * 64)),
-                     f"下载 SnowLuma 镜像：已下 {mb:.0f} / 约 {IMAGE_MB} MB · 每秒 {bps / 1024:.0f} KB · 来自 {_name(prefix)}")
-            start = measure()
-            try:
-                return stream_watched(cmd, lambda line: None, env, measure=measure, report=report,
-                                      may_leave_slow=may_leave_slow)
-            finally:
-                total[0] += max(0, measure() - start)
-    source = pull(run, stream, on_line, env, check=reachable if watched else None, watched=watched)
+    saved = find_image_file(layout, image_file)
+    if image_present(run):
+        source = "本机已有镜像"
+        _say(progress, 84, "这台服务器上已经有 SnowLuma 镜像，不用下载")
+    elif saved is not None:
+        _say(progress, max(seen[0], 20), f"载入镜像文件 {saved.name}（不用下载）")
+        source = load_image(saved, run, stream, on_line, env)
+    else:
+        source = _download(run, stream, on_line, env, progress, seen[0], layout)
 
     _say(progress, 86, "写配置（只监听本机）")
     taken: set[int] = set()
@@ -514,15 +580,17 @@ def restart(state: dict[str, Any], run: Callable[..., Any] = subprocess.run) -> 
 
 
 def uninstall(layout: Any, state: dict[str, Any], *, run: Callable[..., Any] = subprocess.run,
-              which: Callable[[str], Any] = shutil.which, napcat_unit: Path = NAPCAT_UNIT) -> list[str]:
-    """Only what this module (or the NapCat module before it) installed. Updates `state`."""
+              which: Callable[[str], Any] = shutil.which, napcat_unit: Path = NAPCAT_UNIT,
+              remove_image: bool = False) -> list[str]:
+    """Only what this module (or the NapCat module before it) installed. Updates `state`. 2026-11-10: the image is
+    kept unless remove_image (Violet's `uninstall --purge`) -- it cannot be downloaded again."""
     removed = remove_napcat(layout, state, run, unit_path=napcat_unit)
     if which("docker"):
         label = container_label(run)
         if label == LABEL_VALUE:
             run(["docker", "rm", "-f", CONTAINER], capture_output=True)
             removed.append(f"容器 {CONTAINER}")
-        if label is None or label == LABEL_VALUE:
+        if remove_image and (label is None or label == LABEL_VALUE):
             image = (state.get("snowluma") or {}).get("image") or IMAGE
             if run(["docker", "rmi", image], capture_output=True).returncode == 0:
                 removed.append(f"镜像 {image}")

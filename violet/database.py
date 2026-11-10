@@ -259,6 +259,8 @@ class VioletDatabase:
         # 2026-10-30: how she talks in a group / with a person (the social decision's remember.style)
         self._ensure_column("social_people", "style", "TEXT")
         self._ensure_column("social_conversations", "style", "TEXT")
+        # 2026-11-10: a QQ group's owner / admins are marked in her chat log (SocialStore.add_message)
+        self._ensure_column("social_messages", "sender_role", "TEXT")
         # 0.7.9: her sticker collection (ai/stickers.py)
         from ai.stickers import SCHEMA as sticker_schema
         self.conn.executescript(sticker_schema)

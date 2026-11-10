@@ -75,13 +75,86 @@ def _owner_sticker_for_label(label: str):
     return row["id"] if row else None
 
 
-def normalize_chat_output(raw_content: str, sticker_for_label=_owner_sticker_for_label) -> dict[str, Any]:
+# 2026-11-10 (user's QQ screenshot; outbound row 13:03:54 of type text "[表情包：角色眯眼微笑着…]", two minutes after two
+# real stickers): what she sent is kept in the chat as a record label -- "[表情包：说明]" (MessageSender, the social
+# engine), "[图片：说明]", "[语音] 说的话" -- and since 0.7.63 those are her own past turns, so the model wrote the label
+# itself and the description went out as words. A label is never words to send: a sticker label becomes the sticker
+# it means ([[表情:N]]; dropped when none is alike), a picture label is dropped (a picture is not sent by naming it),
+# "[语音]" at the start of a line makes it a line to be said. The real markers ([[表情:N]] / [[图片:N]] / [[语音]])
+# are never touched.
+STICKER_LABEL_RE = re.compile(r"(?<!\[)\[(?:一个)?表情包?(?:[:：]\s*([^\[\]\n]*))?\](?!\])")
+PICTURE_LABEL_RE = re.compile(r"(?<!\[)\[(?:图片|照片)(?:[:：][^\[\]\n]*)?\](?!\])")
+VOICE_LABEL_RE = re.compile(r"^[ \t]*\[语音\](?!\])[ \t]*", re.M)
+
+
+def _owner_sticker_for_description(text: str, exact: bool = False):
+    from ai import stickers
+    from ai.chat import violetdb
+    row = stickers.by_description(violetdb, text, exact=exact)
+    return row["id"] if row else None
+
+
+def replace_record_labels(text: str, sticker_for_description=_owner_sticker_for_description) -> str:
+    """Her reply with the record labels she copied turned into what they mean (see above)."""
+    found: list[str] = []
+
+    def sticker(m: re.Match) -> str:
+        number = None
+        what = (m.group(1) or "").strip()
+        if what.isdigit():                                   # "[表情:12]": the marker with one bracket
+            found.append(f"表情包→{what}")
+            return f"\n[[表情:{what}]]\n"
+        if sticker_for_description is not None and what:
+            try:
+                number = sticker_for_description(what)
+            except Exception:                                # noqa: BLE001 -- a sticker is never worth an error
+                number = None
+        found.append(f"表情包→{number or '没有对得上的，去掉'}")
+        return f"\n[[表情:{number}]]\n" if number else ""
+    out = STICKER_LABEL_RE.sub(sticker, text or "")
+    out, pictures = PICTURE_LABEL_RE.subn("", out)
+    out, voices = VOICE_LABEL_RE.subn(VOICE_LINE, out)
+    found += ["图片标签→去掉"] * pictures + ["语音标签→念出来"] * voices
+    if found:
+        try:
+            from ai import trace
+            trace.step("回复里抄了记录标签", 处理="；".join(found))
+        except Exception:                                    # noqa: BLE001
+            pass
+    return out
+
+
+def labels_as_markup(text: str, sticker_for_description=None) -> str:
+    """One of her past turns as the model should read it (0.7.63 layout): a sticker she sent is shown as the marker
+    that sends it ([[表情:N]], the sticker with exactly that description) instead of a "[表情包：…]" line to copy;
+    one that is gone or switched off is left out."""
+    if not text or "表情" not in text:
+        return text
+    lookup = sticker_for_description or (lambda what: _owner_sticker_for_description(what, exact=True))
+
+    def sticker(m: re.Match) -> str:
+        number = None
+        what = (m.group(1) or "").strip()
+        if what:
+            try:
+                number = lookup(what)
+            except Exception:                                # noqa: BLE001
+                number = None
+        return f"\n[[表情:{number}]]\n" if number else "\n"
+    out = STICKER_LABEL_RE.sub(sticker, text)
+    return "\n".join(line.strip() for line in out.splitlines() if line.strip())
+
+
+def normalize_chat_output(raw_content: str, sticker_for_label=_owner_sticker_for_label,
+                          sticker_for_description=_owner_sticker_for_description) -> dict[str, Any]:
     """ChatAgent now emits plain text; each non-empty line is one message."""
     text = (raw_content or "").strip()
     if not text:
         return {"should_send": False, "messages": []}
     if "|||" in text or "<voice" in text.lower() or "<sticker" in text.lower():
         text = expand_markup(text, sticker_for_label).strip()
+    if "[" in text:
+        text = replace_record_labels(text, sticker_for_description).strip()
 
     text = re.sub(r"^```(?:text)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*```$", "", text).strip()

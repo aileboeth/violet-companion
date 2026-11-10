@@ -29,7 +29,9 @@ def told(monkeypatch):
 def test_levels(data_dir):
     from ai import permissions
     assert permissions.levels() == {"qzone_post": "self", "risky_tools": "ask",       # 2026-10-30: ask (was forbid)
-                                    "friend_add": "ask"}
+                                    "friend_add": "ask",
+                                    # 2026-11-10: SnowLuma's actions, off until the owner turns them on
+                                    "qq_group_admin": "forbid", "qq_touches": "forbid", "qq_signature": "forbid"}
     assert permissions.set_level("qzone_post", "ask")["qzone_post"] == "ask"
     with pytest.raises(ValueError):
         permissions.set_level("qzone_post", "maybe")
@@ -151,7 +153,8 @@ def test_risky_tools_wait_for_the_owner(db, data_dir, told, monkeypatch):
 def test_permission_routes(admin, data_dir, told):
     from ai import permissions
     d = admin.get("/api/control/permissions").get_json()["data"]
-    assert {a["key"] for a in d["abilities"]} == {"qzone_post", "risky_tools", "friend_add"} and d["levels"]["ask"] == "先问你"
+    assert {a["key"] for a in d["abilities"]} == {"qzone_post", "risky_tools", "friend_add", "qq_group_admin", "qq_touches",
+                                                  "qq_signature"} and d["levels"]["ask"] == "先问你"
     assert admin.post("/api/control/permissions", json={"ability": "risky_tools", "level": "ask"}, headers=SAME).status_code == 200
     assert permissions.level("risky_tools") == "ask"
     permissions.register("test_ability", lambda d, p: "好了")

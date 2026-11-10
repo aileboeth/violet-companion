@@ -267,6 +267,33 @@ def by_label(db, label: str) -> dict[str, Any] | None:
     return best
 
 
+def by_description(db, text: str, exact: bool = False) -> dict[str, Any] | None:
+    """2026-11-10 (user's QQ screenshot, outbound row 13:03:54 of type text): a sent sticker is kept in the chat as
+    "[表情包：<its description>]", the model copied that form and the description went out as words. The usable
+    sticker that line means: the one with exactly that description, else (exact=False) the one whose description is
+    most alike (difflib >= 0.6 over the same length), else None."""
+    import difflib
+    wanted = " ".join(str(text or "").split()).strip("[]【】 ")
+    if not wanted or not enabled():
+        return None
+    best, score = None, 0.0
+    for row in db.fetch_all("SELECT * FROM stickers WHERE enabled = 1 AND description IS NOT NULL AND description != '' "
+                            "AND description NOT LIKE '【不雅】%' AND description NOT LIKE '【质量差】%' "
+                            "ORDER BY use_count DESC, id DESC LIMIT 300"):
+        have = " ".join(str(row["description"]).split())
+        if have == wanted:
+            best, score = row, 1.0
+            break
+        if exact:
+            continue
+        ratio = difflib.SequenceMatcher(None, wanted, have[:len(wanted) + 10]).ratio()
+        if ratio > score:
+            best, score = row, ratio
+    if best is None or score < 0.6 or not path_of(best).is_file():
+        return None
+    return best
+
+
 def describe(path: str | os.PathLike[str]) -> str | None:
     """About the sticker, with the picture-recognition model; None when it is not available or fails. A vulgar or
     low-quality one starts with 【不雅】 / 【质量差】 (verdict_of)."""

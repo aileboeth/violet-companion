@@ -160,14 +160,16 @@ def test_friend_requests_wait_for_the_owner(clean, data_dir, monkeypatch):
     event = {"post_type": "request", "request_type": "friend", "user_id": 555, "comment": "我是阿凯的同学", "flag": "f1"}
     ch._friend_request(event)                         # what handle_event starts in a thread
     pending = permissions.pending(db)
-    assert len(pending) == 1 and pending[0]["ability"] == "friend_add" and calls == []
+    # 2026-11-10: only the read-only profile lookup (get_stranger_info) happens before the owner answers
+    assert len(pending) == 1 and pending[0]["ability"] == "friend_add" and calls == [("get_stranger_info", {"user_id": 555})]
     assert "QQ 555 想加我好友" in said[0] and "我是阿凯的同学" in said[0] and f"同意 {pending[0]['id']}" in said[0]
+    calls.clear()
     result = permissions.decide(db, pending[0]["id"], True)
     assert result["status"] == "approved" and calls == [("set_friend_add_request", {"flag": "f1", "approve": True})]
 
     permissions.set_level("friend_add", "forbid")
     ch._friend_request({**event, "flag": "f2"})
-    assert len(calls) == 1 and len(permissions.pending(db)) == 0           # forbid: not answered
+    assert len(calls) == 1 and len(permissions.pending(db)) == 0           # forbid: not answered (not looked up)
     permissions.set_level("friend_add", "self")
     ch._friend_request({**event, "flag": "f3"})
     assert calls[-1] == ("set_friend_add_request", {"flag": "f3", "approve": True}) and "我同意了" in said[-1]

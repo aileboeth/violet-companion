@@ -2210,7 +2210,7 @@ def purge_system(layout: Layout, state: dict, run: Callable[..., Any] = subproce
     except Exception:                       # noqa: BLE001
         pass
     try:                                    # 2026-10-29: QQ on a personal account (`violet qq install`; also an old NapCat)
-        removed += _snowluma_module().uninstall(layout, state, run=run)
+        removed += _snowluma_module().uninstall(layout, state, run=run, remove_image=True)   # purge: the image too
     except Exception:                       # noqa: BLE001
         pass
     try:                                    # 2026-10-31: her voice (`violet voice install` / the web button)
@@ -2436,8 +2436,9 @@ QQ_ACTIONS = ("install", "uninstall", "status", "restart")
 
 
 def qq_command(opts: Options, action: str, run: Callable[..., Any] = subprocess.run,
-               progress: Callable[[int, str], None] | None = None) -> dict[str, Any]:
-    """`violet qq install | uninstall | status | restart` (tools/violet_snowluma.py): QQ on a personal account."""
+               progress: Callable[[int, str], None] | None = None, image_file: Path | None = None) -> dict[str, Any]:
+    """`violet qq install | uninstall | status | restart` (tools/violet_snowluma.py): QQ on a personal account.
+    2026-11-10: `install --image-file <saved copy>` loads the image instead of downloading it."""
     mod = _snowluma_module()
     if action not in QQ_ACTIONS:
         raise InstallError("用法：violet qq install | uninstall | status | restart")
@@ -2449,10 +2450,13 @@ def qq_command(opts: Options, action: str, run: Callable[..., Any] = subprocess.
         raise InstallError("QQ（SnowLuma）要以 root 在 Linux 上安装（/opt/violet/violet 会自动切换到 root）")
     try:
         if action == "install":
-            result = mod.install(layout, state, port_free=port_free, run=run, progress=progress)
+            result = mod.install(layout, state, port_free=port_free, run=run, progress=progress,
+                                 **({"image_file": image_file} if image_file else {}))
             save_state(layout, state)
         elif action == "uninstall":
-            result = {"ok": True, "removed": mod.uninstall(layout, state, run=run)}
+            result = {"ok": True, "removed": mod.uninstall(layout, state, run=run),
+                      "notes": [f"SnowLuma 的镜像 {mod.IMAGE} 留在这台服务器上（官方已经下线，删了就下载不回来了）。"
+                                f"确实不要了再删：docker rmi {mod.IMAGE}"]}
             save_state(layout, state)
         elif action == "restart":
             if progress is not None:
@@ -2620,6 +2624,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reset-admin", action="store_true", help="make a new initial admin password")
     parser.add_argument("--health-timeout", type=float, default=HEALTH_TIMEOUT)
     parser.add_argument("--purge", action="store_true")
+    parser.add_argument("--image-file", type=Path, help="qq install: load SnowLuma's image from this saved copy "
+                                                        "(docker save | gzip) instead of downloading it")
     parser.add_argument("--yes", action="store_true")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
@@ -2682,7 +2688,8 @@ def main(argv: list[str] | None = None) -> int:
             result = searxng_command(opts, args.archive or "status")
         elif args.command == "qq":
             result = qq_command(opts, args.archive or "status",
-                                    progress=None if args.json else (lambda pct, step: out(f"[{pct:3d}%] {step}")))
+                                progress=None if args.json else (lambda pct, step: out(f"[{pct:3d}%] {step}")),
+                                image_file=args.image_file)
         elif args.command == "voice":
             result = voice_command(opts, args.archive or "status",
                                    progress=None if args.json else (lambda pct, step: out(f"[{pct:3d}%] {step}")))

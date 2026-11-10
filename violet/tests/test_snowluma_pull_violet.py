@@ -23,7 +23,8 @@ def test_pull_skips_dead_sources_and_comes_back_to_a_stuck_one():
                      watched=watched)
     assert source == "docker.1ms.run"
     assert all(p != "" for p, _ in tried)                                   # Docker Hub (blocked) never tried
-    assert tried[0] == ("docker.1ms.run/", True)
+    assert tried[0] == ("docker.m.daocloud.io/", True)                      # 2026-11-10: the one that still had it
+    assert ("docker.1ms.run/", True) in tried
     assert ["docker", "tag", "docker.1ms.run/" + sl.IMAGE, sl.IMAGE] in ran
 
 
@@ -34,7 +35,7 @@ def test_pull_failure_says_why_for_each_source():
                 watched=lambda cmd, prefix, may_leave_slow: (1, "unauthorized", "slow" if prefix == "hub.rat.dev/" else ""))
     text = str(err.value)
     assert "docker.1ms.run：unauthorized" in text and "hub.rat.dev：太慢，换下一个" in text
-    assert "连不上、没有试：Docker Hub" in text
+    assert "Docker Hub" in text.split("连不上、没有试：")[1]                 # 2026-11-10: DaoCloud is listed first
 
 
 def test_the_last_round_never_leaves_a_slow_source():

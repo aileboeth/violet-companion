@@ -90,7 +90,11 @@ def segment_parts(segments: list[dict[str, Any]]) -> list[Part]:
             parts.append(Part("image", "", {"url": str(data.get("url") or ""), "file": str(data.get("file") or ""),
                                             "sticker": is_sticker(data)}))
         elif kind == "record":
-            parts.append(Part("voice", ""))
+            # 2026-11-10: "_text" = what QQ's own speech-to-text made of it (SnowLumaChannel._enrich, fetch_ptt_text)
+            parts.append(Part("voice", str(data.get("_text") or "")))
+        elif kind == "forward":
+            # 2026-11-10: a forwarded chat log; "_text" = its messages, looked up by SnowLumaChannel._enrich
+            parts.append(Part("forward", str(data.get("_text") or "")))
         elif kind == "video":
             parts.append(Part("video", ""))
         elif kind == "file":

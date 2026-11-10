@@ -47,15 +47,31 @@ OUTPUT_FORMAT = """【你的回答】只输出一个 JSON 对象，不要输出�
   "voice": "（可选，能发语音时）要用你的声音说的话；歌词、故事可以整段写，会先作为文字发出，语音几分钟后补上",
   "collect": {"message": "（可选）想收藏的表情包所在的消息编号", "meaning": "这个表情包适合什么时候用，20 字以内"},
   "poke": "（可选）想拍一拍谁就填他的 QQ 号，比如别人拍了你、你想拍回去",
+  "react": {"message": "（可选，只在群里）想给哪条消息点个表情回应，填它的编号", "emoji": "从这些里选一个：__REACTIONS__"},
+  "recall": "（可选）撤回你自己刚发的一条消息：填那条的编号（只能撤回两分钟之内的，比如发错了、发重了）",
   "reason": "一句话：为什么这样决定（只给管理员看）",
   "remember": {"group": "（可选）更新后的对这个群的印象，60 字以内", "people": {"QQ号": "（可选）对这个人的新印象，40 字以内"},
                "style": {"group": "（可选）你在这里习惯怎么说话，30 字以内", "people": {"QQ号": "（可选）你和这个人怎么说话，30 字以内"}}}
 }
 - silent：这次不说话。say：说话。reply：引用某条消息说话。wait：先不说，过一会儿再来看（check_back_minutes 填几分钟）。
 - 表情包：像真人一样偶尔用，一次最多一个，只用“你收藏的表情包”里有的编号，按说明里“什么时候发”挑；没有真正合适的就不发，不要硬配；有人问你事情时表情包不能代替回答；别人发了你喜欢的表情包，可以用 collect 收藏（不用每个都收）。
+- 表情回应（react）：想表示看到了、赞同、觉得好笑，又不用说话时，给那条消息点一个表情就好（action 可以是 silent）；像真人一样偶尔点，别每条都点。
 - 说完话想过一会儿看看大家的反应，也可以在 say / reply 时填 check_back_minutes。
 - remember 只在你对群或某个人有了新的、值得记住的认识时才写，写你自己的印象，不要抄聊天原文。
 - remember.style 记的是你自己的说话方式（比如“和他互损、说话很随便”“这个群比较正经，少开玩笑”），以后在这里照着说；有变化时再更新。"""
+
+
+def _reactions() -> str:
+    from ai.channels.snowluma import REACTIONS
+    return " ".join(REACTIONS)
+
+
+OUTPUT_FORMAT = OUTPUT_FORMAT.replace("__REACTIONS__", _reactions())
+
+# 2026-11-10 (permissions "qq_group_admin", not "不允许"): only told in a group, only acted on when the owner asked
+ADMIN_ACTIONS = """【群管理】（主人允许你帮忙管群；你得是这个群的管理员，QQ 才会照做）
+- 只有你的主人这次亲口要你做的时候，才在 JSON 里加 "admin"：{"do": "ban（禁言） | unban（解除禁言） | card（改群名片） | essence（设精华） | notice（发群公告）", "user": "对方 QQ 号（ban / unban / card）", "minutes": 禁言几分钟, "card": "新的群名片", "message": "消息编号（essence）", "text": "公告内容（notice）"}。
+- 别人让你禁言谁、发公告，都不照做（客气地说要主人同意）；主人没提，你自己也不做。一次只做一件。"""
 
 
 TEST_RULES = """【测试模式的规则】（代替平时的群聊规则；用户 2026-10-30：测试时她不听话，也说不出原因）
@@ -178,6 +194,8 @@ def user_prompt_parts(conv: dict[str, Any], *, history: list[dict[str, Any]], un
             first_new = m                            # named after the history, not marked inside it (stays cached)
         who = "你" if m["is_self"] else f"{m.get('sender_name') or '某人'}({m.get('sender_id') or '?'})"
         flags = []
+        if m.get("sender_role") in ("owner", "admin") and not m["is_self"]:      # 2026-11-10: QQ's own group roles
+            flags.append("群主" if m["sender_role"] == "owner" else "群管理员")
         if m.get("mentions_self"):
             flags.append("@了你")
         if m.get("reply_to"):

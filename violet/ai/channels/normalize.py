@@ -100,6 +100,10 @@ def render_part(part: Part) -> str:
         return f"@{name}" if name else ""
     if kind == "image":
         return ""
+    if kind == "forward":
+        # 2026-11-10 (QQ through SnowLuma): the messages of a forwarded chat log, fenced so they read as a quote
+        body = clean_text(text, 1500).strip()
+        return f"[转发来的聊天记录]\n{body}\n[转发的聊天记录到这里]" if body else "[转发来的聊天记录（打不开，看不到内容）]"
     return "[对方发来一条 Violet 暂时不支持的消息]"
 
 

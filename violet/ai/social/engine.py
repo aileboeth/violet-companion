@@ -71,7 +71,7 @@ class SocialEngine:
 
         def run():
             from ai import memory_scope
-            from ai.social import qzone
+            from ai.social import qq_life, qzone
             self._post_timer = None
             try:
                 qq = qzone._qq(self.runtime)
@@ -80,7 +80,8 @@ class SocialEngine:
                 scope = memory_scope.MAIN
             try:                                            # 2026-10-31: each job on its own, one failing
                 with memory_scope.use(scope):               # 2026-11-02: QQ's persona (her life for the posts)
-                    for job in (lambda: qzone.tick(self.runtime), self._sync_stickers, self.initiative_tick):
+                    for job in (lambda: qzone.tick(self.runtime), lambda: qq_life.tick(self.runtime),  # 2026-11-10
+                                self._sync_stickers, self.initiative_tick):
                         try:                                # never stops the others (initiative ran last before)
                             job()
                         except Exception:                   # noqa: BLE001 -- the next round tries again
@@ -144,7 +145,10 @@ class SocialEngine:
     def _receive(self, adapter, *, kind: str, peer_id: str, sender_id: str, sender_name: str | None, text: str,
                  mentioned: bool = False, reply_to: str | None = None, platform_msg_id: str | None = None,
                  images: list[dict[str, Any]] | None = None, group_name: str | None = None,
-                 poke: bool = False) -> int | None:
+                 poke: bool = False, sender_role: str | None = None, created_at: str | None = None,
+                 catch_up: bool = False) -> int | None:
+        """catch_up (2026-11-10, SnowLumaChannel.catch_up): a message she missed while offline -- stored with its own
+        time, no decision and no mood of its own (she sees it with the next message)."""
         channel = adapter.channel_id
         if poke:                                         # 2026-10-30: 拍一拍 counts as calling her
             text, mentioned = "[拍了拍你]", True
@@ -178,11 +182,13 @@ class SocialEngine:
                 mentioned = True                         # someone answered her
         row_id = self.store.add_message(conv["id"], content=content or "[消息]", sender_id=sender_id,
                                         sender_name=sender_name, platform_msg_id=platform_msg_id, reply_to=reply_to,
-                                        mentions_self=mentioned)
+                                        mentions_self=mentioned, created_at=created_at, sender_role=sender_role)
         if row_id is None:
             return None
         for item in media:
             self.store.add_media(row_id, **item)
+        if catch_up:
+            return row_id
         trace.step("社交消息", 渠道=channel, 会话=f"{kind}:{peer_id}", 发送者=sender_name or sender_id,
                    提到她=mentioned or None, 内容=trace.text(content))
         if mentioned or kind == "private":               # 2026-10-30: words said to her move her mood
@@ -373,6 +379,10 @@ class SocialEngine:
         speaking = "" if testing else voice.prompt_note(json_field=True)
         if speaking:                                     # 2026-10-31: she can send a voice message (11-01: always)
             system = system + "\n\n" + speaking
+        from ai.social import qq_actions
+        managing = None if testing else qq_actions.admin_note(conv, obey)
+        if managing:                                     # 2026-11-10: group admin actions the owner allowed
+            system = system + "\n\n" + managing
         # 2026-11-02: the 流程 page records every social decision that reaches the model (ai/pipeline_state.py)
         from ai import pipeline_state as _ps
         last = unread[-1] if unread else None
@@ -384,13 +394,13 @@ class SocialEngine:
                                                {"role": "user", "content": "\n\n".join(str(p) for p in user)}]})
         try:
             return self._decide_and_act(conv, system, user, tools, unread, owner_ids, testing, sticker_lines,
-                                        adapter, today, newest, trigger)
+                                        adapter, today, newest, trigger, owner_asked=owner_asked)
         except Exception as exc:
             _ps.pipeline_end(error=f"{exc.__class__.__name__}: {exc}")
             raise
 
     def _decide_and_act(self, conv, system, user, tools, unread, owner_ids, testing, sticker_lines, adapter, today,
-                        newest, trigger) -> dict[str, Any] | None:
+                        newest, trigger, owner_asked: bool = False) -> dict[str, Any] | None:
         from ai import pipeline_state as _ps
         from ai.social import llm, prompts
         conversation_id = conv["id"]
@@ -415,6 +425,7 @@ class SocialEngine:
                 pass
         if tools is not None and tools.image_asset_ids:
             decision = {**decision, "_images": list(tools.image_asset_ids)}
+        decision = {**decision, "_owner_asked": owner_asked}             # 2026-11-10: group admin actions
         _ps.node_done("Social", "Act", output_data={"decision": decision, "model": model, "latency_ms": latency,
                                                     "tools_used": list(getattr(tools, "calls", None) or [])})
         _ps.node_start("Act", {"action": decision.get("action")})
@@ -464,6 +475,21 @@ class SocialEngine:
                 row = stickers.by_label(self.db, labelled[0])
                 if row is not None:
                     decision = {**decision, "sticker": str(row["id"])}
+        if any("[" in str(t or "") for t in texts or []):
+            # 2026-11-10: a "[表情包：…]" / "[图片…]" / "[语音]" record label copied from the chat into her words is not
+            # sent as text: a sticker label becomes the decision's sticker, a voice label a line to be said
+            from ai.chat_output import replace_record_labels
+            split = []
+            for t in texts or []:
+                split += replace_record_labels(
+                    str(t or ""), lambda what: (stickers.by_description(self.db, what) or {}).get("id")).splitlines()
+            texts = []
+            for line in split:
+                marker = stickers.MARKER_RE.fullmatch(line.strip())
+                if marker is None:
+                    texts.append(line)
+                elif not decision.get("sticker"):
+                    decision = {**decision, "sticker": marker.group(1)}
         texts = [re.sub(r"\s+\n", "\n", str(t)).strip()[:500] for t in (texts or []) if str(t or "").strip()][:3]
         from ai.chat_output import VOICE_LINE
         spoken = " ".join(str(decision.get("voice") or "").split())
@@ -566,6 +592,18 @@ class SocialEngine:
         collected = self._collect(conv, decision.get("collect"), adapter)
         if collected:
             reason = (reason + f"（收藏了表情包 {collected}）").strip()
+        # 2026-11-10: an emoji reaction, taking back her own message, a group admin's action (ai/social/qq_actions.py)
+        from ai.social import qq_actions
+        if decision.get("react") and adapter is not None and adapter.is_running() \
+                and qq_actions.react(self.store, conv, decision.get("react"), adapter):
+            reason = (reason + "（点了表情回应）").strip()
+        if decision.get("recall") and adapter is not None and adapter.is_running() \
+                and qq_actions.recall(self.db, self.store, conv, decision.get("recall"), adapter):
+            reason = (reason + "（撤回了一条）").strip()
+        managed = qq_actions.admin(self.db, conv, decision.get("admin"), adapter if adapter is not None
+                                   and adapter.is_running() else None, bool(decision.get("_owner_asked")))
+        if managed:
+            reason = (reason + f"（群管理：{managed}）").strip()
         self.store.advance(conv["id"], max([newest] + [m["id"] for m in self.store.messages(conv["id"], limit=1)]))
         if action == "wait" and not check_back:
             check_back = 10.0

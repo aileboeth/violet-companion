@@ -182,6 +182,12 @@ def compose_single(stable: list[dict[str, Any]], history: list[dict[str, Any]], 
         if role == "system":
             marks.append(fix(text))
             continue
+        if role != "user":
+            # 2026-11-10: a sticker she sent reads as its marker, not as a "[表情包：…]" line she would copy as words
+            from ai.chat_output import labels_as_markup
+            text = labels_as_markup(text)
+            if not text:
+                continue
         if marks:                                    # a gap in the chat: said in a user turn, never as her words
             add("user", RECORD_NOTE + "".join(marks))
             marks = []
@@ -275,6 +281,10 @@ class ChatAgent(BaseAgent):
                             "save_sticker": lambda args: sticker_tools.save(violetdb, self._call_context, args)}
         for schema in sticker_tools.SCHEMAS:
             self.register_tool(schema, sticker_handlers[schema["function"]["name"]])
+        from ai import qq_tools                                       # 2026-11-10: only on QQ (see the filter)
+        qq_handlers = {"qq_recall": qq_tools.recall, "qq_like": qq_tools.like}
+        for schema in qq_tools.SCHEMAS:
+            self.register_tool(schema, qq_handlers[schema["function"]["name"]])
         from .intent_agent import query_memory
         self.register_tool(CHAT_MEMORY_SCHEMA, query_memory)    # 2026-11-01: offered when the Intent step is off
 
@@ -289,11 +299,14 @@ class ChatAgent(BaseAgent):
         from ai.images.chat_tools import CREATE_TOOLS, IMAGE_REQUEST_RE, IMAGE_TOOLS, has_recent_inbound, image_self_decide
         from ai.images.service import images_enabled
         from ai.sticker_tools import TOOL_NAMES as STICKER_TOOLS
+        from ai.qq_tools import TOOL_NAMES as QQ_TOOLS, available as qq_available
         from ai.web.tool_guard import WEB_TOOLS
         from .intent_agent import IntentAgent, intent_step
         if (intent_step() or self._call_context.get("is_proactive") or self._call_context.get("commitment")
                 or "tool_plan" not in self._call_context or IntentAgent._query_tool_hidden()):
             tools = [t for t in tools if t["function"]["name"] != "query_memory"]   # Intent searched / no memories
+        if self._call_context.get("is_proactive") or self._call_context.get("commitment") or not qq_available():
+            tools = [t for t in tools if t["function"]["name"] not in QQ_TOOLS]     # 2026-11-10: the owner's QQ only
         if self._call_context.get("is_proactive") or self._call_context.get("commitment"):
             tools = [t for t in tools if t["function"]["name"] not in STICKER_TOOLS]
             # proactive messages and reminders never search the web or make images -- and (phase 9.4 real run #6: the

@@ -54,10 +54,16 @@ ABILITIES = {
     # 2026-10-30 (user: 让她有同意加好友的能力，不过默认是要经我同意); only the owner answers, not an admin
     "friend_add": ("同意 QQ 加好友", "有人加她的 QQ 好友时。先问你：她私聊你是谁、验证消息是什么，你回复“同意 N”才加；"
                    "自己做：直接同意，再告诉你；不允许：不理会。", "ask"),
+    # 2026-11-10 (user: SnowLuma 的其他功能一起做): all three off until the owner turns them on -- the account was
+    # kicked offline once (NapCat), so nothing new acts on QQ by itself unless he wants it
+    "qq_group_admin": ("帮你管 QQ 群", "你在群里让她禁言、解除禁言、改群名片、设精华、发群公告时（她得是那个群的管理员）。"
+                       "自己做：你说了她就做；先问你：她再私聊你确认一次；不允许：不做。别人让她做都不算。", "forbid"),
+    "qq_touches": ("QQ 上的小互动", "她每天给你的 QQ 名片点一次赞，看到你新发的说说会点赞、偶尔评论一句。", "forbid"),
+    "qq_signature": ("改 QQ 个性签名", "她偶尔按自己的心情和最近的生活改一下 QQ 个性签名（一天最多一次）。", "forbid"),
 }
 # the levels an ability can have (default: all three); a saved level outside them reads as the one it behaved like
-CHOICES = {"risky_tools": ("ask", "forbid")}
-BEHAVED_AS = {"risky_tools": {"self": "forbid"}}
+CHOICES = {"risky_tools": ("ask", "forbid"), "qq_touches": ("self", "forbid"), "qq_signature": ("self", "forbid")}
+BEHAVED_AS = {"risky_tools": {"self": "forbid"}, "qq_touches": {"ask": "forbid"}, "qq_signature": {"ask": "forbid"}}
 EXPIRE_HOURS = 24
 # 2026-11-09 (Control Center in 9 languages): the owner may answer in any of them -- "agree 3", "承認 3", "нет 3" ...
 # The number must still be an existing approval (violet_runtime._answer_approval), so a plain "yes 3" stays chat.
@@ -72,7 +78,8 @@ DENY_WORDS = ("不同意", "拒绝", "拒絕", "不要", "不行", "算了", "di
 COMMAND_RE = re.compile(r"^\s*(" + "|".join(re.escape(w) for w in sorted(APPROVE_WORDS + DENY_WORDS, key=len, reverse=True))
                         + r")\s*[#＃№]?\s*(\d{1,6})\s*[.!。！]?\s*$", re.IGNORECASE)
 _HANDLERS: dict[str, Callable[[Any, dict[str, Any]], str]] = {}
-HANDLER_MODULES = {"qzone_post": "ai.social.qzone", "friend_add": "ai.channels.snowluma"}
+HANDLER_MODULES = {"qzone_post": "ai.social.qzone", "friend_add": "ai.channels.snowluma",
+                   "qq_group_admin": "ai.social.qq_actions"}
 _RUNTIME: dict[str, Any] = {}
 _LOCK = threading.Lock()
 

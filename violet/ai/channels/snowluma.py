@@ -38,6 +38,17 @@ from ai.channels.onebot11 import parse_cq_string, segment_parts
 
 MAX_DOWNLOAD = 10 * 1024 * 1024
 logger = logging.getLogger("violet.snowluma")
+# 2026-11-10: what QQ lets a normal member take back (2 minutes), a little less to be safe
+RECALL_SECONDS = 110
+# 2026-11-10: the emoji reactions she may put under a group message (set_msg_emoji_like takes the code point)
+REACTIONS = ("👍", "👏", "😂", "🤣", "😭", "😘", "🥰", "😮", "🤔", "👀", "🎉", "🔥", "💪", "🙏", "😅", "❤", "🌹", "🐶", "🐱",
+             "☕", "👌", "😁", "😳", "💯")
+
+
+def reaction_id(emoji: Any) -> str | None:
+    """The emoji_id of an allowed reaction ("👍" -> "128077"), or None."""
+    text = str(emoji or "").replace("️", "").strip()
+    return str(ord(text)) if len(text) == 1 and text in REACTIONS else None
 
 
 class QQError(RuntimeError):
@@ -148,10 +159,28 @@ def message_text(segments: list[dict[str, Any]], self_id: str) -> tuple[str, boo
     return render_parts(coalesce(parts)) if parts else "", mentioned, reply_to
 
 
+def forward_text(nodes: list[Any], self_id: str = "", limit: int = 20) -> str:
+    """A forwarded chat log (get_forward_msg's messages) as "名字：内容" lines."""
+    lines = []
+    for node in nodes[:limit] if isinstance(nodes, list) else []:
+        if not isinstance(node, dict):
+            continue
+        sender = node.get("sender") or {}
+        name = clean_text(str(sender.get("card") or sender.get("nickname") or node.get("user_id") or "某人"), 30)
+        message = node.get("message") if node.get("message") is not None else node.get("content")
+        segments = parse_cq_string(message) if isinstance(message, str) else (message or [])
+        text = message_text([s for s in segments if isinstance(s, dict)], self_id)[0].replace("\n", " ").strip()
+        if text:
+            lines.append(f"{name}：{clean_text(text, 200)}")
+    if isinstance(nodes, list) and len(nodes) > limit:
+        lines.append(f"……（后面还有 {len(nodes) - limit} 条）")
+    return "\n".join(lines)
+
+
 class SnowLumaChannel(ChannelAdapter):
     channel_type = "napcat"                    # the stored type since 0.7.8 (see the module text)
     label = "QQ"
-    capabilities = frozenset({"text", "image_in", "image_out"})
+    capabilities = frozenset({"text", "image_in", "image_out", "typing"})
 
     def __init__(self, channel_id: str, config: dict[str, Any] | None = None, secrets: dict[str, str] | None = None,
                  data_dir: str | os.PathLike[str] | None = None, ws_factory=None, session: requests.Session | None = None,
@@ -174,6 +203,11 @@ class SnowLumaChannel(ChannelAdapter):
         # 2026-11-02 (user: 看我的话只看了一半): the owner's chat quoted a message and she saw only
         # "[引用了一条消息]" -- what was said lately, by message id, so a quote shows its words
         self._said: "OrderedDict[str, tuple[bool, str]]" = OrderedDict()
+        # 2026-11-10: what she sent lately (kind, peer, message id, when, text) -- for taking a message back
+        from collections import deque
+        self._sent: "deque[dict[str, Any]]" = deque(maxlen=200)
+        self._no_typing = False                  # the implementation has no set_input_status: stop asking
+        self.last_owner_peer = ""                # the owner's account that wrote last (the owner chat's tools)
 
     # -- connection -------------------------------------------------------------------------------------------------
     def _target(self) -> tuple[str, str]:
@@ -203,6 +237,63 @@ class SnowLumaChannel(ChannelAdapter):
         self._set_state("connected", f"已登录 {self.nickname or 'QQ'}（{self.self_id}）")
         self._social()                                   # starts the social engine: the wake-ups she had planned
         self._sync_stickers_soon()
+        self._catch_up_soon()
+
+    def _catch_up_soon(self, delay: float = 8.0) -> None:
+        """2026-11-10: after (re)connecting, the group messages she missed meanwhile (catch_up; the actions need the
+        receive loop that starts when prepare() returns)."""
+        from ai.settings import env_bool
+        if self.runtime is None or getattr(self.runtime, "db", None) is None or not env_bool("VIOLET_QQ_CATCH_UP", True):
+            return
+        timer = threading.Timer(delay, lambda: self.is_running() and self.catch_up())
+        timer.daemon = True
+        timer.start()
+
+    def catch_up(self, hours: float = 6.0, count: int = 20) -> int:
+        """The messages of the groups she takes part in that came while she was offline (get_group_msg_history):
+        stored as they were, with their own time, without a decision of their own -- she sees them with the next
+        message. Returns how many were added. Never raises."""
+        from datetime import datetime
+        from ai import trace
+        social = self._social()
+        if social is None:
+            return 0
+        store, added = social.store, 0
+        try:
+            zone = datetime.fromisoformat(social.db.now()).tzinfo
+            cutoff = time.time() - hours * 3600
+            for conv in store.conversations(self.channel_id, kind="group"):
+                if conv["mode"] == "off":
+                    continue
+                try:
+                    data = self.call("get_group_msg_history", {"group_id": int(conv["peer_id"]), "count": int(count)},
+                                     timeout=20) or {}
+                except Exception as exc:                 # noqa: BLE001 -- an older implementation / no right
+                    logger.info("no history of group %s: %s", conv["peer_id"], safe_error(exc))
+                    continue
+                for msg in (data.get("messages") or []) if isinstance(data, dict) else []:
+                    if not isinstance(msg, dict) or str(msg.get("user_id") or "") == self.self_id:
+                        continue
+                    msg_id = str(msg.get("message_id") or "")
+                    at = float(msg.get("time") or 0)
+                    if not msg_id or at < cutoff or store.find_message(conv["id"], msg_id) is not None:
+                        continue
+                    message = msg.get("message")
+                    segments = parse_cq_string(message) if isinstance(message, str) else (message or [])
+                    text, mentioned, reply_to = message_text(segments, self.self_id)
+                    sender = msg.get("sender") or {}
+                    images = [s.get("data") or {} for s in segments if isinstance(s, dict) and s.get("type") == "image"]
+                    if social.receive(self, kind="group", peer_id=str(conv["peer_id"]), sender_id=str(msg.get("user_id") or ""),
+                                      sender_name=clean_text(str(sender.get("card") or sender.get("nickname") or ""), 40)
+                                      or None, text=text, mentioned=mentioned, reply_to=reply_to, platform_msg_id=msg_id,
+                                      images=images, sender_role=str(sender.get("role") or "") or None,
+                                      created_at=datetime.fromtimestamp(at, tz=zone).isoformat(), catch_up=True):
+                        added += 1
+        except Exception:                                # noqa: BLE001
+            logger.exception("catching up on QQ groups failed")
+        if added:
+            trace.step("补看漏掉的群消息", 渠道=self.channel_id, 条数=added)
+        return added
 
     def _sync_stickers_soon(self, delay: float = 20.0) -> None:
         """The account's favourite stickers into her collection once connected (stickers.sync_qq; after a while,
@@ -323,27 +414,81 @@ class SnowLumaChannel(ChannelAdapter):
             unknown = [str((s.get("data") or {}).get("id")) for s in segments if isinstance(s, dict)
                        and s.get("type") == "reply" and (s.get("data") or {}).get("id") is not None
                        and str((s.get("data") or {}).get("id")) not in self._said]
-            if unknown and self._ws is not None:
-                # asking QQ for the quoted message needs this receive loop: done in a thread of its own
-                threading.Thread(target=self._deliver_quoting, args=(event, segments, unknown[0]), daemon=True,
-                                 name="qq-quote").start()
+            if (unknown or self._lookups(segments)) and self._ws is not None:
+                # asking QQ for the quoted message / the voice's text / a forwarded log needs this receive loop:
+                # done in a thread of its own
+                threading.Thread(target=self._deliver_quoting, args=(event, segments, unknown[0] if unknown else None),
+                                 daemon=True, name="qq-lookup").start()
                 return 1
             return 1 if self.deliver(self._inbound(event, segments)) else 0
         social = self._social()
         if social is None:
             return 0
+        if self._lookups(segments) and self._ws is not None:
+            threading.Thread(target=lambda: self._to_social(social, event, self._enrich(event, segments)), daemon=True,
+                             name="qq-lookup").start()
+            return 1
+        self._to_social(social, event, segments)
+        return 1
+
+    def _to_social(self, social, event: dict[str, Any], segments: list[dict[str, Any]]) -> None:
         text, mentioned, reply_to = message_text(segments, self.self_id)
         images = [s.get("data") or {} for s in segments if isinstance(s, dict) and s.get("type") == "image"]
         sender = event.get("sender") or {}
-        social.receive(self, kind="group" if event.get("message_type") == "group" else "private",
-                       peer_id=str(event.get("group_id") if event.get("message_type") == "group" else event.get("user_id")),
-                       sender_id=str(event.get("user_id") or ""),
-                       sender_name=clean_text(str(sender.get("card") or sender.get("nickname") or ""), 40) or None,
-                       text=text, mentioned=mentioned, reply_to=reply_to,
-                       platform_msg_id=str(event.get("message_id") or "") or None, images=images,
-                       group_name=clean_text(str(event.get("group_name") or ""), 60) or None)
+        group = event.get("message_type") == "group"
+        try:
+            social.receive(self, kind="group" if group else "private",
+                           peer_id=str(event.get("group_id") if group else event.get("user_id")),
+                           sender_id=str(event.get("user_id") or ""),
+                           sender_name=clean_text(str(sender.get("card") or sender.get("nickname") or ""), 40) or None,
+                           text=text, mentioned=mentioned, reply_to=reply_to,
+                           platform_msg_id=str(event.get("message_id") or "") or None, images=images,
+                           group_name=clean_text(str(event.get("group_name") or ""), 60) or None,
+                           sender_role=(str(sender.get("role") or "") or None) if group else None)
+        except Exception:                                # noqa: BLE001
+            logger.exception("QQ message not handed to the social engine")
         self.status_info.received += 1
-        return 1
+
+    # -- looking things up before a message is passed on (2026-11-10) ------------------------------------------------
+    @staticmethod
+    def _lookups(segments: list[Any]) -> bool:
+        """A voice message to turn into text, or a forwarded chat log to open."""
+        from ai.settings import env_bool
+        for seg in segments or []:
+            if not isinstance(seg, dict) or (seg.get("data") or {}).get("_text"):
+                continue
+            if seg.get("type") == "record" and env_bool("VIOLET_QQ_VOICE_TO_TEXT", True):
+                return True
+            if seg.get("type") == "forward" and (seg.get("data") or {}).get("id"):
+                return True
+        return False
+
+    def _enrich(self, event: dict[str, Any], segments: list[Any]) -> list[Any]:
+        """The segments with "_text" filled: QQ's own speech-to-text of a voice message (fetch_ptt_text), the messages
+        of a forwarded chat log (get_forward_msg). What cannot be looked up stays as it was. Never raises."""
+        from ai import trace
+        out = []
+        for seg in segments or []:
+            if not isinstance(seg, dict):
+                out.append(seg)
+                continue
+            kind, data = seg.get("type"), dict(seg.get("data") or {})
+            try:
+                if kind == "record" and not data.get("_text") and event.get("message_id") is not None:
+                    answer = self.call("fetch_ptt_text", {"message_id": int(event["message_id"])}, timeout=20) or {}
+                    data["_text"] = clean_text(str((answer or {}).get("text") or ""), 1000).strip() \
+                        if isinstance(answer, dict) else ""
+                    trace.step("QQ 语音转文字", 结果="转好了" if data["_text"] else "没有文字", 内容=trace.text(data["_text"]))
+                elif kind == "forward" and not data.get("_text") and data.get("id"):
+                    answer = self.call("get_forward_msg", {"id": str(data["id"])}, timeout=20) or {}
+                    nodes = answer.get("messages") if isinstance(answer, dict) else answer
+                    data["_text"] = forward_text(nodes or [], self.self_id)
+                    trace.step("QQ 转发的聊天记录", 条数=len(nodes or []) if isinstance(nodes, list) else 0)
+            except Exception as exc:                     # noqa: BLE001 -- shown as before: "a voice message" etc.
+                logger.info("QQ %s not looked up: %s", kind, safe_error(exc))
+                trace.step("QQ 消息查不到", 类型=kind, 原因=safe_error(exc))
+            out.append({**seg, "data": data})
+        return out
 
     def _poked(self, event: dict[str, Any]) -> int:
         """2026-10-30: someone 拍了拍 her -- like calling her: the owner's private poke reaches the owner's chat, any
@@ -397,7 +542,14 @@ class SnowLumaChannel(ChannelAdapter):
         while len(self._said) > 500:
             self._said.popitem(last=False)
 
-    def _deliver_quoting(self, event: dict[str, Any], segments: list[dict[str, Any]], message_id: str) -> None:
+    def _deliver_quoting(self, event: dict[str, Any], segments: list[dict[str, Any]], message_id: str | None) -> None:
+        segments = self._enrich(event, segments)
+        if message_id is None:
+            try:
+                self.deliver(self._inbound(event, segments))
+            except Exception:                             # noqa: BLE001
+                logger.exception("owner message not delivered")
+            return
         try:
             data = self.call("get_msg", {"message_id": int(message_id)}, timeout=6) or {}
             quoted = data.get("message") or []
@@ -427,6 +579,7 @@ class SnowLumaChannel(ChannelAdapter):
         sender = event.get("sender") or {}
         own = [s for s in segments or [] if not (isinstance(s, dict) and s.get("type") == "reply")]
         self._remember(event.get("message_id"), message_text(own, self.self_id)[0], False)
+        self.last_owner_peer = str(event.get("user_id") or "") or self.last_owner_peer
         return InboundMessage(channel=self.channel_id, channel_type=self.channel_type, peer_id=str(event.get("user_id")),
                               dedup_key=f"nc:{self.channel_id}:{event.get('self_id')}:{event.get('message_id')}",
                               parts=coalesce(self._parts(segments)) or [Part("unsupported", "")],
@@ -471,21 +624,70 @@ class SnowLumaChannel(ChannelAdapter):
         level = permissions.level("friend_add")
         trace.step("好友申请", 渠道=self.channel_id, QQ=user, 验证消息=comment or None, 处理=permissions.LEVELS[level])
         payload = {"channel": self.channel_id, "flag": flag, "user_id": user, "comment": comment}
+        about = self.stranger(user) if level != "forbid" else ""     # 2026-11-10: who it is (get_stranger_info)
+        who = f"QQ {user}（{about}）" if about else f"QQ {user} "
         try:
             if level == "self":
                 accept_friend(db, payload)
-                permissions._tell_owner(f"QQ {user} 加了我好友，我同意了" + (f"（验证消息：{comment}）" if comment else "") + "。")
+                permissions._tell_owner(f"{who}加了我好友，我同意了" + (f"（验证消息：{comment}）" if comment else "") + "。")
             elif level == "ask":
-                permissions.request(db, "friend_add", f"QQ {user} 想加我好友" + (f"，验证消息：{comment}" if comment else "")
+                permissions.request(db, "friend_add", f"{who}想加我好友" + (f"，验证消息：{comment}" if comment else "")
                                     + "。", payload)
         except Exception:                                  # noqa: BLE001
             logger.exception("friend request from %s not handled", user)
 
+    def stranger(self, user_id: str) -> str:
+        """2026-11-10: a few words about a QQ account (get_stranger_info): "昵称 小周，女，20 岁，签名：…"; "" when
+        nothing is known. Never raises."""
+        try:
+            data = self.call("get_stranger_info", {"user_id": int(user_id)}, timeout=10) or {}
+        except Exception as exc:                          # noqa: BLE001
+            logger.info("no profile of QQ %s: %s", user_id, safe_error(exc))
+            return ""
+        if not isinstance(data, dict):
+            return ""
+        bits = []
+        if data.get("nickname"):
+            bits.append("昵称 " + clean_text(str(data["nickname"]), 30))
+        sex = {"male": "男", "female": "女"}.get(str(data.get("sex") or ""))
+        if sex:
+            bits.append(sex)
+        try:
+            if 0 < int(data.get("age") or 0) < 120:
+                bits.append(f"{int(data['age'])} 岁")
+        except (TypeError, ValueError):
+            pass
+        sign = clean_text(str(data.get("long_nick") or data.get("longNick") or ""), 40).replace("\n", " ").strip()
+        if sign:
+            bits.append("签名：" + sign)
+        return "，".join(bits)
+
     # -- sending ----------------------------------------------------------------------------------------------------
+    def _note_sent(self, kind: str, peer_id: Any, data: Any, text: str) -> None:
+        """2026-11-10: what she sent, for taking it back (recent_sent / recall)."""
+        message_id = (data or {}).get("message_id") if isinstance(data, dict) else None
+        if message_id not in (None, ""):
+            self._sent.append({"kind": kind, "peer": str(peer_id), "message_id": str(message_id), "at": time.time(),
+                               "text": clean_text(text or "", 80)})
+
+    def send_typing(self, peer_id: str, on: bool) -> None:
+        """2026-11-10: "对方正在输入…" in the owner's private chat (set_input_status 1 = typing, 0 = stop)."""
+        from ai.settings import env_bool
+        if self._no_typing or self._ws is None or not env_bool("VIOLET_QQ_TYPING", True):
+            return
+        try:
+            self.call("set_input_status", {"user_id": int(peer_id), "event_type": 1 if on else 0}, timeout=3)
+        except QQError as exc:
+            if "retcode" in str(exc):                     # not offered by this implementation
+                self._no_typing = True
+        except Exception:                                 # noqa: BLE001 -- cosmetic
+            pass
+
     def send_text(self, peer_id: str, text: str, client_id: str | None = None) -> dict[str, Any]:
         data = self.call("send_private_msg", {"user_id": int(peer_id), "message": [{"type": "text", "data": {"text": text}}]})
         self.status_info.sent += 1
         self._remember((data or {}).get("message_id"), text, True)
+        self._note_sent("private", peer_id, data, text)
         return {"ok": True, "message_id": (data or {}).get("message_id")}
 
     def send_image(self, peer_id: str, path: str) -> dict[str, Any]:
@@ -493,6 +695,7 @@ class SnowLumaChannel(ChannelAdapter):
         data = self.call("send_private_msg", {"user_id": int(peer_id),
                                               "message": [{"type": "image", "data": {"file": f"base64://{encoded}"}}]},
                          timeout=60)
+        self._note_sent("private", peer_id, data, "[图片]")
         return {"ok": True, "message_id": (data or {}).get("message_id")}
 
     @staticmethod
@@ -505,6 +708,7 @@ class SnowLumaChannel(ChannelAdapter):
         data = self.call("send_private_msg", {"user_id": int(peer_id), "message": [self._sticker_segment(path)]},
                          timeout=60)
         self._remember((data or {}).get("message_id"), "[一个表情包]", True)
+        self._note_sent("private", peer_id, data, "[表情包]")
         return {"ok": True, "message_id": (data or {}).get("message_id")}
 
     @staticmethod
@@ -517,6 +721,7 @@ class SnowLumaChannel(ChannelAdapter):
         data = self.call("send_private_msg", {"user_id": int(peer_id), "message": [self._voice_segment(path)]},
                          timeout=60)
         self._remember((data or {}).get("message_id"), "[一条语音]", True)
+        self._note_sent("private", peer_id, data, "[语音]")
         return {"ok": True, "message_id": (data or {}).get("message_id")}
 
     def send_to(self, kind: str, peer_id: str, text: str | None, reply_to: str | None = None,
@@ -543,7 +748,67 @@ class SnowLumaChannel(ChannelAdapter):
         else:
             data = self.call("send_private_msg", {"user_id": int(peer_id), "message": message}, **extra)
         self.status_info.sent += 1
+        self._note_sent(kind, peer_id, data, text or ("[语音]" if voice_path else "[表情包]" if sticker_path else "[图片]"))
         return str((data or {}).get("message_id") or "") or None
+
+    # -- 2026-11-10: more of what QQ can do through SnowLuma (each one an OneBot action; errors are raised) ----------
+    def recent_sent(self, kind: str, peer_id: str, within: float = RECALL_SECONDS) -> list[dict[str, Any]]:
+        """Her messages to this chat that may still be taken back, newest first."""
+        now = time.time()
+        return [dict(s) for s in reversed(self._sent)
+                if s["kind"] == kind and s["peer"] == str(peer_id) and now - s["at"] <= within]
+
+    def recall(self, message_id: Any) -> None:
+        """Take back one of her messages (delete_msg)."""
+        self.call("delete_msg", {"message_id": int(message_id)}, timeout=10)
+        self._sent = type(self._sent)((s for s in self._sent if s["message_id"] != str(message_id)),
+                                      maxlen=self._sent.maxlen)
+
+    def react(self, message_id: Any, emoji: str) -> None:
+        """An emoji reaction under a group message (set_msg_emoji_like)."""
+        emoji_id = reaction_id(emoji)
+        if emoji_id is None:
+            raise QQError(f"不能用这个表情回应：{emoji}")
+        self.call("set_msg_emoji_like", {"message_id": int(message_id), "emoji_id": emoji_id, "set": True}, timeout=10)
+
+    def like(self, user_id: Any, times: int = 1) -> None:
+        """A like on someone's QQ profile card (send_like)."""
+        self.call("send_like", {"user_id": int(user_id), "times": max(1, min(int(times), 10))}, timeout=10)
+
+    def set_signature(self, text: str) -> None:
+        """Her QQ 个性签名 (set_self_longnick)."""
+        self.call("set_self_longnick", {"long_nick": clean_text(text, 60).replace("\n", " ").strip()}, timeout=15)
+
+    def qzone_feeds(self, count: int = 10) -> list[dict[str, Any]]:
+        """Her QQ 空间 friends' feed (get_qzone_feeds), newest first."""
+        data = self.call("get_qzone_feeds", {"page_num": 1, "count": int(count)}, timeout=30) or {}
+        feeds = data.get("feeds") if isinstance(data, dict) else data
+        return [f for f in feeds or [] if isinstance(f, dict)]
+
+    def qzone_like(self, tid: str, owner_uin: Any) -> None:
+        self.call("like_qzone", {"tid": str(tid), "target_uin": int(owner_uin)}, timeout=20)
+
+    def qzone_comment(self, tid: str, owner_uin: Any, text: str) -> None:
+        self.call("comment_qzone", {"tid": str(tid), "target_uin": int(owner_uin),
+                                    "content": clean_text(text, 200).replace("\n", " ").strip()}, timeout=20)
+
+    def group_admin(self, group_id: Any, do: str, *, user_id: Any = None, minutes: Any = None, card: str = "",
+                    message_id: Any = None, text: str = "") -> None:
+        """A group admin's action (she must be an admin of that group; QQ refuses otherwise): ban (minutes, 0 =
+        lift) / unban / card / essence / notice."""
+        group = int(group_id)
+        if do in ("ban", "unban"):
+            seconds = 0 if do == "unban" else max(1, min(int(minutes or 10), 30 * 24 * 60)) * 60
+            self.call("set_group_ban", {"group_id": group, "user_id": int(user_id), "duration": seconds}, timeout=15)
+        elif do == "card":
+            self.call("set_group_card", {"group_id": group, "user_id": int(user_id),
+                                         "card": clean_text(card, 30).replace("\n", " ").strip()}, timeout=15)
+        elif do == "essence":
+            self.call("set_essence_msg", {"message_id": int(message_id)}, timeout=15)
+        elif do == "notice":
+            self.call("_send_group_notice", {"group_id": group, "content": clean_text(text, 500).strip()}, timeout=30)
+        else:
+            raise QQError(f"不认识的群管理操作：{do}")
 
     def groups(self) -> list[dict[str, Any]]:
         rows = self.call("get_group_list", {}) or []
