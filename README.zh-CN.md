@@ -134,7 +134,15 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 - 手机中继也必须带有 Violet MCP 的发布签名；语音的源码必须和程序里记录的 SHA-256 一致。
 - 联网搜索（SearXNG）的源码没法校验，所以只从 GitHub 和这两个内置加速站下载，不用你填的自定义地址。
 
-**还没安装，或者还是 0.7.58 及更早的版本**：用下面的命令安装或者更新一次。先执行这一行，设置下载地址（每次打开新的终端都要先执行一次；想换另一个加速站，就把 `https://p.jackyu.cn/` 换成 `http://8.217.135.233:9999/`）：
+**还没安装**：从 0.7.66 起，经加速站下载安装脚本就行。安装脚本下载程序包时，GitHub 连不上或太慢，会自动依次换这两个加速站：
+
+```bash
+curl -fsSL http://8.217.135.233:9999/https://github.com/aileboeth/violet-companion/releases/latest/download/install.sh | bash
+```
+
+（`http://8.217.135.233:9999/` 不通时换成 `https://p.jackyu.cn/`。）彻底卸载也一样，在末尾加 `-s -- uninstall --purge --yes`。
+
+**还是 0.7.58 及更早的版本，或者想固定用某个加速站**：用下面的命令。先执行这一行，设置下载地址（每次打开新的终端都要先执行一次；想换另一个加速站，就把 `https://p.jackyu.cn/` 换成 `http://8.217.135.233:9999/`）：
 
 ```bash
 G=https://p.jackyu.cn/https://github.com/aileboeth/violet-companion/releases/latest/download
@@ -158,7 +166,7 @@ curl -fsSL $G/install.sh | VIOLET_RELEASE_BASE=$G bash -s -- upgrade
 /opt/violet/violet uninstall --purge --yes
 ```
 
-这一条不用联网。如果装坏了、`/opt/violet/violet` 已经不在了，改用：
+这一条不用联网。**0.7.65 及更早的版本**用这一条会漏掉 QQ 容器、手机中继这些（程序先被删掉了，它们的卸载代码跟着没了），请先更新到 0.7.66，或者用下面这条。如果装坏了、`/opt/violet/violet` 已经不在了，也改用：
 
 ```bash
 curl -fsSL $G/install.sh | VIOLET_RELEASE_BASE=$G bash -s -- uninstall --purge --yes
@@ -166,7 +174,7 @@ curl -fsSL $G/install.sh | VIOLET_RELEASE_BASE=$G bash -s -- uninstall --purge -
 
 注意：
 
-- 命令里的 `VIOLET_RELEASE_BASE=$G` 不能省。安装脚本会再下载一个程序包，有了它才从加速站下载，没有它还是去 GitHub 下载。
+- 命令里的 `VIOLET_RELEASE_BASE=$G` 不能省。安装脚本会再下载一个程序包，有了它才固定从这个加速站下载；没有它，0.7.65 及更早的安装脚本还是去 GitHub 下载（0.7.66 起会自动换加速站）。
 - 这几条命令没有签名校验：安装脚本是从加速站下载后直接运行的，只能相信加速站。装好以后的更新才会核对签名。能直接连上 GitHub 时请用上面的官方命令。
 
 ## 当前状态

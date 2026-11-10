@@ -461,33 +461,110 @@ def apt_mirror(speed: Callable[[str], float] = apt_speed) -> str:
 
 
 BUILD_STEP_RE = re.compile(r"\[\s*(\d+)/(\d+)\]")
+QQ_GOT_RE = re.compile(r"QQ: got (\d+) bytes")
+APT_GET_RE = re.compile(r"\bGet:(\d+)\s")
+QQ_MB = 177                                  # QQ_3.2.32_260812_amd64_01.deb
+
+
+def qq_sources() -> list[str]:
+    """The QQ download addresses in deploy/snowluma/Dockerfile (ARG QQ_SOURCES), in its order."""
+    try:
+        text = (BUILD_DIR / "Dockerfile").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    found = re.search(r'^ARG QQ_SOURCES="([^"]+)"', text, re.M)
+    return found.group(1).split() if found else []
+
+
+def qq_speed(base: str, size: int = 1024 * 1024, timeout: float = 15.0,
+             clock: Callable[[], float] = time.monotonic) -> float:
+    """Bytes a second for the first MB of the QQ package from this address (0 = it did not answer)."""
+    req = urllib.request.Request(f"{base}/QQ_3.2.32_260812_amd64_01.deb",
+                                 headers={"User-Agent": "Violet", "Range": f"bytes=0-{size - 1}"})
+    start, got = clock(), 0
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:                       # noqa: S310 -- fixed URLs
+            while got < size and clock() - start < timeout:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                got += len(chunk)
+    except Exception:                                                                   # noqa: BLE001
+        return 0.0
+    return got / max(0.001, clock() - start)
+
+
+def qq_order(speed: Callable[[str], float] = qq_speed) -> list[str]:
+    """0.7.66 (user: "就算用官方下载出问题了，为什么不用加速下载呢"): the QQ addresses fastest first -- the user's server
+    had Tencent fail once and then hang on GitHub itself for 15 minutes while a mirror sent 0.9 MB/s. Addresses that do
+    not answer keep their place at the end (the build still tries them)."""
+    sources = qq_sources()
+    speeds = {s: speed(s) for s in sources}
+    return sorted(sources, key=lambda s: (-speeds[s], sources.index(s)))
+
+
+def _host(url: str) -> str:
+    part = url.split("://", 1)[-1]
+    inner = part.split("/https://", 1)
+    return (inner[0].split("/", 1)[0] + " → " + inner[1].split("/", 1)[0]) if len(inner) == 2 else part.split("/", 1)[0]
 
 
 def build_image(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], env: dict,
-                progress: Progress | None, *, pull_base: Callable[[], str], mirror: Callable[[], str]) -> str:
+                progress: Progress | None, *, pull_base: Callable[[], str], mirror: Callable[[], str],
+                order: Callable[[], list[str]] | None = None, clock: Callable[[], float] = time.monotonic) -> str:
     """Violet's own container (deploy/snowluma/Dockerfile) built here: the base image (pull_base: Docker Hub or a
     mirror), then `docker build` -- Debian packages, QQ (Tencent, else qq-versions; SHA-256 checked), SnowLuma.
     Returns where the image came from; raises SnowlumaError."""
     _say(progress, 22, f"组装 QQ 容器：准备基础镜像 {BASE_IMAGE}")
     if not image_present(run, BASE_IMAGE):
         pull_base()
+    _say(progress, 26, "组装 QQ 容器：测一下哪个系统软件源和 QQ 下载地址最快")
     apt = mirror()
-    _say(progress, 30, "组装 QQ 容器：安装系统软件、下载 QQ（官方地址优先）" + (f"，软件源 {apt}" if apt else ""))
+    sources = order() if order is not None else []
+    _say(progress, 30, "组装 QQ 容器：安装系统软件" + (f"（软件源 {apt}）" if apt else ""))
     buildkit = getattr(run(["docker", "buildx", "version"], capture_output=True, text=True), "returncode", 1) == 0
     cmd = ["docker", "build", *(["--progress=plain"] if buildkit else []), "--build-arg", f"BASE_IMAGE={BASE_IMAGE}",
-           *(["--build-arg", f"APT_MIRROR={apt}"] if apt else []), "-t", BUILT_IMAGE, str(BUILD_DIR)]
-    shown = [30]
+           *(["--build-arg", f"APT_MIRROR={apt}"] if apt else []),
+           *(["--build-arg", "QQ_SOURCES=" + " ".join(sources)] if sources else []), "-t", BUILT_IMAGE, str(BUILD_DIR)]
+    # 0.7.66 (user: "你也没有标上下载进度"): the step number, the number of Debian packages fetched, and while QQ comes
+    # in its MB, speed and source (the Dockerfile prints "QQ: got N bytes" every 5 seconds)
+    state = {"shown": 30, "step": (0, 1), "source": "", "last": (0.0, 0)}
+
+    def span() -> tuple[int, int]:
+        k, n = state["step"]
+        return 30 + int(54 * max(0, k - 1) / n), 30 + int(54 * k / n)
 
     def on_line(line: str) -> None:
         text = line.strip()
         step = BUILD_STEP_RE.search(text)
-        if step and int(step.group(2)):
-            percent = 30 + int(54 * int(step.group(1)) / int(step.group(2)))
-            if percent > shown[0]:
-                shown[0] = percent
-                _say(progress, percent, f"组装 QQ 容器：第 {step.group(1)}/{step.group(2)} 步")
+        got = QQ_GOT_RE.search(text)
+        fetched = APT_GET_RE.search(text)
+        if got:
+            done = int(got.group(1))
+            now = clock()
+            then, before = state["last"]
+            bps = (done - before) / max(0.001, now - then) if then else 0.0
+            state["last"] = (now, done)
+            low, high = span()
+            percent = max(state["shown"], low + int((high - low) * min(1.0, done / (QQ_MB * 1048576))))
+            state["shown"] = percent
+            _say(progress, percent, f"下载 QQ：已下 {done / 1048576:.0f} / 约 {QQ_MB} MB"
+                 + (f" · 每秒 {bps / 1024:.0f} KB" if then else "") + (f" · 来自 {state['source']}" if state["source"] else ""))
+        elif step and int(step.group(2)):
+            k, n = int(step.group(1)), int(step.group(2))
+            if (k, n) != state["step"]:
+                state["step"] = (k, n)
+                percent = max(state["shown"], span()[0])
+                state["shown"] = percent
+                _say(progress, percent, f"组装 QQ 容器：第 {k}/{n} 步")
         elif "QQ: trying" in text:
-            _say(progress, shown[0], "下载 QQ：" + text.split("QQ: trying", 1)[1].strip()[:90])
+            state["source"] = _host(text.split("QQ: trying", 1)[1].strip())
+            state["last"] = (0.0, 0)
+            _say(progress, state["shown"], f"下载 QQ：连接 {state['source']}")
+        elif "failed or stalled" in text and "QQ: " in text:          # 0.7.66: a source left for the next one
+            _say(progress, state["shown"], f"下载 QQ：{state['source'] or '这个地址'} 没连上或太慢，换下一个")
+        elif fetched and state["step"][0] <= 2:
+            _say(progress, state["shown"], f"组装 QQ 容器：安装系统软件，已下载 {fetched.group(1)} 个软件包")
     code, tail = stream(cmd, on_line, {**env, "DOCKER_BUILDKIT": "1" if buildkit else "0"})
     if code != 0:
         raise SnowlumaError("组装 QQ 容器失败：" + _last(tail, 8).replace("\n", " / ")[:600])
@@ -571,7 +648,7 @@ def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str
             wait: float = START_WAIT, rng: random.Random | None = None, which: Callable[[str], Any] = shutil.which,
             check_desktop: Callable[[int], bool] | None = None, napcat_unit: Path = NAPCAT_UNIT,
             image_file: str | os.PathLike[str] | None = None, apt: Callable[[], str] | None = None,
-            machine: Callable[[], str] | None = None) -> dict[str, Any]:
+            machine: Callable[[], str] | None = None, qq_first: Callable[[], list[str]] | None = None) -> dict[str, Any]:
     """Install (or reinstall: keeps ports, tokens and the QQ login) SnowLuma and start it. Updates `state`.
     2026-11-10, where the image comes from, in this order: one already on this server (SnowLuma's old image or
     Violet's own build); a saved copy (image_file / <root>/snowluma-image/); built here (deploy/snowluma/: only the
@@ -623,7 +700,8 @@ def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str
                 source = build_image(run, stream, env, progress,
                                      pull_base=lambda: _download(run, stream, on_line, env, progress, seen[0],
                                                                  image=BASE_IMAGE, size_mb=80),
-                                     mirror=apt or (apt_mirror if stream is _stream else (lambda: "")))
+                                     mirror=apt or (apt_mirror if stream is _stream else (lambda: "")),
+                                     order=qq_first or (qq_order if stream is _stream else None))
                 image = BUILT_IMAGE
             except SnowlumaError as exc:
                 problems.append(f"组装：{str(exc)[:700]}")

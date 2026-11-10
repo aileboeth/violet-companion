@@ -37,7 +37,7 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 1. 打开输出里的后台地址（带安全入口），用用户名和密码登录。密码是随机生成的 20 位，可以一直用，也可以在“账号安全”页改；用户名和安全入口也在那里改。
 2. “开始”页列出还没完成的事，点哪一项就直接跳到要填的地方。
 3. “模型服务”页：第 1 步填 API 地址和 Key，点“保存并测试连接”（只取一次模型列表，不调用模型）；第 2 步从列表里选模型（“全部 Agent 都用”一次填好），点“保存模型并测试对话”。
-4. “聊天渠道”页：微信、QQ、Telegram 三张卡片并列，用哪个点哪个——微信扫码；QQ 点“使用 QQ”，按步骤去 [q.qq.com](https://q.qq.com/#/) 建机器人、填 AppID 和 AppSecret；Telegram 点“使用 Telegram”，找 [@BotFather](https://t.me/BotFather) 要 Token。QQ / Telegram 连上后在卡片里生成绑定码，用你自己的账号发给机器人。QQ 小号（SnowLuma）在 QQ 卡片里一键安装，扫 QQ 窗口里的二维码登录（安装要下载约 740 MB 的镜像，页面会显示已下多少 MB 和来自哪个镜像站，一个站太慢会自动换下一个）。
+4. “聊天渠道”页：微信、QQ、Telegram 三张卡片并列，用哪个点哪个——微信扫码；QQ 点“使用 QQ”，按步骤去 [q.qq.com](https://q.qq.com/#/) 建机器人、填 AppID 和 AppSecret；Telegram 点“使用 Telegram”，找 [@BotFather](https://t.me/BotFather) 要 Token。QQ / Telegram 连上后在卡片里生成绑定码，用你自己的账号发给机器人。QQ 小号（SnowLuma）在 QQ 卡片里一键安装，扫 QQ 窗口里的二维码登录（第一次安装会在服务器上组装 QQ 容器，要下载几百 MB、几分钟，页面会显示每一步）。
    - SnowLuma 官方仓库和 Docker Hub 上的镜像在 2026 年 11 月下线了。从 0.7.65 起 Violet 在你的服务器上自己组装 QQ 容器（`violet/deploy/snowluma/`：SnowLuma 2.2.1、虚拟屏幕、启动脚本），只需要下载基础镜像、Debian 软件包（自动选最快的软件源）和 QQ 3.2.32 本身——QQ 先从腾讯官方地址下载，下不到再从 [Rodert/qq-versions](https://github.com/Rodert/qq-versions) 下载，两处都用固定的 SHA-256 校验。QQ 从来不包含在 Violet 里。组装要几分钟，国内国外的 x64 服务器都可以。服务器上已经有镜像就直接用；在后台卸载 QQ 也会保留镜像（只有 `uninstall --purge` 才删）。用备份的镜像也照样可以：把文件放进 `/opt/violet/snowluma-image/` 再点安装，或者运行 `/opt/violet/violet qq install --image-file /root/snowluma-v2.2.1.tar.gz`。
    - 她在 QQ 上除了聊天还能：用 QQ 自己的语音转文字听懂语音、打开转发的聊天记录、认出群主和群管理员、重新连上后补看掉线期间的群消息、在你的私聊里显示“对方正在输入…”、撤回自己刚发的消息、给群消息点表情回应。下面三项默认关闭，要用就在“设置 → 她能自己做的事”里打开：帮你管 QQ 群（只在你要求时，而且她得是那个群的管理员）、QQ 上的小互动（每天给你的名片点赞、给你新发的说说点赞和偶尔评论）、改 QQ 个性签名。
    - “人设与生活”页（可选）：选她是谁（几种自带人设，也可以自己写）和你们是什么关系；不同的聊天渠道可以用不同的人设，每个人设有自己的聊天记录和记忆。
@@ -123,7 +123,8 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
 bash install.sh upgrade       # 或者：在新版本的程序目录里执行
 /opt/violet/violet rollback      # 退回上一个版本的程序（数据不动）
 /opt/violet/violet uninstall     # 删除服务和程序，保留配置、数据和备份
-/opt/violet/violet uninstall --purge --yes   # 全部删除（不可恢复）：数据、备份、/opt/violet、手机中继、所有 violet 服务、violet 系统账号、带 violet 标记的防火墙规则
+/opt/violet/violet uninstall --purge --yes   # 全部删除（不可恢复）：数据、备份、/opt/violet、手机中继、QQ 容器、所有 violet 服务、violet 系统账号、带 violet 标记的防火墙规则
+# （0.7.65 及更早的版本用这一条会漏掉 QQ 容器和手机中继——先更新，或者用下面的 curl 命令）
 # 或者不依赖已安装的文件（例如装坏了、安装记录丢了）——这一条就够了，不需要再执行别的：
 # curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/download/install.sh | bash -s -- uninstall --purge --yes
 /opt/violet/violet info             # 后台地址（带安全入口）和用户名；密码不能查看

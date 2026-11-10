@@ -614,6 +614,109 @@ def test_the_fastest_package_source_is_used():
     assert sl.apt_mirror(speed=lambda base: 0.0) == ""                                   # nothing answered: as it is
 
 
+def test_a_purge_removes_the_parts_before_the_program_and_names_what_failed(tmp_path, monkeypatch):
+    """2026-11-10, the user's server: `/opt/violet/violet uninstall --purge` deleted <root>/app first; the relay / QQ
+    modules are imported from <root>/app/tools when needed, so every part failed to import and was skipped in silence
+    (the QQ container, the phone relay and their folders stayed)."""
+    from tools import violet_installer as vi
+    root = tmp_path / "opt"
+    layout = vi.Layout(root)
+    layout.app.mkdir(parents=True)
+    (layout.app / "tools").mkdir()
+    vi.save_state(layout, {"service": "none", "user": None})
+    seen = {}
+
+    def fake_purge_system(layout_, state, run=None, linux_root=None, problems=None):
+        seen["app_still_there"] = layout_.app.exists()
+        problems.append("QQ（SnowLuma）（ModuleNotFoundError: No module named 'violet_snowluma'）")
+        return ["容器 violet-snowluma"]
+    monkeypatch.setattr(vi, "purge_system", fake_purge_system)
+    result = vi.uninstall(vi.Options(root=root), purge=True)
+    assert seen["app_still_there"]                                  # the parts first, while their code is there
+    assert "容器 violet-snowluma" in result["removed"] and not layout.app.exists()
+    assert result["problems"] and "没能删掉" in result["note"] and "QQ（SnowLuma）" in result["note"]
+
+
+def test_a_part_that_fails_is_named_not_skipped(tmp_path, monkeypatch):
+    from tools import violet_installer as vi
+    layout = vi.Layout(tmp_path / "opt")
+
+    def broken():
+        raise ModuleNotFoundError("No module named 'violet_snowluma'")
+    for name in ("_relay_module", "_searxng_module", "_voice_module"):
+        monkeypatch.setattr(vi, name, lambda: SimpleNamespace(uninstall=lambda *a, **k: []))
+    monkeypatch.setattr(vi, "_snowluma_module", broken)
+    monkeypatch.setattr(vi, "remove_units", lambda layout, run: [])
+    problems: list[str] = []
+    vi.purge_system(layout, {}, run=lambda *a, **k: SimpleNamespace(returncode=0, stdout="", stderr=""),
+                    linux_root=True, problems=problems)
+    assert len(problems) == 1 and problems[0].startswith("QQ（SnowLuma）") and "violet_snowluma" in problems[0]
+
+
+def test_the_fastest_qq_address_goes_first():
+    """0.7.66 (user: "就算用官方下载出问题了，为什么不用加速下载呢")."""
+    from tools import violet_snowluma as sl
+    sources = sl.qq_sources()
+    tencent, github, ip8217, jackyu = sources
+    # the user's server: Tencent 4.5 MB/s, GitHub nothing, 8.217 0.9 MB/s, jackyu slower
+    measured = {tencent: 4493441, github: 0.0, ip8217: 877048, jackyu: 120000}
+    assert sl.qq_order(speed=lambda s: measured[s]) == [tencent, ip8217, jackyu, github]
+    # Tencent did not answer this time: the mirror first, never GitHub itself while it hangs
+    assert sl.qq_order(speed=lambda s: {ip8217: 877048, jackyu: 120000}.get(s, 0.0))[:2] == [ip8217, jackyu]
+    assert sl.qq_order(speed=lambda s: 0.0) == sources                      # nothing answered: the Dockerfile's order
+
+
+def test_the_qq_download_shows_mb_speed_and_source(tmp_path):
+    from tools import violet_snowluma as sl
+    steps, clock = [], iter([100.0, 105.0, 110.0])
+
+    class Host(BuildHost):
+        def stream(self, cmd, on_line, env):
+            self.streamed.append(cmd)
+            if cmd[:2] == ["docker", "build"]:
+                self.env = env
+                for line in ("#6 [2/6] RUN set -eux; apt-get update", "#6 12.1 Get:41 http://mirrors.ustc.edu.cn/debian x",
+                             "#7 [3/6] RUN set -eux; arch=...", "#7 0.3 QQ: trying https://github.com/Rodert/qq-versions/x",
+                             "#7 31.0 QQ: https://github.com/Rodert/qq-versions/x failed or stalled",
+                             "#7 31.1 QQ: trying http://8.217.135.233:9999/https://github.com/Rodert/qq-versions/x",
+                             "#7 36.1 QQ: got 10485760 bytes", "#7 41.1 QQ: got 31457280 bytes",
+                             "#7 46.1 QQ: got 185599488 bytes", "#10 [6/6] WORKDIR /app/data"):
+                    on_line(line)
+                self.have.add(sl.BUILT_IMAGE)
+                return 0, "done"
+            return super().stream(cmd, on_line, env)
+    host = Host()
+    host.have.add(sl.BASE_IMAGE)
+    order = ["http://8.217.135.233:9999/https://github.com/Rodert/qq-versions/releases/download/x", "https://qqdl/y"]
+    sl.build_image(host.run, host.stream, {}, lambda pct, step: steps.append((pct, step)),
+                   pull_base=lambda: "", mirror=lambda: "", order=lambda: order, clock=lambda: next(clock))
+    build = next(c for c in host.streamed if c[:2] == ["docker", "build"])
+    assert "QQ_SOURCES=" + " ".join(order) in build                         # the measured order goes to the build
+    texts = [s for _, s in steps]
+    assert "组装 QQ 容器：安装系统软件，已下载 41 个软件包" in texts
+    assert "下载 QQ：连接 github.com" in texts and "下载 QQ：github.com 没连上或太慢，换下一个" in texts
+    assert "下载 QQ：已下 10 / 约 177 MB · 来自 8.217.135.233:9999 → github.com" in texts
+    assert "下载 QQ：已下 30 / 约 177 MB · 每秒 4096 KB · 来自 8.217.135.233:9999 → github.com" in texts
+    percents = [p for p, _ in steps]
+    assert percents == sorted(percents)                                      # the bar only moves forward
+    qq = [p for p, s in steps if s.startswith("下载 QQ：已下")]
+    assert qq[0] < qq[-1] and qq[-1] <= 30 + 54 * 3 // 6                     # QQ fills step 3 of 6, no further
+
+
+def test_install_sh_falls_back_to_the_same_mirrors_as_the_updates():
+    """0.7.66 (the user's server in China: install.sh came through a mirror, the archive then timed out on GitHub)."""
+    import re
+    from pathlib import Path
+    from tools import violet_sources
+    script = (Path(__file__).resolve().parents[1] / "install.sh").read_text(encoding="utf-8")
+    line = re.search(r'https://github\.com/\*\) bases\+=\((.+)\) ;;', script).group(1)
+    prefixes = [p.split("$release_base")[0] for p in re.findall(r'"([^"]+)"', line)]
+    assert prefixes == [prefix for _key, prefix, _label in violet_sources.MIRRORS]
+    assert 'for b in "$base" "${bases[@]}"' in script                      # the checksum: that address first, then others
+    assert 'fetch_quick "$b/violet.tar.gz.sha256"' in script              # ... with the same time limits
+    assert "--connect-timeout" in script and "--speed-limit" in script and "--max-time" in script
+
+
 def test_official_images_are_under_library_on_a_mirror():
     from tools import violet_snowluma as sl
     assert sl.mirror_ref("docker.m.daocloud.io/", "node:24.22.1-bookworm-slim") == \
@@ -632,6 +735,11 @@ def test_the_build_folder_holds_what_the_dockerfile_needs():
     assert all((folder / name).is_file() for name in copied)
     sources = re.search(r'ARG QQ_SOURCES="([^"]+)"', docker).group(1).split()
     assert sources[0].startswith("https://qqdl.gtimg.cn/") and "Rodert/qq-versions" in sources[1]   # Tencent first
+    # 0.7.66: qq-versions also through Violet's GitHub mirrors, and a stalled source is left (it hung for 15 minutes)
+    from tools import violet_sources
+    for _key, prefix, _label in violet_sources.MIRRORS:
+        assert any(s == prefix + sources[1] for s in sources[2:])
+    assert "--speed-limit" in docker and "--max-time" in docker
     assert "QQ_AMD64_SHA256=d085dd89397225061eb9f194308f688129818ed445777e97a4a0a16e13d7b0e8" in docker
     assert "sha256sum -c" in docker and f"ARG BASE_IMAGE={sl.BASE_IMAGE}" in docker
     with tarfile.open(folder / "snowluma-runtime-2.2.1-linux-x64.tar.gz") as tar:

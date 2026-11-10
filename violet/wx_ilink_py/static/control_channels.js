@@ -413,10 +413,10 @@
     if (!s.installed) {
       setIntro(card, true);
       const failed = s.progress && s.progress.state === "failed" ? h("p", { class: "err", text: "上次安装失败：" + (s.progress.message || "") }) : null;
-      body.replaceChildren(...[failed, h("p", { class: "note", text: "会在服务器上用 Docker 安装 SnowLuma 和它自带的 Linux QQ（第一次下载约 740 MB，几分钟到十几分钟；没有 Docker 会先装上）。只在本机通信，不开放任何端口。这是非官方的接入方式，QQ 号有被风控的可能，建议用小号。" })].filter(Boolean));
+      body.replaceChildren(...[failed, h("p", { class: "note", text: "会在服务器上用 Docker 组装 QQ 容器：Violet 自带的 SnowLuma、虚拟屏幕，加上官方的 Linux QQ（先从腾讯下载，下不到再从 qq-versions 下载，都会校验文件）。第一次要下载几百 MB，大约几分钟；没有 Docker 会先装上。只在本机通信，不开放任何端口。这是非官方的接入方式，QQ 号有被风控的可能，建议用小号。" })].filter(Boolean));
       foot.replaceChildren(running ? h("button", { type: "button", text: "正在安装…查看进度", onclick: () => watchQQ("安装 QQ") })
         : s.available ? h("button", { type: "button", text: "一键安装 QQ", onclick: async () => {
-          if (!(await confirmBox("在服务器上安装 SnowLuma 和 Linux QQ（Docker）？第一次要下载约 740 MB。"))) return;
+          if (!(await confirmBox("在服务器上组装并安装 QQ（SnowLuma + Linux QQ，Docker）？第一次要下载几百 MB，大约几分钟。"))) return;
           qqTask("install", "安装 QQ");
         } }) : h("code", { text: s.install_command }));
       if (!s.available) body.append(h("p", { class: "note", text: "这种安装方式不能在网页上安装，请在服务器上运行上面的命令。" }));

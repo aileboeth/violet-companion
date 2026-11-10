@@ -16,7 +16,9 @@ FROM ${BASE_IMAGE}
 
 ARG APT_MIRROR=
 ARG QQ_VERSION=3.2.32_260812
-ARG QQ_SOURCES="https://qqdl.gtimg.cn/qqfile/QQNT/9.9.33/release/3f89efc5 https://github.com/Rodert/qq-versions/releases/download/qq-packages-20260813-1d08f1d4"
+# 0.7.66 (the user's server: Tencent failed once, then GitHub hung for 15 minutes with 0 bytes): the qq-versions
+# archive also through the two GitHub mirrors Violet uses; a source that stalls is left after 30 s (below)
+ARG QQ_SOURCES="https://qqdl.gtimg.cn/qqfile/QQNT/9.9.33/release/3f89efc5 https://github.com/Rodert/qq-versions/releases/download/qq-packages-20260813-1d08f1d4 http://8.217.135.233:9999/https://github.com/Rodert/qq-versions/releases/download/qq-packages-20260813-1d08f1d4 https://p.jackyu.cn/https://github.com/Rodert/qq-versions/releases/download/qq-packages-20260813-1d08f1d4"
 ARG QQ_AMD64_SHA256=d085dd89397225061eb9f194308f688129818ed445777e97a4a0a16e13d7b0e8
 ARG QQ_ARM64_SHA256=8796ccfd66acc025ef18db37185532d40bc8c58921e17da6d28c295acbcf8f92
 
@@ -60,7 +62,14 @@ RUN set -eux; \
     for source in ${QQ_SOURCES}; do \
       rm -f /tmp/linuxqq.deb; \
       echo "QQ: trying ${source}"; \
-      curl -fL --retry 3 --retry-delay 2 --connect-timeout 20 -A "Violet" -o /tmp/linuxqq.deb "${source}/${deb}" || continue; \
+      set +x; \
+      curl -sfL --retry 1 --retry-delay 2 --connect-timeout 20 --speed-limit 51200 --speed-time 30 --max-time 1200 \
+        -A "Violet" -o /tmp/linuxqq.deb "${source}/${deb}" & pid=$!; \
+      while kill -0 "${pid}" 2>/dev/null; do \
+        sleep 5; echo "QQ: got $(stat -c %s /tmp/linuxqq.deb 2>/dev/null || echo 0) bytes"; \
+      done; \
+      wait "${pid}" || { set -x; echo "QQ: ${source} failed or stalled"; continue; }; \
+      set -x; \
       if echo "${sha}  /tmp/linuxqq.deb" | sha256sum -c -; then ok=1; break; fi; \
       echo "QQ: ${source} gave a different file (SHA-256), not used" >&2; \
     done; \

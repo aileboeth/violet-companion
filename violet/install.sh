@@ -131,6 +131,14 @@ PY
     else die "需要 curl 或 wget 来下载程序"; fi
   }
 
+  fetch_quick() {   # 0.7.66: like fetch, but fails (instead of stopping) and gives up on a dead or crawling address
+    # (the user's server: GitHub sent 50 KB/s, then hung for 10 minutes on a 65-byte file)
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL --retry 1 --connect-timeout 15 --speed-limit 32768 --speed-time 30 --max-time 600 "$1" -o "$2"
+    elif command -v wget >/dev/null 2>&1; then wget -q -T 30 -t 2 -O "$2" "$1"
+    else die "需要 curl 或 wget 来下载程序"; fi
+  }
+
   sha256_of() {
     if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
     elif command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1" | cut -d' ' -f1
@@ -170,15 +178,34 @@ PY
     VIOLET_TMP="$(mktemp -d)"
     trap 'rm -rf "$VIOLET_TMP"' EXIT
     local tmp="$VIOLET_TMP"
-    say "== 下载 Violet：$release_base"
-    fetch "$release_base/violet.tar.gz" "$tmp/violet.tar.gz"
-    local want got
+    # 0.7.66 (the user's server in China, 2026-11-10: install.sh came through a mirror, the archive then timed out on
+    # GitHub): GitHub first; when it cannot be reached or crawls, the built-in GitHub mirrors -- the same ones
+    # Violet's updates use (tools/violet_sources.py MIRRORS). An address given with VIOLET_RELEASE_BASE /
+    # --release-base is used as it is.
+    local -a bases=("$release_base")
+    case "$release_base" in
+      https://github.com/*) bases+=("https://p.jackyu.cn/$release_base" "http://8.217.135.233:9999/$release_base") ;;
+    esac
+    local base="" b
+    for b in "${bases[@]}"; do
+      say "== 下载 Violet：$b"
+      if fetch_quick "$b/violet.tar.gz" "$tmp/violet.tar.gz"; then base="$b"; break; fi
+      say "   连不上或太慢，换下一个下载地址"
+    done
+    [ -n "$base" ] || die "下载 Violet 失败：GitHub 和内置的加速站都连不上（可以用 VIOLET_RELEASE_BASE 指定别的下载地址）"
+    local want="" got
     if [ -n "${VIOLET_EXPECT_SHA256:-}" ]; then
       # 0.7.59: the SHA-256 from the signed release.json (the root update service checked the signature)
       want="$VIOLET_EXPECT_SHA256"
     else
-      fetch "$release_base/violet.tar.gz.sha256" "$tmp/violet.tar.gz.sha256"
-      want="$(tr -d ' \r\n' < "$tmp/violet.tar.gz.sha256" | cut -c1-64)"
+      # the checksum from the address that gave the archive, else from the others (same release, same file)
+      for b in "$base" "${bases[@]}"; do
+        if fetch_quick "$b/violet.tar.gz.sha256" "$tmp/violet.tar.gz.sha256"; then
+          want="$(tr -d ' \r\n' < "$tmp/violet.tar.gz.sha256" | cut -c1-64)"
+          [ -n "$want" ] && break
+        fi
+      done
+      [ -n "$want" ] || die "下载校验文件 violet.tar.gz.sha256 失败（GitHub 和内置的加速站都连不上）"
     fi
     got="$(sha256_of "$tmp/violet.tar.gz")"
     [ -n "$want" ] && [ "$want" = "$got" ] || die "下载的文件校验失败（SHA-256 不一致），没有安装任何东西"

@@ -2153,7 +2153,13 @@ def uninstall(opts: Options, purge: bool = False) -> dict[str, Any]:
     service = Service(layout, state.get("service", "supervisor"), state.get("user"))
     if state.get("service") != "none":
         service.unregister()
-    removed = []
+    removed: list[str] = []
+    problems: list[str] = []
+    if purge:
+        # 2026-11-10 (the user's server: `/opt/violet/violet uninstall --purge` left the QQ container, the phone relay
+        # and their folders): the relay / SearXNG / QQ / voice parts are removed by modules in <app>/tools, imported
+        # when needed -- they must run BEFORE <app> is deleted below (after it, every import failed in silence)
+        removed += purge_system(layout, state, problems=problems)
     for path in (layout.app, layout.app_previous, layout.root / "app.failed", layout.root / "app.new"):
         if path.exists():
             shutil.rmtree(path)
@@ -2172,7 +2178,6 @@ def uninstall(opts: Options, purge: bool = False) -> dict[str, Any]:
                 shutil.rmtree(p)
         layout.state_file.unlink(missing_ok=True)
         kept = []
-        removed += purge_system(layout, state)
         # the install folder itself, when nothing but Violet's own files is left in it
         if layout.root.exists():
             leftovers = sorted(p.name for p in layout.root.iterdir() if p.name not in OWN_ROOT_FILES)
@@ -2187,7 +2192,9 @@ def uninstall(opts: Options, purge: bool = False) -> dict[str, Any]:
             + "、".join(leftovers))
     if "snowluma-image" in leftovers:           # 2026-11-10: the owner's saved copy of SnowLuma's (offline) image
         note += f"（{layout.root / 'snowluma-image'} 是你放的 SnowLuma 镜像备份，重新安装 Violet 后装 QQ 会自动用它）"
-    return {"ok": True, "removed": removed, "kept": kept, "leftovers": leftovers, "note": note}
+    if problems:
+        note += "。有几项没能删掉：" + "；".join(problems)
+    return {"ok": True, "removed": removed, "kept": kept, "leftovers": leftovers, "note": note, "problems": problems}
 
 
 # what may be left in <root> after a purge and is Violet's own (pid / stop flags of the supervisor, startup logs)
@@ -2196,29 +2203,30 @@ OWN_ROOT_FILES = {"violet.pid", "violet.stop", "violet", "violet.cmd", "venv.pat
 
 
 def purge_system(layout: Layout, state: dict, run: Callable[..., Any] = subprocess.run,
-                 linux_root: bool | None = None) -> list[str]:
+                 linux_root: bool | None = None, problems: list[str] | None = None) -> list[str]:
     """`uninstall --purge`: what the installer set up outside <root> -- the firewall rules it opened and the system
-    account it created (only if that account's home is this installation's data folder, i.e. made by us)."""
+    account it created (only if that account's home is this installation's data folder, i.e. made by us).
+    2026-11-10: a part that could not be removed is named in `problems` (it was skipped in silence before)."""
     removed: list[str] = []
+    problems = problems if problems is not None else []
     if not (linux_root if linux_root is not None else (os.name != "nt" and _is_root())):
         return removed
     removed += remove_units(layout, run)     # whatever is still registered (also after a plain `uninstall`)
-    try:                                    # the phone relay, when `violet mcp-relay install` set it up (and its rule)
-        removed += _relay_module().uninstall(layout, state, run=run, remove_rule=lambda r: remove_rule(r, run))
-    except Exception:                       # noqa: BLE001 -- never let it stop the rest of the purge
-        pass
-    try:                                    # 0.7.1: the private SearXNG (`violet searxng install` / the web button)
-        removed += _searxng_module().uninstall(layout, state, run=run)
-    except Exception:                       # noqa: BLE001
-        pass
-    try:                                    # 2026-10-29: QQ on a personal account (`violet qq install`; also an old NapCat)
-        removed += _snowluma_module().uninstall(layout, state, run=run, remove_image=True)   # purge: the image too
-    except Exception:                       # noqa: BLE001
-        pass
-    try:                                    # 2026-10-31: her voice (`violet voice install` / the web button)
-        removed += _voice_module().uninstall(layout, state, run=run)
-    except Exception:                       # noqa: BLE001
-        pass
+    parts = (
+        # the phone relay, when `violet mcp-relay install` set it up (and its rule)
+        ("手机中继", lambda: _relay_module().uninstall(layout, state, run=run, remove_rule=lambda r: remove_rule(r, run))),
+        # 0.7.1: the private SearXNG (`violet searxng install` / the web button)
+        ("联网搜索 SearXNG", lambda: _searxng_module().uninstall(layout, state, run=run)),
+        # 2026-10-29: QQ on a personal account (`violet qq install`; also an old NapCat); purge: the image too
+        ("QQ（SnowLuma）", lambda: _snowluma_module().uninstall(layout, state, run=run, remove_image=True)),
+        # 2026-10-31: her voice (`violet voice install` / the web button)
+        ("语音", lambda: _voice_module().uninstall(layout, state, run=run)),
+    )
+    for what, remove in parts:
+        try:
+            removed += remove()
+        except Exception as exc:            # noqa: BLE001 -- never let it stop the rest of the purge; but say it
+            problems.append(f"{what}（{exc.__class__.__name__}: {str(exc)[:120]}）")
     for rule in state.get("firewall_rules") or []:
         if rule.get("tool") not in ("ufw", "firewalld", "iptables", "ip6tables", "nftables"):
             continue
