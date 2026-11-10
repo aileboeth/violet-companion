@@ -474,8 +474,9 @@ def test_without_any_image_the_error_says_how_to_use_a_saved_copy(tmp_path):
     with pytest.raises(sl.SnowlumaError) as err:
         _install(sl, _layout(tmp_path), host)
     assert sl.IMAGE_FILE_DIR in str(err.value) and "--image-file /root/snowluma-v2.2.1.tar.gz" in str(err.value)
-    assert str(err.value).splitlines()[0].startswith("SnowLuma 的官方镜像已经下线")       # the way out first
-    pulled = [c[2] for c in host.streamed if c[:2] == ["docker", "pull"]]
+    assert str(err.value).splitlines()[0].startswith("这台服务器组装不了 QQ 容器")       # the way out first
+    assert any(line.startswith("组装：") for line in str(err.value).splitlines())         # then what was tried
+    pulled = [c[2] for c in host.streamed if c[:2] == ["docker", "pull"] and c[2].endswith(sl.IMAGE)]
     assert pulled[0] == "docker.m.daocloud.io/" + sl.IMAGE  # the mirror that still had it, first
 
 
@@ -515,3 +516,132 @@ def test_the_qq_command_takes_an_image_file(tmp_path, monkeypatch):
     assert seen["image_file"] == tmp_path / "x.tar.gz"
     out = vi.qq_command(vi.Options(root=tmp_path), "uninstall")
     assert "docker rmi img" in out["notes"][0]
+
+
+# ------------------------------------------------------------------------------------------------ built here (2026-11-10)
+# user: "用原本 SnowLuma 下载 QQ 的那个方法吧，这样哪里都可以下载了" -- Violet builds the container itself
+
+class BuildHost(OfflineHost):
+    """No image anywhere; Docker Hub has the base image; `docker build` works (or fails when told to)."""
+
+    def __init__(self, build_ok=True, buildx=True):
+        super().__init__()
+        self.have, self.build_ok, self.buildx, self.env = set(), build_ok, buildx, None
+
+    def run(self, cmd, **kw):
+        if cmd[:3] == ["docker", "image", "inspect"]:
+            ok = cmd[-1] in self.have
+            return SimpleNamespace(returncode=0 if ok else 1, stdout="sha256:abc" if ok else "", stderr="")
+        if cmd[:3] == ["docker", "buildx", "version"]:
+            return SimpleNamespace(returncode=0 if self.buildx else 1, stdout="", stderr="")
+        return super().run(cmd, **kw)
+
+    def stream(self, cmd, on_line, env):
+        from tools import violet_snowluma as sl
+        self.streamed.append(cmd)
+        if cmd[:2] == ["docker", "pull"] and cmd[2] == sl.BASE_IMAGE:
+            self.have.add(sl.BASE_IMAGE)
+            return 0, "Status: Downloaded"
+        if cmd[:2] == ["docker", "build"]:
+            self.env = env
+            for line in ("#5 [1/4] FROM node", "QQ: trying https://qqdl.gtimg.cn/x", "#9 [4/4] RUN setcap"):
+                on_line(line)
+            if self.build_ok:
+                self.have.add(sl.BUILT_IMAGE)
+                return 0, "naming to violet/snowluma"
+            return 1, "QQ 3.2.32_260812 could not be downloaded from any source"
+        return 1, "manifest unknown"
+
+
+def test_without_an_image_violet_builds_the_container_itself(tmp_path):
+    from tools import violet_snowluma as sl
+    host, steps, state = BuildHost(), [], {"user": None}
+    result = sl.install(_layout(tmp_path), state, port_free=lambda p, h: True, run=host.run, stream=host.stream,
+                        which=host.which, wait=0, check_desktop=lambda port: True, napcat_unit=tmp_path / "none",
+                        apt=lambda: "http://mirrors.ustc.edu.cn", machine=lambda: "x86_64",
+                        progress=lambda pct, step: steps.append((pct, step)))
+    build = next(c for c in host.streamed if c[:2] == ["docker", "build"])
+    assert "--progress=plain" in build and f"BASE_IMAGE={sl.BASE_IMAGE}" in build
+    assert "APT_MIRROR=http://mirrors.ustc.edu.cn" in build and build[-1] == str(sl.BUILD_DIR)
+    assert host.env["DOCKER_BUILDKIT"] == "1"
+    assert ["docker", "pull", sl.BASE_IMAGE] in host.streamed                        # only the base image is pulled
+    assert not any(c[:2] == ["docker", "pull"] and sl.IMAGE in c[2] for c in host.streamed)
+    run = next(c for c in host.ran if c[:2] == ["docker", "run"])
+    assert run[-1] == sl.BUILT_IMAGE and state["snowluma"]["image"] == sl.BUILT_IMAGE and state["snowluma"]["base_pulled"]
+    assert result["installed"] and "组装" in state["snowluma"]["source"]
+    assert any("第 4/4 步" in s for _, s in steps) and any(s.startswith("下载 QQ：") for _, s in steps)
+    # a reinstall uses the image it built (no second build)
+    before = len(host.streamed)
+    sl.install(_layout(tmp_path), state, port_free=lambda p, h: True, run=host.run, stream=host.stream, which=host.which,
+               wait=0, check_desktop=lambda port: True, napcat_unit=tmp_path / "none", machine=lambda: "x86_64")
+    assert not any(c[:2] == ["docker", "build"] for c in host.streamed[before:])
+    # a purge removes what Violet built and the base image it pulled
+    removed = sl.uninstall(_layout(tmp_path), dict(state), run=host.run, which=host.which, napcat_unit=tmp_path / "none",
+                           remove_image=True)
+    assert f"镜像 {sl.BUILT_IMAGE}" in removed and f"镜像 {sl.BASE_IMAGE}" in removed
+
+
+def test_a_failed_build_falls_back_to_the_old_image_and_says_why(tmp_path):
+    from tools import violet_snowluma as sl
+    host = BuildHost(build_ok=False, buildx=False)
+    with pytest.raises(sl.SnowlumaError) as err:
+        _install(sl, _layout(tmp_path), host, machine=lambda: "x86_64")
+    build = next(c for c in host.streamed if c[:2] == ["docker", "build"])
+    assert "--progress=plain" not in build and host.env["DOCKER_BUILDKIT"] == "0"   # an old Docker without buildx
+    text = str(err.value)
+    assert "组装：组装 QQ 容器失败" in text and "could not be downloaded" in text and "下载：" in text
+    assert any(c[:2] == ["docker", "pull"] and sl.IMAGE in c[2] for c in host.streamed)   # the old image was tried
+
+
+def test_no_build_on_arm_or_when_switched_off(tmp_path, monkeypatch):
+    from tools import violet_snowluma as sl
+    assert sl.build_blocked(lambda: "aarch64").startswith("只有 x64")
+    assert sl.build_blocked(lambda: "AMD64") is None
+    monkeypatch.setenv("VIOLET_QQ_BUILD", "0")
+    assert "VIOLET_QQ_BUILD" in sl.build_blocked(lambda: "x86_64")
+    host = BuildHost()
+    with pytest.raises(sl.SnowlumaError, match="设置里关了组装"):
+        _install(sl, _layout(tmp_path), host, machine=lambda: "x86_64")
+    assert not any(c[:2] == ["docker", "build"] for c in host.streamed)
+
+
+def test_the_fastest_package_source_is_used():
+    from tools import violet_snowluma as sl
+    # the user's server: deb.debian.org 64 KB/s, USTC 4.7 MB/s, Aliyun 1.1 MB/s
+    measured = {"": 63847, "http://mirrors.ustc.edu.cn": 4758532, "http://mirrors.aliyun.com": 1086757}
+    assert sl.apt_mirror(speed=lambda base: measured[base]) == "http://mirrors.ustc.edu.cn"
+    assert sl.apt_mirror(speed=lambda base: {"": 9e6}.get(base, 1e6)) == ""              # abroad: Debian itself
+    assert sl.apt_mirror(speed=lambda base: 0.0) == ""                                   # nothing answered: as it is
+
+
+def test_official_images_are_under_library_on_a_mirror():
+    from tools import violet_snowluma as sl
+    assert sl.mirror_ref("docker.m.daocloud.io/", "node:24.22.1-bookworm-slim") == \
+        "docker.m.daocloud.io/library/node:24.22.1-bookworm-slim"
+    assert sl.mirror_ref("", "node:24.22.1-bookworm-slim") == "node:24.22.1-bookworm-slim"
+    assert sl.mirror_ref("docker.1ms.run/", sl.IMAGE) == "docker.1ms.run/" + sl.IMAGE
+
+
+def test_the_build_folder_holds_what_the_dockerfile_needs():
+    import re
+    import tarfile
+    from tools import violet_snowluma as sl
+    folder = sl.BUILD_DIR
+    docker = (folder / "Dockerfile").read_text(encoding="utf-8")
+    copied = re.search(r"^COPY (.+) /tmp/violet/$", docker, re.M).group(1).split()
+    assert all((folder / name).is_file() for name in copied)
+    sources = re.search(r'ARG QQ_SOURCES="([^"]+)"', docker).group(1).split()
+    assert sources[0].startswith("https://qqdl.gtimg.cn/") and "Rodert/qq-versions" in sources[1]   # Tencent first
+    assert "QQ_AMD64_SHA256=d085dd89397225061eb9f194308f688129818ed445777e97a4a0a16e13d7b0e8" in docker
+    assert "sha256sum -c" in docker and f"ARG BASE_IMAGE={sl.BASE_IMAGE}" in docker
+    with tarfile.open(folder / "snowluma-runtime-2.2.1-linux-x64.tar.gz") as tar:
+        names = {n.lstrip("./") for n in tar.getnames()}
+    assert {"index.mjs", "native/snowluma-linux-x64.node", "native/snowluma-linux-x64.so",
+            "native/websocket-linux-x64.node"} <= names
+    assert "MIT License" in (folder / "LICENSE.SnowLuma.txt").read_text(encoding="utf-8")
+    for script in ("start.sh", "supervisord.conf", "Dockerfile"):              # Linux files: no BOM, no CRLF
+        raw = (folder / script).read_bytes()
+        assert not raw.startswith(b"\xef\xbb\xbf") and b"\r" not in raw
+    start = (folder / "start.sh").read_text(encoding="utf-8")
+    assert "qqpatch.gtimg.cn" in start and "x11vnc" in start and start.startswith("#!/usr/bin/env bash")
+

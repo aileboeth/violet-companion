@@ -21,11 +21,15 @@ A NapCat that Violet 0.7.8 / 0.7.9 installed is removed first (remove_napcat). u
 folder, the account and the export; `uninstall --purge` of Violet calls it and removes the image too. Standard library
 only; run as root.
 
-2026-11-10: SnowLuma's repository and its Docker Hub image went offline (only the DaoCloud mirror still had the image).
-So the image is never thrown away by `violet qq uninstall` (it could not be downloaded again), an image already on
-this server is used as it is (no download), and a saved copy can be loaded instead of downloading:
-`violet qq install --image-file /root/snowluma-v2.2.1.tar.gz` (made with `docker save … | gzip`), or such a file put
-into <root>/snowluma-image/ (looked for by itself, also by the channels page's install button).
+2026-11-10: SnowLuma's repository and its Docker Hub image went offline (only the DaoCloud mirror still had the image,
+for servers in China). So the image is never thrown away by `violet qq uninstall`, and it comes from, in this order:
+  1. an image already on this server (SnowLuma's old one, or Violet's own build) -- no download
+  2. a saved copy: `violet qq install --image-file /root/snowluma-v2.2.1.tar.gz` (made with `docker save … | gzip`),
+     or such a file in <root>/snowluma-image/ (looked for by itself, also by the channels page's install button)
+  3. built here from deploy/snowluma/ (Violet's Dockerfile, start script and the SnowLuma 2.2.1 program, MIT): only
+     the base image (Docker Hub or a mirror), Debian packages (deb.debian.org or a mirror in China) and QQ 3.2.32
+     (Tencent's address, else the Rodert/qq-versions archive; SHA-256 checked) are downloaded -- works anywhere
+  4. SnowLuma's old image from a mirror
 """
 
 from __future__ import annotations
@@ -33,6 +37,7 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
 import secrets
 import shutil
 import socket
@@ -49,6 +54,13 @@ MIRRORS = ("docker.m.daocloud.io/", "", "docker.1ms.run/", "docker.xuanyuan.me/"
            "hub.rat.dev/")
 IMAGE_FILE_DIR = "snowluma-image"           # <root>/snowluma-image/*.tar(.gz): a saved copy of the image
 IMAGE_FILE_SUFFIXES = (".tar", ".tar.gz", ".tgz")
+# 2026-11-10 (user: "用原本 SnowLuma 下载 QQ 的那个方法吧，这样哪里都可以下载了"): the container is built here from
+# deploy/snowluma/ -- only the base image, Debian packages and QQ itself are downloaded (QQ from Tencent, else the
+# Rodert/qq-versions archive, SHA-256 checked in the Dockerfile)
+BUILT_IMAGE = "violet/snowluma:2.2.1-qq3.2.32"
+BASE_IMAGE = "node:24.22.1-bookworm-slim"
+BUILD_DIR = Path(__file__).resolve().parent.parent / "deploy" / "snowluma"
+APT_MIRRORS = ("", "http://mirrors.ustc.edu.cn", "http://mirrors.aliyun.com")      # "" = deb.debian.org itself
 IMAGE_MB = 740
 STALL_SECONDS = 240                 # no new bytes for 4 minutes: the source is stuck
 SLOW_AFTER, SLOW_BPS = 150, 300 * 1024      # after 2.5 minutes under 300 KB/s: try another (not in the last round)
@@ -335,6 +347,13 @@ def stream_watched(cmd: list[str], on_line: Callable[[str], None], env: dict | N
     return proc.wait(), "\n".join(tail), why
 
 
+def mirror_ref(prefix: str, image: str) -> str:
+    """The image's name on a source: an official image (no "user/") is library/<name> on a mirror."""
+    if prefix and "/" not in image.split(":", 1)[0]:
+        return prefix + "library/" + image
+    return prefix + image
+
+
 def pull(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], on_line: Callable[[str], None],
          env: dict, image: str = IMAGE, *, check: Callable[[str], bool] | None = None,
          watched: Callable[..., tuple[int, str, str]] | None = None) -> str:
@@ -346,7 +365,7 @@ def pull(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], on_lin
     problems = []
     for round_no in range(PULL_ROUNDS if watched else 1):
         for i, prefix in enumerate(sources):
-            cmd = ["docker", "pull", prefix + image]
+            cmd = ["docker", "pull", mirror_ref(prefix, image)]
             if watched is not None:
                 last = round_no == PULL_ROUNDS - 1 or (round_no > 0 and i == len(sources) - 1)
                 code, tail, why = watched(cmd, prefix, may_leave_slow=not last and len(sources) > 1)
@@ -354,14 +373,14 @@ def pull(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], on_lin
                 (code, tail), why = stream(cmd, on_line, env), ""
             if code == 0:
                 if prefix:
-                    run(["docker", "tag", prefix + image, image], capture_output=True)
-                    run(["docker", "rmi", prefix + image], capture_output=True)       # only the extra name
+                    run(["docker", "tag", mirror_ref(prefix, image), image], capture_output=True)
+                    run(["docker", "rmi", mirror_ref(prefix, image)], capture_output=True)       # only the extra name
                 return (prefix.rstrip("/") or "docker.io")
             reason = {"stalled": f"{STALL_SECONDS // 60} 分钟没有下载进展，换下一个", "slow": "太慢，换下一个"}.get(why)
             # 2026-11-10: a mirror may answer with a whole web page -- one short line per source
             problems.append(f"{_name(prefix)}：{(reason or _last(tail, 2)).replace(chr(10), ' ')[:160]}")
     skipped = [_name(p) for p in MIRRORS if p not in sources]
-    raise SnowlumaError("下载 SnowLuma 镜像失败：\n" + "\n".join(problems[-8:]) +
+    raise SnowlumaError(("下载 SnowLuma 镜像失败：\n" if image == IMAGE else f"下载镜像 {image} 失败：\n") + "\n".join(problems[-8:]) +
                         (f"\n连不上、没有试：{'、'.join(skipped)}" if skipped else ""))
 
 
@@ -388,14 +407,93 @@ def find_image_file(layout: Any, explicit: str | os.PathLike[str] | None = None)
 
 
 def load_image(path: Path, run: Callable[..., Any], stream: Callable[..., tuple[int, str]],
-               on_line: Callable[[str], None], env: dict, image: str = IMAGE) -> str:
-    """`docker load` of a saved copy (gzip or plain tar); it must hold the image Violet runs."""
+               on_line: Callable[[str], None], env: dict) -> tuple[str, str]:
+    """`docker load` of a saved copy (gzip or plain tar); it must hold SnowLuma's old image or Violet's own build.
+    Returns (image, where it came from)."""
     code, tail = stream(["docker", "load", "-i", str(path)], on_line, env)
     if code != 0:
         raise SnowlumaError(f"镜像文件 {path.name} 载入失败：" + _last(tail, 4))
-    if not image_present(run, image):
-        raise SnowlumaError(f"镜像文件 {path.name} 里没有 {image}")
-    return f"镜像文件 {path.name}"
+    for image in (IMAGE, BUILT_IMAGE):
+        if image_present(run, image):
+            return image, f"镜像文件 {path.name}"
+    raise SnowlumaError(f"镜像文件 {path.name} 里没有 {IMAGE}，也没有 {BUILT_IMAGE}")
+
+
+# ------------------------------------------------------------------------------------------------ building it here
+
+def build_blocked(machine: Callable[[], str] | None = None) -> str | None:
+    """None when this server can build the container (deploy/snowluma/ is there, x64), else why not."""
+    import platform
+    if os.environ.get("VIOLET_QQ_BUILD", "1").strip().lower() in ("0", "false", "no", "off"):
+        return "设置里关了组装（VIOLET_QQ_BUILD=0）"
+    if not (BUILD_DIR / "Dockerfile").is_file():
+        return "缺少组装文件 deploy/snowluma/"
+    if (machine or platform.machine)().lower() not in ("x86_64", "amd64"):
+        return "只有 x64（amd64）服务器能组装（SnowLuma 这一版只有 x64 的程序）"
+    return None
+
+
+def apt_speed(base: str, size: int = 1024 * 1024, timeout: float = 15.0,
+              clock: Callable[[], float] = time.monotonic) -> float:
+    """Bytes a second for the first MB of a large index file of this Debian source (0 = it did not answer)."""
+    url = (base or "http://deb.debian.org") + "/debian/dists/bookworm/main/binary-amd64/Packages.xz"
+    req = urllib.request.Request(url, headers={"User-Agent": "violet-installer", "Range": f"bytes=0-{size - 1}"})
+    start, got = clock(), 0
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:                       # noqa: S310 -- fixed URLs
+            while got < size and clock() - start < timeout:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                got += len(chunk)
+    except Exception:                                                                   # noqa: BLE001
+        return 0.0
+    return got / max(0.001, clock() - start)
+
+
+def apt_mirror(speed: Callable[[str], float] = apt_speed) -> str:
+    """The fastest Debian package source ("" = deb.debian.org). 2026-11-10, the user's server in China: deb.debian.org
+    answered at once but sent 64 KB/s (the build crawled for 9 minutes over 45 packages), USTC 4.7 MB/s -- so the
+    speed of a real download decides, not whether it answers."""
+    speeds = {base: speed(base) for base in APT_MIRRORS}
+    best = max(APT_MIRRORS, key=lambda b: speeds[b])
+    return best if speeds[best] > 0 else ""
+
+
+BUILD_STEP_RE = re.compile(r"\[\s*(\d+)/(\d+)\]")
+
+
+def build_image(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], env: dict,
+                progress: Progress | None, *, pull_base: Callable[[], str], mirror: Callable[[], str]) -> str:
+    """Violet's own container (deploy/snowluma/Dockerfile) built here: the base image (pull_base: Docker Hub or a
+    mirror), then `docker build` -- Debian packages, QQ (Tencent, else qq-versions; SHA-256 checked), SnowLuma.
+    Returns where the image came from; raises SnowlumaError."""
+    _say(progress, 22, f"组装 QQ 容器：准备基础镜像 {BASE_IMAGE}")
+    if not image_present(run, BASE_IMAGE):
+        pull_base()
+    apt = mirror()
+    _say(progress, 30, "组装 QQ 容器：安装系统软件、下载 QQ（官方地址优先）" + (f"，软件源 {apt}" if apt else ""))
+    buildkit = getattr(run(["docker", "buildx", "version"], capture_output=True, text=True), "returncode", 1) == 0
+    cmd = ["docker", "build", *(["--progress=plain"] if buildkit else []), "--build-arg", f"BASE_IMAGE={BASE_IMAGE}",
+           *(["--build-arg", f"APT_MIRROR={apt}"] if apt else []), "-t", BUILT_IMAGE, str(BUILD_DIR)]
+    shown = [30]
+
+    def on_line(line: str) -> None:
+        text = line.strip()
+        step = BUILD_STEP_RE.search(text)
+        if step and int(step.group(2)):
+            percent = 30 + int(54 * int(step.group(1)) / int(step.group(2)))
+            if percent > shown[0]:
+                shown[0] = percent
+                _say(progress, percent, f"组装 QQ 容器：第 {step.group(1)}/{step.group(2)} 步")
+        elif "QQ: trying" in text:
+            _say(progress, shown[0], "下载 QQ：" + text.split("QQ: trying", 1)[1].strip()[:90])
+    code, tail = stream(cmd, on_line, {**env, "DOCKER_BUILDKIT": "1" if buildkit else "0"})
+    if code != 0:
+        raise SnowlumaError("组装 QQ 容器失败：" + _last(tail, 8).replace("\n", " / ")[:600])
+    if not image_present(run, BUILT_IMAGE):
+        raise SnowlumaError("组装 QQ 容器结束了，但没有得到镜像")
+    return "在这台服务器上组装（QQ 3.2.32 + SnowLuma 2.2.1）"
 
 
 def container_label(run: Callable[..., Any]) -> str | None:
@@ -435,10 +533,12 @@ def desktop_up(port: int, timeout: float = 3.0) -> bool:
 # ------------------------------------------------------------------------------------------------ install
 
 def _download(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], on_line: Callable[[str], None],
-              env: dict, progress: Progress | None, start_percent: int, layout: Any) -> str:
-    """The image from Docker Hub or a mirror (0.7.56: real MB in the progress; a source that hangs or crawls is
-    left). 2026-11-10: when no source has it, the error says how to use a saved copy instead."""
-    _say(progress, max(start_percent, 20), f"下载 SnowLuma 镜像（含 Linux QQ，约 {IMAGE_MB} MB）")
+              env: dict, progress: Progress | None, start_percent: int, image: str = IMAGE,
+              size_mb: int = IMAGE_MB) -> str:
+    """An image from Docker Hub or a mirror (0.7.56: real MB in the progress; a source that hangs or crawls is
+    left)."""
+    what = "SnowLuma 镜像" if image == IMAGE else f"基础镜像 {image}"
+    _say(progress, max(start_percent, 20), f"下载{what}（约 {size_mb} MB）")
     watched = None
     if stream is _stream:                            # the real server (tests give their own stream)
         measure = disk_used(run)
@@ -447,20 +547,22 @@ def _download(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], o
         def watched(cmd, prefix, may_leave_slow):
             def report(got, bps):                    # 0.7.56: real MB instead of "one step per log line, up to 84 %"
                 mb = (total[0] + got) / 1048576
-                _say(progress, 20 + min(64, int(mb / IMAGE_MB * 64)),
-                     f"下载 SnowLuma 镜像：已下 {mb:.0f} / 约 {IMAGE_MB} MB · 每秒 {bps / 1024:.0f} KB · 来自 {_name(prefix)}")
+                _say(progress, 20 + min(64, int(mb / size_mb * 64)) if image == IMAGE else 22,
+                     f"下载{what}：已下 {mb:.0f} / 约 {size_mb} MB · 每秒 {bps / 1024:.0f} KB · 来自 {_name(prefix)}")
             start = measure()
             try:
                 return stream_watched(cmd, lambda line: None, env, measure=measure, report=report,
                                       may_leave_slow=may_leave_slow)
             finally:
                 total[0] += max(0, measure() - start)
-    try:
-        return pull(run, stream, on_line, env, check=reachable if watched else None, watched=watched)
-    except SnowlumaError as exc:                     # the way out first: a long list of sources may be cut on the page
-        raise SnowlumaError(f"SnowLuma 的官方镜像已经下线，这台服务器下载不到。手上有备份的镜像文件（docker save 导出的 .tar.gz）时，"
-                            f"把它放进 {layout.root / IMAGE_FILE_DIR}/ 再安装，或者用 "
-                            f"/opt/violet/violet qq install --image-file /root/snowluma-v2.2.1.tar.gz\n{exc}") from None
+    return pull(run, stream, on_line, env, image=image, check=reachable if watched else None, watched=watched)
+
+
+def _no_image(layout: Any, problems: list[str]) -> SnowlumaError:
+    """Nothing worked: the way out first (a long list of sources may be cut on the page), then what was tried."""
+    return SnowlumaError(f"这台服务器组装不了 QQ 容器，也下载不到 SnowLuma 的旧镜像（官方已经下线）。手上有备份的镜像文件"
+                         f"（docker save 导出的 .tar.gz）时，把它放进 {layout.root / IMAGE_FILE_DIR}/ 再安装，或者用 "
+                         f"/opt/violet/violet qq install --image-file /root/snowluma-v2.2.1.tar.gz\n" + "\n".join(problems))
 
 
 def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str], bool],
@@ -468,10 +570,12 @@ def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str
             stream: Callable[..., tuple[int, str]] = _stream, progress: Progress | None = None,
             wait: float = START_WAIT, rng: random.Random | None = None, which: Callable[[str], Any] = shutil.which,
             check_desktop: Callable[[int], bool] | None = None, napcat_unit: Path = NAPCAT_UNIT,
-            image_file: str | os.PathLike[str] | None = None) -> dict[str, Any]:
+            image_file: str | os.PathLike[str] | None = None, apt: Callable[[], str] | None = None,
+            machine: Callable[[], str] | None = None) -> dict[str, Any]:
     """Install (or reinstall: keeps ports, tokens and the QQ login) SnowLuma and start it. Updates `state`.
-    2026-11-10: the image on this server is used as it is; else a saved copy (image_file / <root>/snowluma-image/);
-    else it is downloaded."""
+    2026-11-10, where the image comes from, in this order: one already on this server (SnowLuma's old image or
+    Violet's own build); a saved copy (image_file / <root>/snowluma-image/); built here (deploy/snowluma/: only the
+    base image, Debian packages and QQ are downloaded); SnowLuma's old image from a mirror."""
     base = folder(layout)
     previous = state.get("snowluma") or {}
     notes: list[str] = []
@@ -500,14 +604,38 @@ def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str
     if label == "":
         raise SnowlumaError(f"这台服务器上已经有一个不是 Violet 建的容器 {CONTAINER}，没有改动")
     saved = find_image_file(layout, image_file)
-    if image_present(run):
-        source = "本机已有镜像"
-        _say(progress, 84, "这台服务器上已经有 SnowLuma 镜像，不用下载")
-    elif saved is not None:
+    image, source = None, ""
+    base_pulled = bool(previous.get("base_pulled"))
+    for have in (IMAGE, BUILT_IMAGE):
+        if image_present(run, have):
+            image, source = have, "本机已有镜像"
+            _say(progress, 84, "这台服务器上已经有 QQ 容器的镜像，不用下载")
+            break
+    if image is None and saved is not None:
         _say(progress, max(seen[0], 20), f"载入镜像文件 {saved.name}（不用下载）")
-        source = load_image(saved, run, stream, on_line, env)
-    else:
-        source = _download(run, stream, on_line, env, progress, seen[0], layout)
+        image, source = load_image(saved, run, stream, on_line, env)
+    problems: list[str] = []
+    if image is None:
+        blocked = build_blocked(machine)
+        if blocked is None:
+            base_pulled = not image_present(run, BASE_IMAGE)        # then a purge removes it again
+            try:
+                source = build_image(run, stream, env, progress,
+                                     pull_base=lambda: _download(run, stream, on_line, env, progress, seen[0],
+                                                                 image=BASE_IMAGE, size_mb=80),
+                                     mirror=apt or (apt_mirror if stream is _stream else (lambda: "")))
+                image = BUILT_IMAGE
+            except SnowlumaError as exc:
+                problems.append(f"组装：{str(exc)[:700]}")
+                notes.append("在这台服务器上组装没有成功，改为下载 SnowLuma 的旧镜像")
+        else:
+            problems.append(f"组装：{blocked}")
+    if image is None:
+        try:
+            source = _download(run, stream, on_line, env, progress, seen[0])
+            image = IMAGE
+        except SnowlumaError as exc:
+            raise _no_image(layout, problems + [f"下载：{exc}"]) from None
 
     _say(progress, 86, "写配置（只监听本机）")
     taken: set[int] = set()
@@ -540,7 +668,7 @@ def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str
     if label is not None:
         run(["docker", "rm", "-f", CONTAINER], capture_output=True)
     done = run(run_args(base, ws_port, vnc_port, vnc_password, uid if uid is not None else 1000,
-                        gid if gid is not None else 1000), capture_output=True, text=True)
+                        gid if gid is not None else 1000, image=image), capture_output=True, text=True)
     if getattr(done, "returncode", 0) != 0:
         raise SnowlumaError("QQ 容器启动失败：" + _last(getattr(done, "stderr", "") or "", 6) +
                             f"\n查看原因：docker logs {CONTAINER}")
@@ -554,7 +682,8 @@ def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str
     if not ok:
         notes.append(f"QQ {wait:.0f} 秒内还没有启动完，稍后在渠道页刷新；原因可以看 docker logs {CONTAINER}")
     state["snowluma"] = {"managed": True, "ws_port": ws_port, "vnc_port": vnc_port, "ws_token": ws_token,
-                         "vnc_password": vnc_password, "image": IMAGE, "source": source,
+                         "vnc_password": vnc_password, "image": image, "source": source,
+                         "base_pulled": base_pulled and image == BUILT_IMAGE,
                          "installed_at": int(time.time())}
     _say(progress, 98, "交给 Violet")
     export(layout, state)
@@ -592,9 +721,13 @@ def uninstall(layout: Any, state: dict[str, Any], *, run: Callable[..., Any] = s
             run(["docker", "rm", "-f", CONTAINER], capture_output=True)
             removed.append(f"容器 {CONTAINER}")
         if remove_image and (label is None or label == LABEL_VALUE):
-            image = (state.get("snowluma") or {}).get("image") or IMAGE
-            if run(["docker", "rmi", image], capture_output=True).returncode == 0:
-                removed.append(f"镜像 {image}")
+            info = state.get("snowluma") or {}
+            images = [info.get("image") or IMAGE]
+            images += [BUILT_IMAGE] if BUILT_IMAGE not in images else []
+            images += [BASE_IMAGE] if info.get("base_pulled") else []          # only when Violet pulled it
+            for image in images:
+                if run(["docker", "rmi", image], capture_output=True).returncode == 0:
+                    removed.append(f"镜像 {image}")
     base = folder(layout)
     if base.is_dir() and not base.is_symlink():
         shutil.rmtree(base, ignore_errors=True)

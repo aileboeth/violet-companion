@@ -2456,9 +2456,10 @@ def qq_command(opts: Options, action: str, run: Callable[..., Any] = subprocess.
                                  **({"image_file": image_file} if image_file else {}))
             save_state(layout, state)
         elif action == "uninstall":
+            image = (state.get("snowluma") or {}).get("image") or mod.IMAGE
             result = {"ok": True, "removed": mod.uninstall(layout, state, run=run),
-                      "notes": [f"SnowLuma 的镜像 {mod.IMAGE} 留在这台服务器上（官方已经下线，删了就下载不回来了）。"
-                                f"确实不要了再删：docker rmi {mod.IMAGE}"]}
+                      "notes": [f"QQ 容器的镜像 {image} 留在这台服务器上（SnowLuma 官方已经下线，留着重装更快）。"
+                                f"确实不要了再删：docker rmi {image}"]}
             save_state(layout, state)
         elif action == "restart":
             if progress is not None:

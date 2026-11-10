@@ -61,6 +61,8 @@ venv/
 
 # --- archives / editor -------------------------------------------------------
 *.tar.gz
+# 2026-11-10: the SnowLuma program Violet builds the QQ container from (violet/deploy/snowluma/README.md)
+!violet/deploy/snowluma/snowluma-runtime-*.tar.gz
 *.zip
 *.bak
 .idea/
