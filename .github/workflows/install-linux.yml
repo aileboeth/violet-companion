@@ -43,9 +43,11 @@ jobs:
           set -o pipefail
           sudo VIOLET_E2E_STRICT_FIREWALL=1 bash "violet/deploy/linux-e2e/install_e2e.sh" 2>&1 | tee e2e.log
       - name: report the failure
+        # 2026-11-10: an annotation is cut after ~4 KB (long journal lines hid the FAIL line): the FAIL line first, then
+        # the last lines, each at most 300 characters
         if: failure()
         run: |
-          tail -n 60 e2e.log | python3 -c "import sys; t=sys.stdin.read(); print('::error title=install_e2e (${{ matrix.os }})::' + t.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))"
+          { grep -E '^FAIL' e2e.log || true; echo '----'; tail -n 40 e2e.log | cut -c1-300; } | python3 -c "import sys; t=sys.stdin.read(); print('::error title=install_e2e (${{ matrix.os }})::' + t.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))"
       - name: report what passed
         if: success()
         run: |
@@ -61,4 +63,4 @@ jobs:
       - name: report the failure
         if: failure()
         run: |
-          tail -n 60 e2e.log | python3 -c "import sys; t=sys.stdin.read(); print('::error title=install_e2e (containers)::' + t.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))"
+          { grep -E '^FAIL' e2e.log || true; echo '----'; tail -n 40 e2e.log | cut -c1-300; } | python3 -c "import sys; t=sys.stdin.read(); print('::error title=install_e2e (containers)::' + t.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A'))"
