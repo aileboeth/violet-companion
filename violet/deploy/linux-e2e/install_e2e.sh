@@ -406,8 +406,13 @@ pass "broken upgrade rolled back automatically (its backup kept)"
 [ "$MODE" != "systemd" ] || [ ! -e /etc/systemd/system/violet.service ] || fail "unit file left behind"
 pass "uninstall kept data"
 # the one-line complete removal from the README
-curl -fsSL "http://127.0.0.1:$PORT_HTTP/install.sh" | bash -s -- uninstall --root "$ROOT" --purge --yes --json \
+PURGED="$(curl -fsSL "http://127.0.0.1:$PORT_HTTP/install.sh" | bash -s -- uninstall --root "$ROOT" --purge --yes --json)" \
   || fail "uninstall --purge"
+if [ -d "$ROOT/snowluma-image" ]; then        # 2026-11-10 (4f): the saved image copy is the owner's file -- kept, said so
+  [ "$(ls -A "$ROOT")" = "snowluma-image" ] || { ls -la "$ROOT"; fail "$ROOT: more than the saved image copy left behind"; }
+  echo "$PURGED" | json 'd["note"]' | grep -q "SnowLuma 镜像备份" || fail "the purge did not say it kept the saved image copy"
+  rm -rf "$ROOT"
+fi
 [ ! -e "$ROOT" ] || { ls -la "$ROOT"; fail "$ROOT left behind"; }
 if [ "$STRICT" = "1" ]; then
   ! iptables -S | grep -q -- "--comment violet" || { iptables -S | grep violet; fail "firewall rules left behind"; }

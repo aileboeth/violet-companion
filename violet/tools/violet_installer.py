@@ -2185,6 +2185,8 @@ def uninstall(opts: Options, purge: bool = False) -> dict[str, Any]:
     note = ("配置、数据和备份都保留了；彻底删除用 uninstall --purge --yes" if kept else
             "已全部删除" if not leftovers else f"已删除 Violet 的文件；{layout.root} 里还有不是 Violet 的文件，没有动："
             + "、".join(leftovers))
+    if "snowluma-image" in leftovers:           # 2026-11-10: the owner's saved copy of SnowLuma's (offline) image
+        note += f"（{layout.root / 'snowluma-image'} 是你放的 SnowLuma 镜像备份，重新安装 Violet 后装 QQ 会自动用它）"
     return {"ok": True, "removed": removed, "kept": kept, "leftovers": leftovers, "note": note}
 
 
