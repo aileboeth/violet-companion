@@ -971,7 +971,7 @@ function filterSettings(text) {
   if (!q) { showSettingsCategory(setCategory); return; }
   let hits = 0;
   document.querySelectorAll("#set-p-general .set-group").forEach((g) => {
-    if (g.id === "set-g-permissions") { g.hidden = !g.textContent.toLowerCase().includes(q); hits += g.hidden ? 0 : 1; return; }
+    if (g.id === "set-g-permissions" || g.id === "set-g-language") { g.hidden = !g.textContent.toLowerCase().includes(q); hits += g.hidden ? 0 : 1; return; }
     let any = false;
     g.querySelectorAll(".set-more").forEach((m) => { m.hidden = true; });
     g.querySelectorAll(".set-row").forEach((r) => { const ok = r.textContent.toLowerCase().includes(q); r.hidden = !ok; any = any || ok; });
@@ -1054,7 +1054,7 @@ loaders.settings = async () => {
       box.append(group);
       shown.push([d.groups[g], "set-g-" + g]);
     }
-    settingsCategories([["她能自己做的事", "set-g-permissions"], ...shown]);
+    settingsCategories([["她能自己做的事", "set-g-permissions"], ...shown, ["界面语言", "set-g-language"]]);
     renderPermissions();
     await Promise.all(Object.keys(SET_PLATFORMS).map((key) =>
       renderChannelSettings(d, key, order.filter((g) => channelOf[g] === key)).catch((e) => $("#set-p-" + key).replaceChildren(h("p", { class: "err", text: e.message })))));

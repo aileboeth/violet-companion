@@ -365,7 +365,8 @@ def _mock_class():
                     "silent_reason": "mock: 剧本把这一句标为结束后的补充", "active_task_id": None,
                     "task": {"exists": False, "name": None, "description": None}}), model)
             if agent == "ChatAgent":
-                system = "\n".join(str(m.get("content")) for m in messages if m.get("role") == "system")
+                from ai.agents.chat_agent import notes_and_words
+                system = notes_and_words(messages)[0]            # 0.7.63: also the background of the last message
                 due = re.search(r"要提醒的事：(.+?)。", system)
                 if due:
                     return self._completion(f"（模拟提醒）到点啦，{due.group(1)}", model)

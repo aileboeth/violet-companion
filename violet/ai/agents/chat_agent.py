@@ -107,6 +107,121 @@ def merge_runs(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
+# ----------------------------------------------------------------------------------------------------------------
+# 0.7.63 (user, 2026-11-10: "不到半个小时又出现左脑和右脑互搏……是不是内置的提示词太多了……不要再打补丁了，重构吧").
+# Replaying the user's export showed what the model really received for one message: the fixed rules as 5-9 system
+# messages, the chat, and then this turn's notes (how long you know each other, her life, the time, the phone, mood,
+# style notes) as 5-7 SEPARATE messages -- which ai/model_params turns into *user* messages on a relay that hoists
+# system messages -- and only then the owner's words. The "user" spoke seven times in a row, six of them not the
+# user; a reply that mixed up who had just said what (she claimed the owner's words as hers) came out of such a turn.
+# One layout now, for the chat and for her proactive messages:
+#   1. ONE system message: rules, persona, relationship, abilities (never changes during a chat -> prefix cache)
+#   2. the chat as it happened, strictly user / assistant in turn; a time gap is a line inside the next user turn
+#   3. ONE last user message: a clearly fenced background block (everything of this moment), then the owner's words
+# VIOLET_PROMPT_LAYOUT=classic: the old layout (kept to compare the two on a real model, tools/chat_ab.py).
+BACKGROUND_OPEN = "〔背景｜系统给你看的，只有你看得到；不是对方说的话，不要念出来，也不要回应这一段〕"
+BACKGROUND_CLOSE = "〔背景结束〕"
+SAID_NOW = "对方刚发来的消息（只回应这个）："
+RECORD_NOTE = "〔记录｜不是对方说的话〕"
+# the texts were written over many rounds and name the two of you in several ways; said once, in the fixed part
+WHO_IS_WHO = ("【谁是谁】这里所有的说明里，“你”就是你自己；“对方”“用户”“主人”指的都是同一个人：正在和你聊天的这个人。"
+              "下面的聊天里，user 的话是对方说的，assistant 的话是你自己说过的——谁说了什么、谁答应了什么，以聊天原文为准，"
+              "回复前先看清这句话是谁说的。最后一条消息里〔背景〕部分是系统给你的资料，不是对方的话。")
+PROACTIVE_REQUEST = (
+    "现在对方没有发新消息：这一次是你主动给对方发消息（系统触发的写作请求，不是对方说的话）。"
+    "按上面的主动触达决策、背景和你们最近的聊天，直接写出要发给对方的话。"
+    "每条微信消息单独占一行，不要输出 JSON，不要输出 Markdown。"
+    "禁止使用这些主动陪伴套话：我在这儿陪着你、我一直在、我在这、想聊会儿吗、要不要和我聊聊、我会陪着你。"
+    "主动消息要像你们平时那样随手发一条（按“你自己”和“你们的关系”），短、具体、自然；通常 1 到 2 条，"
+    "不要为了显得温柔而加陪伴服务式收尾。"
+    "不一定要提问：只说你想说的那件事、一句想念或一句撒娇也很好，不用每次都问对方今天怎么样、吃了吗、在干嘛。")
+
+
+# user, 2026-11-10: "输入的什么语言回答什么语言吧，中间夹杂几句外语也比较正常" -- no setting, one rule
+REPLY_LANGUAGE = ("【语言】对方这句话主要用什么语言，你就用什么语言回。对方在一句话里夹几个外语词或一两句外语很正常，"
+                  "不用因此换语言，也不用特意指出；对方整句都换成另一种语言了，你再跟着换。")
+
+
+def single_layout() -> bool:
+    from ai.settings import env_str
+    return env_str("VIOLET_PROMPT_LAYOUT", "single").strip().lower() != "classic"
+
+
+def compose_single(stable: list[dict[str, Any]], history: list[dict[str, Any]], notes: list[dict[str, Any]],
+                   request: str, is_proactive: bool = False) -> list[dict[str, Any]]:
+    """The three-part layout described above. ``stable``: the fixed system texts; ``history``: ContextEngine's turns
+    (role system = a time / channel mark); ``notes``: this turn's system texts; ``request``: the owner's message, or
+    the instruction to write a proactive message. Code-written text is read for the platform (微信 -> QQ …); the
+    chat and the owner's words are never touched."""
+    from ai.channels.context import adapt_for_channel, channel_note, current
+    context = current()
+    where = channel_note(context)
+
+    def fix(text: Any) -> str:
+        text = text if isinstance(text, str) else str(text or "")
+        return adapt_for_channel(text, context) if where is not None else text
+
+    head = [fix(m.get("content")).strip() for m in stable]
+    if where:
+        head.insert(1 if head else 0, where)
+    head.append(WHO_IS_WHO)
+    head.append(REPLY_LANGUAGE)
+    out: list[dict[str, Any]] = [{"role": "system", "content": "\n\n".join(t for t in head if t), "_cache_break": True}]
+
+    def add(role: str, text: str) -> None:
+        if len(out) > 1 and out[-1]["role"] == role:
+            out[-1] = {**out[-1], "content": f"{out[-1]['content']}\n{text}"}
+        else:
+            out.append({"role": role, "content": text})
+
+    marks: list[str] = []
+    for turn in history:
+        role, text = turn.get("role"), turn.get("content")
+        if not isinstance(text, str) or not text:
+            continue
+        if role == "system":
+            marks.append(fix(text))
+            continue
+        if marks:                                    # a gap in the chat: said in a user turn, never as her words
+            add("user", RECORD_NOTE + "".join(marks))
+            marks = []
+        add("user" if role == "user" else "assistant", text)
+    if len(out) > 1:
+        out[-1] = {**out[-1], "_cache_break": True}
+
+    background = marks + [fix(m.get("content")).strip() for m in notes if m.get("content")]
+    background = [t for t in background if t]
+    request = fix(request) if is_proactive else request
+    if background:
+        last = "\n\n".join([BACKGROUND_OPEN, *background, BACKGROUND_CLOSE]) + "\n\n" + (
+            request if is_proactive else f"{SAID_NOW}\n{request}")
+    else:
+        last = request
+    if len(out) > 1 and out[-1]["role"] == "user":
+        # the owner's earlier message is still unanswered: one user turn, the new part clearly after the old
+        out[-1] = {"role": "user", "content": f"{out[-1]['content']}\n\n{last}"}
+    else:
+        out.append({"role": "user", "content": last})
+    from ai.channels.outbound import register_instructions
+    register_instructions("chat_frame", BACKGROUND_OPEN + SAID_NOW)       # an echo of the frame is never sent
+    return out
+
+
+def notes_and_words(messages: list[dict[str, Any]]) -> tuple[str, str]:
+    """(every instruction and note the model was given, the owner's own last words) of a chat request in either
+    layout -- for the test tools and checks that used to read "the system messages" and "the last user message"."""
+    notes = [str(m.get("content") or "") for m in messages if isinstance(m, dict) and m.get("role") == "system"]
+    last = next((m.get("content") for m in reversed(messages)
+                 if isinstance(m, dict) and m.get("role") == "user" and isinstance(m.get("content"), str)), "") or ""
+    if BACKGROUND_OPEN in last and BACKGROUND_CLOSE in last:
+        start, end = last.index(BACKGROUND_OPEN), last.index(BACKGROUND_CLOSE)
+        notes.append(last[start + len(BACKGROUND_OPEN):end])
+        last = last[end + len(BACKGROUND_CLOSE):].strip()
+        if last.startswith(SAID_NOW):
+            last = last[len(SAID_NOW):].lstrip("\n")
+    return "\n".join(notes), last
+
+
 # 2026-10-30 (rework step 2: "加一个页面看这次给了她什么规则"): what the last reply was built from, for the admin page
 LAST_PROMPT: dict[str, Any] = {}
 
@@ -400,15 +515,27 @@ class ChatAgent(BaseAgent):
                             "不要编造家人、工作、学校等背景。"),
             })
         history = merge_runs(packet.history)
-        if history:
+        single = single_layout()
+        if history and not single:
             history[-1] = {**history[-1], "_cache_break": True}
+        notes = messages                                             # this turn's notes (all system so far)
         messages = stable + history + messages
         if not is_proactive:
             # Phase 8.8: signals about this very message sit next to it, not dozens of lines above
-            if packet.turn_note:
-                messages.append({"role": "system", "content": packet.turn_note})
-            if self._call_context.get("follow_up_note"):
-                messages.append({"role": "system", "content": self._call_context["follow_up_note"]})
+            for late in (packet.turn_note, self._call_context.get("follow_up_note")):
+                if late:
+                    notes.append({"role": "system", "content": late})
+                    messages.append(notes[-1])
+
+        if single:
+            # 0.7.63: one system message, the chat as real turns, ONE last user message (see compose_single)
+            request = (PROACTIVE_REQUEST + ("" if commitment else
+                                            f"如果此刻没有自然、值得说的内容，只输出 {NO_REPLY_TOKEN}，系统就不会发送。")
+                       if is_proactive else user_message)
+            composed = compose_single(stable, packet.history, notes, request, is_proactive)
+            if not is_proactive:
+                remember_prompt(composed)
+            return composed
 
         if is_proactive:
             messages.append({

@@ -113,7 +113,7 @@ def test_e5_step_9_eve_is_chatting_not_napping(violetdb, clock):
         add_message(violetdb, "assistant", "嗯嗯", at + timedelta(seconds=20))
     clock.set(start + timedelta(minutes=19))
     # as in the product: the first context of the turn (IntentAgent) is built before "听了 还行" is in the log
-    life = section(ContextEngine(violetdb).build("chat", "听了 还行"), "【Violet 的生活状态")
+    life = section(ContextEngine(violetdb).build("chat", "听了 还行"), "【你的生活状态")
     assert "午睡" not in life and "现在：没在做什么特别的事" in life
     assert "午睡不小心睡过头了" not in [r["content"] for r in daily_rows(violetdb)]
 
@@ -227,7 +227,7 @@ def test_e4_history_alone_is_warming_and_teasing_makes_it_close(violetdb, clock)
 
 def thread_line(db, text="在干嘛呢"):
     from ai.context_engine import ContextEngine
-    life = section(ContextEngine(db).build("chat", text), "【Violet 的生活状态")
+    life = section(ContextEngine(db).build("chat", text), "【你的生活状态")
     return life, next(l for l in life.splitlines() if l.startswith("- 正在进行："))
 
 

@@ -13,11 +13,10 @@
   const current = (pack && pack.lang) || "zh-CN";
 
   // the language picker at the bottom of the menu (sets a cookie the server reads, then reloads)
-  function picker() {
-    const side = document.getElementById("side");
-    if (!side || document.getElementById("lang-pick")) return;
+  // 0.7.63 (user: 在通用设置里面加更改语言的按键): the same picker in 设置 → 通用 → 界面语言 (#set-lang-box)
+  function langSelect(id) {
     const sel = document.createElement("select");
-    sel.id = "lang-pick";
+    sel.id = id;
     sel.setAttribute("aria-label", "Language");
     sel.setAttribute("translate", "no");
     for (const [code, name] of LANGS) {
@@ -31,10 +30,17 @@
       document.cookie = `violet_lang=${encodeURIComponent(sel.value)}; Path=/; Max-Age=31536000; SameSite=Strict${secure}`;
       location.reload();
     });
+    return sel;
+  }
+  function picker() {
+    const inSettings = document.getElementById("set-lang-box");
+    if (inSettings && !document.getElementById("set-lang")) inSettings.append(langSelect("set-lang"));
+    const side = document.getElementById("side");
+    if (!side || document.getElementById("lang-pick")) return;
     const box = document.createElement("label");
     box.className = "lang-pick";
     box.setAttribute("translate", "no");
-    box.append(sel);
+    box.append(langSelect("lang-pick"));
     side.append(box);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", picker); else picker();

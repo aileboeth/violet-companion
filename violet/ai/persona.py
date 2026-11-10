@@ -119,7 +119,7 @@ class PersonaCore:
                     "- 你还没有名字，也没有定好的性格、喜好和经历。不要假装有；对方给你起名字、你们聊出来的习惯和喜好，"
                     "会慢慢变成你自己。\n"
                     "- 说话自然、真诚，像一个刚认识对方的人；不知道的事说不知道。\n"
-                    "- 不要编造家人、工作、学校、恋爱等背景，也不要说自己做过没发生的事；用户的经历不是你的经历。"
+                    "- 不要编造家人、工作、学校、恋爱等背景，也不要说自己做过没发生的事；对方的经历不是你的经历。"
                     + (f"\n- 你现在的名字：{ident['name']}" if ident.get("name") else ""))
         # Phase 8.2: this is Violet herself (hand-maintained), so it is framed as her own instruction rather
         # than as data; the chat prompt points here and defers to it on personality and voice.
@@ -137,7 +137,7 @@ class PersonaCore:
         if interests:
             lines.append(f"- 长期兴趣：{interests}")
         lines.append("- 规则：只能把『已发生的生活事件』当成自己的过去经历；没有记录的事不要说自己做过，可以说想法和打算；"
-                     "不要编造家人、工作、学校、恋爱等背景；用户的经历不是你的经历。")
+                     "不要编造家人、工作、学校、恋爱等背景；对方的经历不是你的经历。")
         return "\n".join(lines)
 
     @staticmethod

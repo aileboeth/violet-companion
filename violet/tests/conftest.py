@@ -64,6 +64,11 @@ os.environ.update({
     "VIOLET_LATE_SYSTEM_AS_USER": "0",
     "VIOLET_REPLY_RECHECK": "0",                       # 2026-11-02: tested on its own (test_persona_memory_violet)
     "VTEST_LATE_SYSTEM_AS_USER": "0",                  # ... also in tools/harness.py sessions and tools a test starts
+    # 0.7.63: production sends one system message, the chat, and one last user message holding this turn's notes
+    # (ai/agents/chat_agent.compose_single). The many tests written before look for each note as its own system
+    # message: they see the pieces as built ("classic"); tests/test_single_layout_violet.py tests the real layout
+    "VIOLET_PROMPT_LAYOUT": "classic",
+    "VTEST_PROMPT_LAYOUT": "classic",
 })
 for _key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
     os.environ.pop(_key, None)

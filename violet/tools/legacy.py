@@ -42,6 +42,16 @@ def _key(key: Any) -> Any:
     return _name(key) if _IDENT_RE.fullmatch(key) else key
 
 
+# 0.7.63: plans written earlier look for context lines in the wording of their time (the plan files are pinned by
+# hash and stay as they are); the same line in today's wording
+CHECK_WORDING = {"只有标为『已发生』的才是她做过的事": "只有标为『已发生』的才是你做过的事"}
+
+
+def check_text(text: str) -> str:
+    """A plan's "context_has" / "context_lacks" text as the context words it today."""
+    return CHECK_WORDING.get(text, text)
+
+
 def upgrade(data: Any) -> Any:
     if isinstance(data, dict):
         return {_key(k): upgrade(v) for k, v in data.items()}

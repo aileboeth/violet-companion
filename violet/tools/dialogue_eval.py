@@ -90,8 +90,8 @@ def build_parser() -> argparse.ArgumentParser:
 def _system_text(request: dict[str, Any] | None) -> str:
     if not request:
         return ""
-    return "\n".join(m.get("content") or "" for m in request.get("messages") or []
-                     if m.get("role") == "system" and isinstance(m.get("content"), str))
+    from ai.agents.chat_agent import notes_and_words
+    return notes_and_words(request.get("messages") or [])[0]      # 0.7.63: also the background of the last message
 
 
 def _resolve_memory_steps(session, steps: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
@@ -340,7 +340,8 @@ def context_checks(db, checks: dict[str, Any], system_text: str, context: dict[s
                    ctx: dict[str, Any] | None = None) -> dict[str, Any]:
     has, how, failures = {}, {}, {}
     for text in checks.get("context_has", []):
-        if text in system_text and text not in ALWAYS_STRUCTURED:
+        from tools.legacy import check_text
+        if (text in system_text or check_text(text) in system_text) and text not in ALWAYS_STRUCTURED:
             has[text], how[text] = True, "literal"
             continue
         rule = SEMANTIC_CONTEXT_CHECKS.get(text)

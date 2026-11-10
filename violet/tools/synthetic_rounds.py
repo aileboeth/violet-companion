@@ -274,9 +274,9 @@ def run_specialized(workdir, *, args=None, input_fn=input, key_prompt=None, out=
     class SpecializedMock(MockLLM):
         def _create(self, **kwargs):
             if _AGENT.get() == "ChatAgent":
-                user = next((m.get("content") for m in reversed(kwargs["messages"]) if m["role"] == "user"), "")
-                reminder = any(m["role"] == "system" and "这是用户之前明确要求的提醒" in str(m.get("content"))
-                               for m in kwargs["messages"])
+                from ai.agents.chat_agent import notes_and_words
+                notes, user = notes_and_words(kwargs["messages"])          # 0.7.63: either prompt layout
+                reminder = "这是用户之前明确要求的提醒" in notes
                 text = ("该交作业了。" if reminder else
                         "早。" if user == "早" else "好，那先不聊了。")
                 return self._completion(text, str(kwargs.get("model")))

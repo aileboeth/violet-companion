@@ -79,7 +79,7 @@ def legacy_core_label(key: str | None, category: str | None) -> str:
 
 RESTRICTED_HEADER = (
     "以下话题现在不适合由你主动提起（事件进展未知或已结束，或你最近已主动提过而对方反应平淡）。"
-    "除非用户本轮主动说起，否则不要提起，也不要换个说法追问："
+    "除非对方这一轮主动说起，否则不要提起，也不要换个说法追问："
 )
 ORIGIN_LABELS = {"explicit": "用户亲口说", "dashboard": "用户在管理面板确认"}
 
@@ -395,12 +395,27 @@ class ContextEngine:
         row = self.db.fetch_one(
             "SELECT MIN(created_at) AS first, COUNT(DISTINCT substr(created_at, 1, 10)) AS days "
             "FROM messages WHERE role = 'user' AND created_at >= ?", (context_cut.owner_floor(),))
+        # 0.7.63 (user's export 2026-11-09 22:51-23:13, relationship 恋人, memory cleared just before): the prompt said
+        # "你们是恋人" AND "第一次聊天在 22:51（15 分钟前），认识还不到一天，还不太熟" -- she kept the owner at a
+        # distance and recited the minute count turn after turn. A relationship the owner chose is how close you are; the
+        # log only says how far back her records go (and no running minute count: it also changed the prompt every turn)
+        chosen = self._chosen_relationship()
+        if chosen:
+            if not row or not row["first"]:
+                return _Section("relationship", 3, "【你手头的聊天记录】", [
+                    "- 你手头还没有和对方的聊天记录：更早的事你现在想不起来，对方问起就照实说记不清了，不要编。"
+                    "你们有多亲近按“你们的关系”来，不要把对方当成刚认识的陌生人"])
+            from ai.memory_model import parse_time
+            if parse_time(self.db.now()) - parse_time(row["first"]) < timedelta(days=1):
+                return _Section("relationship", 3, "【你手头的聊天记录】", [
+                    f"- 你手头的聊天记录从 {_clock(row['first'])} 开始：更早的事你现在想不起来，对方问起就照实说记不清了，"
+                    "不要编，也不要说成“我们才刚认识”。你们有多亲近按“你们的关系”来"])
         if not row or not row["first"]:
             return _Section("relationship", 3, "【你们的相处】", ["- 这是你们第一次聊天"])
         from ai.memory_model import parse_time
         known = parse_time(self.db.now()) - parse_time(row["first"])
         if known < timedelta(days=1):
-            line = f"- 第一次聊天在 {_clock(row['first'])}（{_span(known)}前），认识还不到一天，还不太熟"
+            line = f"- 你们今天才开始聊天（{_clock(row['first'])} 第一次说话），还在互相熟悉"
         else:
             line = f"- 第一次聊天在 {_clock(row['first'])}（{_span(known)}前），之后有 {row['days']} 天聊过天"
         lines = [line]
@@ -759,13 +774,13 @@ class ContextEngine:
         return _Section("external_info", 5, header, lines)
 
     def _life_section(self, mode: str, user_message: str, call_context: dict[str, Any], store) -> _Section:
-        header = "【Violet 的生活状态（虚拟生活记录；只有标为『已发生』的才是她做过的事）】"
+        header = "【你的生活状态（虚拟生活记录；只有标为『已发生』的才是你做过的事）】"
         if mode == "chat" and context_style() == "natural":
             # Phase 8.8: a question is not a heavy moment ("在吗", "干嘛呢"); distress, a task or a long message is.
             # Greetings and idle small talk ("好无聊", "随便聊点") are where Violet's own day fits.
             about_eve = asks_about_eve(user_message)
             if needs_focus(user_message, call_context.get("route")) and not about_eve:
-                return _Section("violet_life", 4, header, ["- 用户此刻在说自己的事：专心回应对方，不要主动谈你自己的生活。"])
+                return _Section("violet_life", 4, header, ["- 这一轮专心回应对方，不要主动谈你自己的生活。"])
             violet_said = [m["content"] or "" for m in self._session_messages() if m["role"] != "user"]
             lines = self._natural_life_lines(store, violet_said)
             # Phase 8.9: also when the user picks up what Violet just told ("钢琴曲？好文艺啊") -- the topic is hers
@@ -779,7 +794,7 @@ class ContextEngine:
             return _Section("violet_life", 4, header, [l["text"] for l in lines])
         elif mode == "chat":
             if is_important_moment(user_message, call_context.get("route")) and not ASK_ABOUT_VIOLET_RE.search(user_message or ""):
-                return _Section("violet_life", 4, header, ["- 用户此刻在说自己的事：专心回应对方，不要主动谈你自己的生活。"])
+                return _Section("violet_life", 4, header, ["- 这一轮专心回应对方，不要主动谈你自己的生活。"])
             relevant = ASK_ABOUT_VIOLET_RE.search(user_message or "") or any(w in (user_message or "") for w in LIFE_TOPIC_WORDS)
             if not relevant:
                 return _Section("violet_life", 4, header, [])

@@ -174,7 +174,7 @@ def test_what_did_you_do_today_has_a_recorded_answer(violetdb, clock):
     from ai.context_engine import ContextEngine
     day, _ = busy_day(violetdb, START.tzinfo)
     clock.set(datetime.combine(day, datetime.min.time(), tzinfo=START.tzinfo).replace(hour=21))
-    life = section(ContextEngine(violetdb).build("chat", "你今天干嘛了"), "【Violet 的生活状态")
+    life = section(ContextEngine(violetdb).build("chat", "你今天干嘛了"), "【你的生活状态")
     today = [r for r in daily_rows(violetdb) if r["occurred_at"][:10] == day.isoformat()]
     assert today                                                                   # the earlier days were filled first
     for row in today:
@@ -192,7 +192,7 @@ def test_a_quiet_day_is_said_to_be_quiet(violetdb, clock):
     day = next(date(2026, 11, 1) + timedelta(days=i) for i in range(60)
                if daily.plan_for(date(2026, 11, 1) + timedelta(days=i), START.tzinfo) == [])
     clock.set(datetime.combine(day, datetime.min.time(), tzinfo=START.tzinfo).replace(hour=21))
-    life = section(ContextEngine(violetdb).build("chat", "你今天干嘛了"), "【Violet 的生活状态")
+    life = section(ContextEngine(violetdb).build("chat", "你今天干嘛了"), "【你的生活状态")
     assert "普普通通的一天" in life
 
 
@@ -209,7 +209,7 @@ def reading(violetdb, clock):
 
 
 def test_details_and_how_she_feels_about_it_now(engine, reading):
-    life = section(engine.build("chat", "你最近在干嘛"), "【Violet 的生活状态")
+    life = section(engine.build("chat", "你最近在干嘛"), "【你的生活状态")
     assert "把几首钢琴曲从头听了一遍（德彪西的《月光》、萨蒂的《裸体歌舞》）（已发生）" in life
     assert "正在进行：读《夜晚的潜水艇》（现在的感觉：快读完了，有点舍不得）" in life       # two events in the thread
 
@@ -219,7 +219,7 @@ def test_what_she_already_told_is_marked(engine, violetdb, reading):
     add_message(violetdb, "assistant", "我最近在读《夜晚的潜水艇》，有几段像在做梦", START - timedelta(minutes=9))
     old = reading.event_by_uid("e2")
     reading.mark_shared(old["id"])                                                  # told on an earlier day
-    life = section(engine.build("chat", "随便聊点什么吧"), "【Violet 的生活状态")
+    life = section(engine.build("chat", "随便聊点什么吧"), "【你的生活状态")
     line = next(l for l in life.splitlines() if "又往后读了几章《夜晚的潜水艇》" in l)
     assert "这次聊天里已经说过了" in line
     piano = next(l for l in life.splitlines() if "钢琴曲" in l)
@@ -228,7 +228,7 @@ def test_what_she_already_told_is_marked(engine, violetdb, reading):
 
 def test_an_earlier_conversation_is_not_this_one(engine, violetdb, reading):
     add_message(violetdb, "assistant", "我最近在读《夜晚的潜水艇》", START - timedelta(hours=5))
-    life = section(engine.build("chat", "好无聊"), "【Violet 的生活状态")
+    life = section(engine.build("chat", "好无聊"), "【你的生活状态")
     assert "这次聊天里已经说过了" not in life
 
 
@@ -241,7 +241,7 @@ def test_an_earlier_conversation_is_not_this_one(engine, violetdb, reading):
 def test_life_follows_the_topic_she_opened(engine, violetdb, reading, violet_before, user, shown):
     add_message(violetdb, "user", "那你最近还喜欢什么", START - timedelta(minutes=3))
     add_message(violetdb, "assistant", violet_before, START - timedelta(minutes=2))
-    life = section(engine.build("chat", user), "【Violet 的生活状态")
+    life = section(engine.build("chat", user), "【你的生活状态")
     if shown == "focus":
         assert "不要主动谈你自己的生活" in life
     else:
@@ -250,7 +250,7 @@ def test_life_follows_the_topic_she_opened(engine, violetdb, reading, violet_bef
 
 def test_legacy_context_has_no_ordinary_day(engine, violetdb, reading, monkeypatch):
     monkeypatch.setenv("VIOLET_CONTEXT_STYLE", "legacy")
-    life = section(engine.build("chat", "你今天干嘛了"), "【Violet 的生活状态")
+    life = section(engine.build("chat", "你今天干嘛了"), "【你的生活状态")
     assert "今天上午" not in life and "今天下午" not in life and "现在的感觉" not in life
     assert daily_rows(violetdb) == []
 
@@ -446,7 +446,7 @@ def test_e1_today_has_recorded_things_and_leaving_gets_its_note(episodes_run):
     assert "（已发生）" in life and "最近没有记录的生活事件" not in life
     assert "只回了“嗯”" in request_of(steps[2])[-2]["content"]                      # 嗯
     assert "要去忙或去休息了" in request_of(steps[5])[-2]["content"]                # 我去洗澡了
-    assert "还不太熟" in system(steps[0])
+    assert "还在互相熟悉" in system(steps[0])       # 0.7.63 wording (was "认识还不到一天，还不太熟" + a minute count)
 
 
 def test_e4_three_weeks_of_reaching_out_reads_as_close(episodes_run):

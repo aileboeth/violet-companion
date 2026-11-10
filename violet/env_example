@@ -299,6 +299,10 @@ VIOLET_MODEL_WECHAT=
 VIOLET_MODEL_QQ=
 VIOLET_MODEL_TELEGRAM=
 VIOLET_LATE_SYSTEM_AS_USER=1
+# 0.7.63: how a chat request is laid out. single (default) = one system message (rules, persona, relationship,
+# abilities), the chat as real turns, and ONE last user message: a fenced background block (time, phone, memories,
+# mood, notes) followed by the owner's words. classic = the layout before 0.7.63 (every note its own message)
+VIOLET_PROMPT_LAYOUT=single
 VIOLET_CONTEXT_STABLE_HISTORY=1
 # 2026-11-01: a group where nobody calls her and she is not talking is looked at once in this many seconds
 VIOLET_SOCIAL_BATCH_SECONDS=180

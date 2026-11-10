@@ -136,7 +136,8 @@ def test_32_round_acceptance_dialogue(dialogue_world):
         questions_offered += "可选的了解" in system
         checks = rnd.get("checks") or {}
         for text in checks.get("context_has", []):
-            assert text in system, f"round {rnd['n']}: context lacks {text!r}"
+            from tools.legacy import check_text          # 0.7.63: the pinned plan keeps the wording of its time
+            assert text in system or check_text(text) in system, f"round {rnd['n']}: context lacks {text!r}"
         for text in checks.get("context_lacks", []):
             assert text not in system, f"round {rnd['n']}: context should not contain {text!r}"
         for name in checks.get("tools_has", []):

@@ -137,8 +137,10 @@
   }
 
   function messagesView(messages, key) {
-    const chars = messages.reduce((n, m) => n + String(m.content || "").length, 0);
-    const d = h("details", { class: "flow-messages" }, h("summary", { text: `发给模型的对话：${messages.length} 条 · ${chars} 字` }),
+    // 0.7.63 (user: 生成回复点不开，跳过的点得开): this total was named `chars` too and hid the chars() function above,
+    // so every step WITH a model conversation (a finished 生成回复 / 整理记忆) threw while drawing and showed nothing
+    const total = messages.reduce((n, m) => n + String(m.content || "").length, 0);
+    const d = h("details", { class: "flow-messages" }, h("summary", { text: `发给模型的对话：${messages.length} 条 · ${total} 字` }),
       ...messages.map((m, i) => {
         const calls = (m.tool_calls || []).map((c) => `调用 ${(c.function || {}).name || "?"}(${(c.function || {}).arguments || ""})`).join("\n");
         const text = [m.content, calls].filter(Boolean).join("\n");

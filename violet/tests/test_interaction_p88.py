@@ -135,7 +135,7 @@ def violet_life(violetdb):
     ("今天被导师当众批评了 好委屈", "focus"), ("今天去看了场电影", "none"), ("你还记得我学什么的吗", "none"),
 ])
 def test_life_section_for_greetings_and_questions_about_eve(engine, violet_life, message, shown):
-    life = section(engine.build("chat", message), "【Violet 的生活状态")
+    life = section(engine.build("chat", message), "【你的生活状态")
     assert ("夜晚的潜水艇" in life) is (shown == "life")
     assert ("不要主动谈你自己的生活" in life) is (shown == "focus")
     assert (life == "") is (shown == "none")
@@ -143,7 +143,7 @@ def test_life_section_for_greetings_and_questions_about_eve(engine, violet_life,
 
 def test_greeting_was_a_heavy_moment_in_legacy(engine, violet_life, monkeypatch):
     monkeypatch.setenv("VIOLET_CONTEXT_STYLE", "legacy")
-    assert "不要主动谈你自己的生活" in section(engine.build("chat", "在吗"), "【Violet 的生活状态")
+    assert "不要主动谈你自己的生活" in section(engine.build("chat", "在吗"), "【你的生活状态")
 
 
 def test_turn_note_is_built_for_chat_only(engine, monkeypatch):

@@ -402,8 +402,19 @@ def _old_name_lengths(packet) -> dict:
             out[name] = length
             continue
         texts.remove(text)
+        for new, old in OLD_WORDING:
+            text = text.replace(new, old)
         out[name] = len(text.replace("Violet", "Eve"))
     return out
+
+
+# 0.7.63: lines reworded so that every note calls her "你" and the owner "对方"; the records keep the old lengths
+OLD_WORDING = (
+    ("【你的生活状态（虚拟生活记录；只有标为『已发生』的才是你做过的事）】",
+     "【Violet 的生活状态（虚拟生活记录；只有标为『已发生』的才是她做过的事）】"),
+    ("- 这一轮专心回应对方，不要主动谈你自己的生活。", "- 用户此刻在说自己的事：专心回应对方，不要主动谈你自己的生活。"),
+    ("除非对方这一轮主动说起，否则不要提起", "除非用户本轮主动说起，否则不要提起"),
+)
 
 
 def _compare(verdict: dict, rendered: dict) -> dict:

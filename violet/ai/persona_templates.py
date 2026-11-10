@@ -27,7 +27,10 @@ MEMORY_TABLES = ("core_memories", "event_memories", "memory_revisions", "commitm
                  "user_profile_facts", "user_situations", "interaction_preferences", "preference_observations",
                  "profile_questions", "persona_dynamic", "life_events", "life_plans", "life_threads", "life_revisions",
                  # 2026-11-09: a memory job queued before the clear would write the old chat back afterwards
-                 "memory_jobs")
+                 "memory_jobs",
+                 # 0.7.63: her mood kept its cause ("主人对你说了「…」" -- a quote from the cleared chat) and half-done
+                 # tasks from before were still listed to the model
+                 "mood_state", "task_sessions")
 
 
 def control_dir() -> Path:

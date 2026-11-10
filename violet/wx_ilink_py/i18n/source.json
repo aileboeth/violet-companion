@@ -2348,6 +2348,9 @@
 "后台设置": [
 "control.js"
 ],
+"后台页面显示用的语言，只影响这个浏览器，选了马上生效；她聊天用什么语言不受这里影响。": [
+"control.html"
+],
 "否": [
 "control.js"
 ],
@@ -5751,6 +5754,10 @@
 ],
 "画表情包中…（{0}/{1}）": [
 "control_stickers.js"
+],
+"界面语言": [
+"control.html",
+"control.js"
 ],
 "留空 = 一天；补课日只能是一天": [
 "control_schedule.js"

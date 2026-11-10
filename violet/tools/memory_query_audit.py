@@ -89,8 +89,9 @@ class MemoryQueryAudit:
     def observe_chat(self, agent, kwargs):
         if agent != "ChatAgent":
             return
-        lines = [line for m in kwargs.get("messages", []) if m.get("role") == "system"
-                 for line in str(m.get("content", "")).splitlines() if re.match(r"^- id=\d+; \[", line)]
+        from ai.agents.chat_agent import notes_and_words
+        lines = [line for line in notes_and_words(kwargs.get("messages", []))[0].splitlines()
+                 if re.match(r"^- id=\d+; \[", line)]
         target = self.target
         present = bool(target and any(line.startswith(f"- id={target['id']}; ") and target["content"] in line for line in lines))
         self.chat_requests.append({**self.location(agent), "observed_at": "ChatAgent._create_completion.messages",
