@@ -314,10 +314,44 @@ if [ "$MODE" = "systemd" ]; then
   #     image with Linux QQ; GitHub's runners already have Docker), container violet-snowluma as violet-qq, ports on
   #     127.0.0.1 only; the page then shows QQ's window through VNC (the QR code is scanned in it). No QQ account can
   #     scan here: the size of the window seen from the page is reported.
+  #     2026-11-10: SnowLuma's repository and Docker Hub image went offline, and no mirror serves it to GitHub's
+  #     runners. When the download fails, the failure must say how to use a saved copy and leave no container; then
+  #     the saved-copy path is checked with a stand-in image under SnowLuma's name (busybox sleeping: no QQ in it, so
+  #     the QQ window is not looked for).
   QQAPI="$SCHEME://127.0.0.1:$PORT/api/control/qq"
-  CODE="$(code -b "$JAR" -H "Origin: $SCHEME://127.0.0.1:$PORT" -H 'Content-Type: application/json' --data '{}' "$QQAPI/install")"
-  [ "$CODE" = "200" ] || fail "QQ install request ($CODE)"
-  wait_task "QQ (SnowLuma) install"; MAXP="$WT_MAX"
+  qq_install() { code -b "$JAR" -H "Origin: $SCHEME://127.0.0.1:$PORT" -H 'Content-Type: application/json' --data '{}' "$QQAPI/install"; }
+  qq_task() {   # waits like wait_task, but returns the state instead of failing; QQ_MSG = the task's message
+    local tp=""
+    QQ_STATE=""; WT_MAX=0
+    for _ in $(seq 1 300); do
+      tp="$(curl -sk -b "$JAR" -H 'Accept: application/json' "$SCHEME://127.0.0.1:$PORT/api/control/progress/task")"
+      QQ_STATE="$(echo "$tp" | json 'd["data"]["state"]')"
+      pct="$(echo "$tp" | json 'd["data"].get("percent") or 0')"; [ "$pct" -gt "$WT_MAX" ] && WT_MAX="$pct"
+      case "$QQ_STATE" in done|failed|stale) break ;; esac
+      sleep 3
+    done
+    QQ_MSG="$(echo "$tp" | json 'd["data"].get("message") or ""')"
+  }
+  [ "$(qq_install)" = "200" ] || fail "QQ install request"
+  qq_task; MAXP="$WT_MAX"
+  QQ_REAL=1
+  if [ "$QQ_STATE" != "done" ]; then
+    echo "$QQ_MSG" | grep -q "snowluma-image" || { echo "$QQ_MSG"; fail "QQ (SnowLuma) install: $QQ_STATE without the saved-copy hint"; }
+    ! docker ps -a --format '{{.Names}}' | grep -qx violet-snowluma || fail "a failed QQ install left a container"
+    pass "QQ (SnowLuma) image not downloadable here (official image offline): the install failed cleanly and says how to use a saved copy"
+    STAND="$WORK/stand-in"; mkdir -p "$STAND"
+    printf 'FROM busybox:1.36\nCMD ["sleep", "3600"]\n' > "$STAND/Dockerfile"
+    docker build -q -t motricseven7/snowluma:v2.2.1 "$STAND" >/dev/null || fail "stand-in image build"
+    mkdir -p "$ROOT/snowluma-image"
+    docker save motricseven7/snowluma:v2.2.1 | gzip > "$ROOT/snowluma-image/snowluma-v2.2.1.tar.gz"
+    docker rmi -f motricseven7/snowluma:v2.2.1 >/dev/null
+    [ "$(qq_install)" = "200" ] || fail "QQ install request (saved copy)"
+    qq_task; MAXP="$WT_MAX"
+    [ "$QQ_STATE" = "done" ] || { echo "$QQ_MSG"; fail "QQ install from a saved copy: $QQ_STATE"; }
+    SRC="$(python3 -c "import json;print(json.load(open('$ROOT/install.json'))['snowluma']['source'])")"
+    echo "$SRC" | grep -q 'snowluma-v2.2.1.tar.gz' || fail "QQ install did not use the saved copy ($SRC)"
+    QQ_REAL=0
+  fi
   [ "$(docker inspect -f '{{.State.Running}}' violet-snowluma 2>/dev/null)" = "true" ] \
     || { docker logs --tail 80 violet-snowluma 2>&1 || true; fail "container violet-snowluma not running"; }
   id violet-qq >/dev/null 2>&1 || fail "account violet-qq missing"
@@ -328,6 +362,9 @@ if [ "$MODE" = "systemd" ]; then
   for p in "$WSPORT" "$VNCPORT"; do
     ! ss -ltnH "( sport = :$p )" | grep -v '127.0.0.1' | grep -q . || fail "QQ listens beyond loopback on $p"
   done
+  if [ "$QQ_REAL" = "0" ]; then
+    pass "QQ (SnowLuma) installed from a saved copy in $ROOT/snowluma-image (no download; progress $MAXP%), container violet-snowluma running as violet-qq, local only (stand-in image: no QQ window to look for)"
+  else
   SHOT=""
   for _ in $(seq 1 48); do                 # QQ needs a while to open its login window
     SHOT="$(curl -sk -b "$JAR" -H 'Accept: application/json' "$QQAPI/screen")"
@@ -340,6 +377,7 @@ if [ "$MODE" = "systemd" ]; then
     || { docker logs --tail 60 violet-snowluma 2>&1 || true; fail "no QQ window on the screen after 4 minutes ($WIN)"; }
   LOGIN="$(curl -sk -b "$JAR" -H 'Accept: application/json' "$QQAPI" | json 'str(d["data"].get("login"))')"
   pass "QQ (SnowLuma) installed from the Control Center (progress $MAXP%), container violet-snowluma, local only; QQ window from the page: $WIN; login $LOGIN"
+  fi
 fi
 
 # 5. repair keeps port and password; backup; status
