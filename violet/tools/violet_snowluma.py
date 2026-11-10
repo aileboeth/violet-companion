@@ -358,7 +358,8 @@ def pull(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], on_lin
                     run(["docker", "rmi", prefix + image], capture_output=True)       # only the extra name
                 return (prefix.rstrip("/") or "docker.io")
             reason = {"stalled": f"{STALL_SECONDS // 60} 分钟没有下载进展，换下一个", "slow": "太慢，换下一个"}.get(why)
-            problems.append(f"{_name(prefix)}：{reason or _last(tail, 2)}")
+            # 2026-11-10: a mirror may answer with a whole web page -- one short line per source
+            problems.append(f"{_name(prefix)}：{(reason or _last(tail, 2)).replace(chr(10), ' ')[:160]}")
     skipped = [_name(p) for p in MIRRORS if p not in sources]
     raise SnowlumaError("下载 SnowLuma 镜像失败：\n" + "\n".join(problems[-8:]) +
                         (f"\n连不上、没有试：{'、'.join(skipped)}" if skipped else ""))
@@ -456,10 +457,10 @@ def _download(run: Callable[..., Any], stream: Callable[..., tuple[int, str]], o
                 total[0] += max(0, measure() - start)
     try:
         return pull(run, stream, on_line, env, check=reachable if watched else None, watched=watched)
-    except SnowlumaError as exc:
-        raise SnowlumaError(f"{exc}\n（SnowLuma 的官方镜像已经下线。手上有备份的镜像文件（docker save 导出的 .tar.gz）时，"
+    except SnowlumaError as exc:                     # the way out first: a long list of sources may be cut on the page
+        raise SnowlumaError(f"SnowLuma 的官方镜像已经下线，这台服务器下载不到。手上有备份的镜像文件（docker save 导出的 .tar.gz）时，"
                             f"把它放进 {layout.root / IMAGE_FILE_DIR}/ 再安装，或者用 "
-                            f"/opt/violet/violet qq install --image-file /root/snowluma-v2.2.1.tar.gz）") from None
+                            f"/opt/violet/violet qq install --image-file /root/snowluma-v2.2.1.tar.gz\n{exc}") from None
 
 
 def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str], bool],

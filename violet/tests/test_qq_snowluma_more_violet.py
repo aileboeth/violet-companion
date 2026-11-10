@@ -474,8 +474,17 @@ def test_without_any_image_the_error_says_how_to_use_a_saved_copy(tmp_path):
     with pytest.raises(sl.SnowlumaError) as err:
         _install(sl, _layout(tmp_path), host)
     assert sl.IMAGE_FILE_DIR in str(err.value) and "--image-file /root/snowluma-v2.2.1.tar.gz" in str(err.value)
+    assert str(err.value).splitlines()[0].startswith("SnowLuma 的官方镜像已经下线")       # the way out first
     pulled = [c[2] for c in host.streamed if c[:2] == ["docker", "pull"]]
     assert pulled[0] == "docker.m.daocloud.io/" + sl.IMAGE  # the mirror that still had it, first
+
+
+def test_a_mirror_answering_with_a_web_page_stays_one_short_line(tmp_path):
+    from tools import violet_snowluma as sl
+    page = "<html><script>var a = '" + "x" * 3000 + "';</script></html>"
+    with pytest.raises(sl.SnowlumaError) as err:
+        sl.pull(lambda cmd, **kw: None, lambda cmd, on_line, env: (1, page), lambda line: None, {})
+    assert all(len(line) <= 200 for line in str(err.value).splitlines())
 
 
 def test_only_a_purge_removes_the_image(tmp_path):
