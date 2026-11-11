@@ -10,11 +10,11 @@ from tests.test_phase2_scenarios import make_world, say, script, tool
 @pytest.fixture
 def agents(monkeypatch, violetdb):
     install_fake_llm(monkeypatch, FakeLLM(default_responders()))
-    from ai.agents import IntentAgent, MemoryAgent
-    return {"intent": IntentAgent(), "memory": MemoryAgent()}
+    from ai.agents import ChatAgent, MemoryAgent
+    return {"chat": ChatAgent(), "memory": MemoryAgent()}
 
 
-@pytest.mark.parametrize("agent", ["intent", "memory"])
+@pytest.mark.parametrize("agent", ["chat", "memory"])
 @pytest.mark.parametrize("query,content", [
     ("上次说的答辩你还记得吗", "用户已完成天文观测课程答辩，过程挺顺利。"),
     ("之前提到的吉他还记得吗？", "周末学会了吉他的第一首曲子。"),
@@ -35,7 +35,7 @@ def test_original_question_enters_chat_as_actual_completed_event(make_world):
     w.llm.responders["fake-memory"] = script(tool("query_memory", query=question))
     observed = []
     def chat(request):
-        system = "\n".join(m.get("content", "") for m in request["messages"] if m["role"] == "system")
+        system = "\n".join(m.get("content", "") for m in request["messages"] if m["role"] in ("system", "user"))
         lines = [line for line in system.splitlines() if line.startswith(f"- id={target}; ")]
         assert any(content in line and "已结束" in line for line in lines)
         observed.extend(lines)
@@ -49,7 +49,7 @@ def test_original_question_enters_chat_as_actual_completed_event(make_world):
     assert any(any(m["id"] == target and m["progress"] == "done" for m in rows) for rows in results)
 
 
-@pytest.mark.parametrize("agent", ["intent", "memory"])
+@pytest.mark.parametrize("agent", ["chat", "memory"])
 def test_empty_recall_wrapper_does_not_match_any_memory(agents, violetdb, agent):
     violetdb.add_event_memory("你还记得吗", kind="background")
     assert agents[agent]._tool_query_memory({"query": "你还记得吗？"})["memories"] == []
@@ -63,7 +63,7 @@ def test_recall_keeps_category_limit_and_explicit_threshold(agents, violetdb):
         rows = agent._tool_query_memory(query)["memories"]
         assert len(rows) == 1 and rows[0]["category"] == "event"
     assert agents["memory"]._tool_query_memory({**query, "min_similarity": .99})["memories"] == []
-    assert agents["intent"]._tool_query_memory({**query, "category": "missing"})["memories"] == []
+    assert agents["chat"]._tool_query_memory({**query, "category": "missing"})["memories"] == []
 
 
 def test_disabled_deleted_and_expired_semantics_unchanged(agents, violetdb):
@@ -74,14 +74,14 @@ def test_disabled_deleted_and_expired_semantics_unchanged(agents, violetdb):
     violetdb.execute("UPDATE event_memories SET status='deleted' WHERE id=?", (deleted,))
     violetdb.execute("UPDATE event_memories SET status='expired',valid_until='2000-01-01T00:00:00+08:00' WHERE id=?", (expired,))
     query = {"query": "上次说的吉他你还记得吗"}
-    assert [m["id"] for m in agents["intent"]._tool_query_memory(query)["memories"]] == [expired]
+    assert [m["id"] for m in agents["chat"]._tool_query_memory(query)["memories"]] == [expired]
     assert {m["id"] for m in agents["memory"]._tool_query_memory(query)["memories"]} == {disabled, expired}
 
 
 @pytest.mark.parametrize("query", ["服务器", "server outage", "我不记得密码", "吉他谱", "记得交作业", "记得", "我不记得"])
 def test_ordinary_queries_and_write_similarity_unchanged(agents, violetdb, query):
     target = violetdb.add_event_memory(query, category="event", kind="event")
-    assert [m["id"] for m in agents["intent"]._tool_query_memory({"query": query})["memories"]] == [target]
+    assert [m["id"] for m in agents["chat"]._tool_query_memory({"query": query})["memories"]] == [target]
     assert violetdb.text_similarity(query, query) == 1
 
 

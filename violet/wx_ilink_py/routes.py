@@ -199,7 +199,6 @@ def create_app(
             "send": send,
             "event_id": pipeline.get("event_id"),
             "decision": pipeline.get("proactive_decision"),
-            "has_performer": bool(pipeline.get("performer")),
             "chat_content": (pipeline.get("chat") or {}).get("content"),
             "error": pipeline.get("error"),
         })

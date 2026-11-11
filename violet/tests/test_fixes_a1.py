@@ -414,7 +414,7 @@ def test_RC1_user_message_is_per_thread(iworld, monkeypatch):
     gate = threading.Barrier(2)
 
     def respond(kw):
-        user = next(m["content"] for m in reversed(kw["messages"]) if m["role"] == "user")
+        user = next(m["content"] for m in reversed(kw["messages"]) if m["role"] == "user").splitlines()[-1]
         offered[user] = {t["function"]["name"] for t in kw.get("tools") or []}
         return "嗯"
     w.llm.responders["fake-chat"] = respond

@@ -26,8 +26,8 @@ TEXT_LIMIT = 20_000          # one string (a system prompt is ~10k characters)
 ITEM_LIMIT = 80              # items of one list / keys of one dict
 DEPTH_LIMIT = 8
 
-CHAT_NODES = ["Intent", "Performer", "Chat", "Memory"]
-PROACTIVE_NODES = ["Proactive", "Performer", "Chat"]
+CHAT_NODES = ["Chat", "Memory"]
+PROACTIVE_NODES = ["Proactive", "Chat"]
 SOCIAL_NODES = ["Social", "Act"]
 NODES = {"chat": CHAT_NODES, "proactive": PROACTIVE_NODES, "social": SOCIAL_NODES}
 

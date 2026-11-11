@@ -177,7 +177,7 @@ def test_photo_claims_are_rewritten(iworld):
     w = iworld
 
     def final(kw):
-        if "上一版回复里有和已记录事实不符" in system_text(kw):
+        if "里面有和已记录的事实对不上的说法" in system_text(kw):
             return f"给你画了一张\n{marker_from_tool(kw)}"
         return f"我刚拍的自拍\n{marker_from_tool(kw)}"
     plan_chat(w, [("create_image", {"subject": "violet", "scene": "current"})], final)

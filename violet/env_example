@@ -19,8 +19,6 @@ VIOLET_DECISION_HISTORY_TURNS=8
 VIOLET_DECISION_HISTORY_MAX_CHARS=1500
 # 2026-11-02 (token): shorter memory tool descriptions (what the memory rules already say); 0 = the full ones
 VIOLET_MEMORY_COMPACT_TOOLS=1
-# 1 = send the proactive task rules even when no task is allowed (only for comparing, tools/decision_eval.py)
-VIOLET_DECISION_ALWAYS_TASK_RULES=0
 
 # ── 管理面板（Dashboard）安全 ─────────────────────────────────────────────────
 # 默认只监听本机回环地址；远程访问请用 SSH 隧道或带 TLS 的反向代理。
@@ -85,7 +83,6 @@ LLM_RETRY_BASE_DELAY=3
 LLM_TOTAL_TIMEOUT_SECONDS=180
 # 可选备用模型：主模型重试失败后各尝试一次，例如 CHAT_LLM_FALLBACK_MODEL=gpt-5-mini
 CHAT_LLM_FALLBACK_MODEL=
-INTENT_LLM_FALLBACK_MODEL=
 # 识图模型与超时。识图模型留空 = 和 Chat 用同一个模型（要支持图片输入）。
 VISION_LLM_MODEL=
 VISION_TIMEOUT_SECONDS=60
@@ -109,9 +106,6 @@ MCP_CIRCUIT_MAX_SECONDS=600
 MCP_RESULT_MAX_CHARS=6000
 # Phase 9.2：工具调用时连接中途断开，重新连接再试几次（只对断线；超时、设备离线不重试）。
 MCP_CALL_RETRIES=1
-# Phase 9.2：Intent 判断这一轮需要查询工具时，Chat 的第一次调用必须先用工具（tool_choice=required）；
-# 接口不支持 required 时自动退回 auto。设为 0 就始终由模型自己决定。
-VIOLET_TOOL_CHOICE_REQUIRED=1
 # Phase 9.2：MCP_SERVERS 也可以用本地子进程（stdio，不占端口、不联网）：
 # {"name":"campus","transport":"stdio","command":["python","-m","some_server"],"tools":{"get_course_schedule":"read"}}
 # 局域网 / 公网地址必须是 https；只有 127.0.0.1 / localhost 可以用 http。"offer":"always" 表示每轮都把这个服务器的工具给 Chat
@@ -147,15 +141,9 @@ VIOLET_MEMORY_STANDING_EVENTS=3
 VIOLET_MEMORY_STANDING_HOURS=36
 # 2026-11-09：凌晨几点之前，用户说的“明天”按天亮以后的这一天理解（写进时间提示和记忆整理的提示）。
 VIOLET_LATE_NIGHT_END_HOUR=5
-# Phase 9.1：用户问“还记得…吗”而这次没找到相关记忆时，提醒 Chat 这不代表对方没说过。
-VIOLET_MEMORY_NOT_FOUND_NOTE=1
 # 用户明确要求的提醒：只给日期时的默认时刻；生成失败时使用的兜底模板（{content} 为提醒内容）。
 VIOLET_COMMITMENT_DEFAULT_TIME=09:00
 VIOLET_COMMITMENT_FALLBACK_TEMPLATE=提醒你一下：{content}
-# “提醒我+日期”的明确请求在回复前由代码保存，回复按真实结果确认或说明没设成（1）；0 = 只由记忆整理在回复后创建。
-VIOLET_REMINDER_BEFORE_REPLY=1
-# 回复前保存的提醒事项最长字数，超过就请用户说清楚（20）
-VIOLET_REMINDER_MAX_CONTENT_CHARS=20
 # 话题疲劳：不超过该字数的回复（及“嗯/哦/好的”等）视为没有继续交流的意愿。
 VIOLET_SHORT_REPLY_MAX_CHARS=3
 VIOLET_UNANSWERED_AFTER_HOURS=6
@@ -194,28 +182,19 @@ VIOLET_CONTEXT_MAX_CHARS=4000
 VIOLET_CONTEXT_MAX_FACTS=8
 # 旧系统（Eve）的核心记忆最多带几条（0.7.49 起 20，和 Eve 一样）
 VIOLET_CONTEXT_MAX_LEGACY=20
-# 0.7.49：同一方连发的几行合成一条交给模型（她就知道一次回复可以分好几行）；0 = 每行单独一条（旧做法）
-VIOLET_CONTEXT_MERGE_RUNS=1
 VIOLET_CONTEXT_HISTORY_MESSAGES=20
 # Phase 8.9.8: 历史按“轮”计（同一方连发的几行算一轮），最多这么多轮；0 = 只按 VIOLET_CONTEXT_HISTORY_MESSAGES 条数
 VIOLET_CONTEXT_HISTORY_TURNS=24
 VIOLET_CONTEXT_HISTORY_MAX_CHARS=4000
-# Phase 8.4：Chat 看到的上下文写法。natural（默认）= 不带来源/日期标签、偏好写成做法、标出消息之间的真实间隔、
-# 已发出的提醒标为“已经提醒过了”、给出认识时长；legacy = 与之前各阶段逐字相同（用于复核历史运行和 8.3 A/B）。
-VIOLET_CONTEXT_STYLE=natural
 # 历史消息之间、以及最后一条消息到现在，间隔达到这么多小时才标出时间（短于它视为同一段聊天）。
 VIOLET_CONTEXT_SESSION_GAP_HOURS=3
 # Phase 8.8：用户明确说过不喜欢被追问、这句只是平常分享，而回复仍以提问结尾时，重写一次（多一次 Chat 调用）。
 # 重写后仍然提问、或没通过一致性检查，就保留原回复；不会删掉问号。只在 natural 写法下生效。0 = 关闭。
 VIOLET_FOLLOW_UP_CHECK=1
-# Phase 8.8：IntentAgent 能看到的最近几条消息（带时间），用来判断互道晚安后的“嗯嗯”要不要回复。0 = 不给。
-VIOLET_INTENT_RECENT_MESSAGES=6
 # Phase 8.9：Violet 普通的一天（persona/life_config.json 的 daily；不用模型，按日期固定）。只在 natural 写法下进入聊天上下文。0 = 关闭。
 VIOLET_DAILY_LIFE=1
 # Phase 8.9：根据聊天记录判断你们熟到什么程度（聊天天数、对方主动找她、亲近的话、明确要保持距离），写进“你们的相处”。0 = 关闭。
 VIOLET_RELATIONSHIP_STATE=1
-# Phase 8.9：告诉 Chat 这次聊天里她自己的回复已经叮嘱了几次、几条以问句结尾，避免一直重复。0 = 关闭。
-VIOLET_REPLY_HABIT_NOTE=1
 
 # ── 稳定人设与虚拟生活（第四阶段）──────────────────────────────────────────────
 # 人设与生活配置目录（默认 violet/persona）：persona_core.json 只能人工编辑；life_config.json 可调参数与素材。
@@ -273,13 +252,6 @@ VIOLET_WEB_SEARCH_CACHE_SECONDS=600
 # 内置只读课表 MCP（violet-schedule：get_day_schedule / get_schedule_range / get_current_status / find_course），
 # 只给 ChatAgent、按需提供（Intent 决定），主动联系不调用。默认关闭。课表数据在 Violet 自己的数据库里。
 VIOLET_SCHEDULE_ENABLED=0
-# 查询工具直接交给回复：1 = 每一轮都把连上的只读工具（联网、课表、手机状态等）交给 Chat，它自己决定查不查；
-# 0 = 只在意图识别判断要查时才给（以前的做法）
-VIOLET_CHAT_TOOLS_DIRECT=1
-# 2026-10-30 自由用工具：会改动东西的工具也由 Chat 直接调用（没放行的每次先问主人）；一次回复最多几轮工具；
-# 没分类的 MCP 工具按它自己的 readOnlyHint 处理（0 = 藏起来）；她自己决定什么时候画图；AI 人设用模型本来的说话方式；
-# 批准请求 / 结果用她的语气说；“自己决定”的群冷场时她可能自己起话题（每轮约 25 分钟的概率）
-VIOLET_CHAT_ACTION_TOOLS=1
 VIOLET_CHAT_MAX_TOOL_ROUNDS=6
 VIOLET_MCP_AUTO_CLASSIFY=1
 VIOLET_IMAGE_SELF_DECIDE=1
@@ -290,19 +262,12 @@ VIOLET_IMAGE_QUALITY=medium
 # 2026-10-31: her voice (optional install: violet voice install)
 VIOLET_VOICE=1
 VIOLET_VOICE_MAX_CHARS=300
-# 2026-11-01: 0 = no Intent call before the reply (Chat decides about tools and memories itself)
-VIOLET_INTENT_STEP=0
 # 2026-11-01: prompt caching -- auto | openai | deepseek | claude | other; the history window keeps its start
 VIOLET_LLM_PROVIDER=auto
 # 2026-11-02: the Chat model on one platform (settings tab of that channel); empty = CHAT_LLM_MODEL
 VIOLET_MODEL_WECHAT=
 VIOLET_MODEL_QQ=
 VIOLET_MODEL_TELEGRAM=
-VIOLET_LATE_SYSTEM_AS_USER=1
-# 0.7.63: how a chat request is laid out. single (default) = one system message (rules, persona, relationship,
-# abilities), the chat as real turns, and ONE last user message: a fenced background block (time, phone, memories,
-# mood, notes) followed by the owner's words. classic = the layout before 0.7.63 (every note its own message)
-VIOLET_PROMPT_LAYOUT=single
 VIOLET_CONTEXT_STABLE_HISTORY=1
 # 2026-11-01: a group where nobody calls her and she is not talking is looked at once in this many seconds
 VIOLET_SOCIAL_BATCH_SECONDS=180
@@ -464,22 +429,13 @@ VIOLET_PREF_IMPLICIT_MAX_CONFIDENCE=0.6
 # 用户在这么久没有收到 Violet 消息后开口，视为用户主动发起对话（重置冷场计数）。
 VIOLET_USER_INITIATED_GAP_MINUTES=30
 
-
-# ── Intent Agent ─────────────────────────────────────────────────────────────
-INTENT_LLM_MODEL=grok-4.2
-INTENT_LLM_MODEL_TEMPERATURE=0.2
 # 提示词默认在 persona/prompts/intent.txt；设置 INTENT_LLM_PROMPT 会覆盖它
 
-
-# ── Performer Agent ───────────────────────────────────────────────────────────
-PERFORMER_LLM_MODEL=gpt-5.4
-PERFORMER_LLM_MODEL_TEMPERATURE=0.2
 # 提示词默认在 persona/prompts/performer.txt；设置 PERFORMER_LLM_PROMPT 会覆盖它
 # ── Chat Agent ────────────────────────────────────────────────────────────────
 CHAT_LLM_MODEL=grok-4.2
 CHAT_LLM_MODEL_TEMPERATURE=0.8
 # 提示词默认是 persona/chat_prompt_versions/chat.v1.txt（后台可选其他版本）；设置 CHAT_LLM_PROMPT 会覆盖它
-
 
 # ── Memory Agent ──────────────────────────────────────────────────────────────
 MEMORY_LLM_MODEL_TEMPERATURE=0.2
@@ -496,9 +452,6 @@ PROACTIVE_LLM_MODEL_TEMPERATURE=0.2
 # VIOLET_TEST_API_URL=              # test endpoint, OpenAI compatible
 # VIOLET_TEST_API_KEY=              # separate test key; set in the shell only, or type it at the hidden prompt
 
-# --- Phase 7 B.2: fewer model calls ---
-# 1 = IntentAgent is not offered query_memory while no event memory could be found (saves a call)
-VIOLET_INTENT_HIDE_EMPTY_MEMORY_TOOL=1
 # 1 = background memory jobs may end right after successful writes when the model calls memory_done
 VIOLET_MEMORY_FINISH_SIGNAL=1
 # 1 = MemoryAgent is not offered query_memory while there is no event memory at all (user-disabled ones count)

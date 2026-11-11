@@ -73,12 +73,12 @@ def test_a_turn_in_test_mode(make_world, data_dir):
     w.llm.responders["fake-chat"] = lambda kw: "现在没有可以发的表情包"
     say(w, "发个表情包")
     chat = w.llm.calls_for("fake-chat")[-1]["messages"]
-    assert chat[0]["content"] == test_mode.TESTER_PROMPT
+    assert chat[0]["content"].startswith(test_mode.TESTER_PROMPT)
     assert not any("喜欢猫" in str(m.get("content")) for m in chat)          # nothing from before the test
     assert len(w.llm.calls_for("fake-memory")) == memory_calls                 # nothing learned
     assert w.client.sent_texts[-2] == "现在没有可以发的表情包"
     diag = w.client.sent_texts[-1]
-    assert diag.startswith("🔧 诊断") and "意图识别" in diag and "发出：文字 1 条" in diag
+    assert diag.startswith("🔧 诊断") and "发出：文字 1 条" in diag
     stored = [r["content"] for r in w.db.get_recent_messages(limit=10)]
     assert not any(str(c).startswith("🔧") for c in stored)                     # not part of the conversation
     test_mode.disable()

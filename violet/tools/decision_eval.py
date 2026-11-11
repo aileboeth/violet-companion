@@ -119,7 +119,7 @@ def decision_case(db, case) -> dict[str, Any]:
     if setup == "cold":                       # three messages she started, none answered (cold_streak = 3)
         for _ in range(3):
             db.add_proactive_event("scheduled_check", status="sent", action_type="chat", reason="eval")
-    sched = ProactiveScheduler(None, None, None, send_messages=lambda *a: None)
+    sched = ProactiveScheduler(None, None, send_messages=lambda *a: None)
     context = sched._build_event_context(now_china())
     try:
         result = ProactiveAgent().run(json.dumps(context, ensure_ascii=False))

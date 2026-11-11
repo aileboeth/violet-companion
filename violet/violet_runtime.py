@@ -1218,9 +1218,7 @@ class VioletRuntime:
 
     def _agent_kwargs(self) -> dict[str, Any]:
         return {
-            "intent_agent": self.agents["intent"],
             "chat_agent": self.agents["chat"],
-            "performer_agent": self.agents["performer"],
             "memory_agent": self.agents["memory"],
         }
 
@@ -1259,8 +1257,6 @@ class VioletRuntime:
         try:
             if not testing:
                 self._before_pipeline(combined, turn.turn_id)
-                from ai import mood
-                mood.feel(self.db, combined, "主人")       # 2026-10-30: what the owner says moves her mood
         except Exception:
             logger.exception("engagement / preference bookkeeping failed for turn %s", turn.turn_id)
         extra = {"defer_memory": True, "turn_id": turn.turn_id} if self.async_memory else {"turn_id": turn.turn_id}
@@ -1286,6 +1282,8 @@ class VioletRuntime:
                     message_id = self.db.add_user_message("text", combined, created_at=turn.received_at,
                                                           channel=conversation[0], peer_id=conversation[1])
                     self.db.update_inbound_messages(turn.inbound_ids, stored_message_id=message_id)
+                    if pipeline is not None and pipeline.get("tool_notes") and not testing:
+                        self.db.set_message_tool_notes(message_id, pipeline["tool_notes"])     # 2026-11-11 (audit A1)
                     try:
                         from ai.images.media import MediaAssetStore
                         MediaAssetStore(self.db).link_message(turn.inbound_ids, message_id)
@@ -1294,16 +1292,12 @@ class VioletRuntime:
                 except Exception:
                     logger.exception("could not store user message for turn %s", turn.turn_id)
                 # Queue memory consolidation (runs after the reply is sent).
-                silent = pipeline is not None and pipeline.get("should_reply") is False
-                # Phase 9.1 (A6): a silent turn ("晚安啦，对了明早八点去复查") may still carry news; only a bare
-                # closing word ("晚安" / "嗯嗯") skips the memory call.
-                from ai.memory_model import is_engaged_reply, nothing_to_remember
+                from ai.memory_model import nothing_to_remember
                 empty = nothing_to_remember(combined)          # 2026-11-02: a sticker / "哈哈" alone: nothing to keep
                 if empty and self.memory_worker is not None and not testing:
                     from ai import pipeline_state as _ps
                     _ps.turn_node(turn.turn_id, "Memory", "skipped", note="这一轮只有表情、拍一拍或语气词，没有要记的")
-                if self.memory_worker is not None and not testing and not empty and \
-                        (not silent or is_engaged_reply(combined)):
+                if self.memory_worker is not None and not testing and not empty:
                     try:
                         memory_job = self.memory_worker.enqueue(turn.turn_id, combined, message_id) is not None
                     except Exception:
@@ -1349,7 +1343,7 @@ class VioletRuntime:
                         error = f"send: {report.failed[0]['error'] if report.failed else 'cancelled'}"[:500]
         self.db.update_inbound_messages(turn.inbound_ids, status=status, error=error)
         trace.step("这一轮结束", 结果=status, 错误=error, 回复=trace.text("\n".join(sent_texts)) if sent_texts else "没有发出回复",
-                   不回复=(pipeline or {}).get("should_reply") is False or None, 记忆整理="已排队" if memory_job else None)
+                   记忆整理="已排队" if memory_job else None)
         if testing and sender is not None:
             self._send_test_diagnosis(sender, turn, test_steps, report, status, error, pipeline)
         if pipeline is not None and sent_texts and not testing:
@@ -1385,7 +1379,7 @@ class VioletRuntime:
         if dropped.pop(conversation, False):
             return False
         chat = pipeline.get("chat") or {}
-        if pipeline.get("reminder") or any((m or {}).get("role") == "tool" for m in chat.get("messages") or []):
+        if pipeline.get("actions") or any((m or {}).get("role") == "tool" for m in chat.get("messages") or []):
             return False
         newer = self._has_newer(conversation)
         if newer:
@@ -1455,8 +1449,6 @@ class VioletRuntime:
         from ai import test_mode
         from ai.channels.outbound import fixed_text
         extra = []
-        if pipeline is not None and pipeline.get("should_reply") is False:
-            extra.append("- 回复：意图识别判断这条不用回复，所以没有回复")
         if report is not None:
             kinds: dict[str, int] = {}
             for m in report.sent:

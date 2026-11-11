@@ -126,26 +126,6 @@ def format_base_info() -> str:
     return "\n".join(lines) + "\n"
 
 
-def format_active_tasks(limit: int = 10) -> str:
-    """Build a compact active-task context block from SQLite."""
-    tasks = violetdb.list_active_task_sessions(limit=limit)
-    if not tasks:
-        return "当前 active_tasks：无"
-
-    lines = ["当前 active_tasks："]
-    for task in tasks:
-        lines.append(
-            "- "
-            f"id={task['id']}; "
-            f"status={task['status']}; "
-            f"name={task['task_name']}; "
-            f"description={task['task_description']}; "
-            f"task_info={task.get('task_info') or {}}; "
-            f"last_question={task.get('last_question') or ''}"
-        )
-    return "\n".join(lines)
-
-
 def extract_tool_memories(agent_result: dict[str, Any]) -> list[dict[str, Any]]:
     """Extract query_memory tool results from an agent run result."""
     recalled: list[dict[str, Any]] = []
@@ -233,6 +213,15 @@ def consistency_note(violations: list[Any]) -> str:
     return note + "。其余内容和语气尽量保持不变"
 
 
+def _certain(violations: list[Any]) -> list[Any]:
+    """2026-11-11 (audit A8): only findings the rules are sure of (a made-up family, a plan told as done, a "photo",
+    drafting notes) are cut out of a reply. "No recorded event behind this" and "sounds like the owner's experience"
+    are guesses from keywords: they get the one rewrite, and what the model writes then is sent -- a guess no longer
+    deletes a line (the reply used to arrive with a sentence missing, sometimes down to one leaning half-line)."""
+    from ai.semantic_guard import is_uncertain
+    return [v for v in violations if not is_uncertain(v)]
+
+
 def _review(guard, semantic, text: str) -> list[Any]:
     violations = guard.check_reply(text)
     if violations and semantic is not None:
@@ -250,8 +239,8 @@ def guard_reply(content: str, regenerate=None, entity: str = "reply", turn_used_
     1. rules (ai/consistency.py);
     2. optional semantic review of UNCERTAIN findings only (ai/semantic_guard.py):
        may clear a finding with evidence, never changes recorded history;
-    3. enforce: one natural rephrase with a correction note; only lines that still
-       fail are dropped -- never the whole reply because of an uncertain line.
+    3. enforce: one natural rephrase with a correction note; after it only lines the rules are
+       sure about are dropped (_certain) -- a keyword guess never deletes a line of a rewritten reply.
     flag: record only; off: nothing. Returns (text, violations_found).
     """
     from ai.consistency import ConsistencyGuard, guard_mode
@@ -259,13 +248,20 @@ def guard_reply(content: str, regenerate=None, entity: str = "reply", turn_used_
     mode = guard_mode()
     if mode == "off" or not content:
         return content, []
+    # 2026-11-11 (eval on the user's server: "给我唱首歌嘛" -> the lyrics inside <voice> were read as claims about her
+    # own life, and the rewrite lost the voice message): what she reads, sings or recites in a voice message is a
+    # performance, not a statement -- only her written lines are checked
+    def written(text: str) -> str:
+        return re.sub(r"<voice>.*?</voice>", "", text or "", flags=re.S)
+    if not written(content).strip():
+        return content, []
     try:
         guard = ConsistencyGuard(violetdb)
         guard.check_weather = entity == "reply"          # phase 8.9.4: a proactive weather task has real data
         guard.turn_used_web = turn_used_web               # phase 9.3: "刚查了一下" is backed by this turn's search
         guard.turn_used_schedule = turn_used_schedule     # phase 9.4.2: "看了下你的课表" is this turn's lookup
         semantic = SemanticGuard(violetdb)
-        violations = _review(guard, semantic, content)
+        violations = _review(guard, semantic, written(content))
     except Exception:
         logger.exception("consistency guard failed; reply not checked")
         return content, []
@@ -281,13 +277,18 @@ def guard_reply(content: str, regenerate=None, entity: str = "reply", turn_used_
     if regenerate is not None:
         try:
             retry = regenerate(consistency_note(violations))
-            remaining = _review(guard, semantic, retry)
+            # a line the model left exactly as it was ignored the correction: out, as before. A sentence it did
+            # rewrite is only cut when the rules are sure about it (_certain)
+            ignored = {v.line for v in violations if v.line}
+            remaining = [v for v in _review(guard, semantic, written(retry))
+                         if v.line in ignored or v in _certain([v])]
             if not remaining:
                 return retry, violations
             return guard.drop_lines(retry, remaining), violations
         except Exception:
             logger.exception("regeneration after consistency violation failed")
-    return guard.drop_lines(content, violations), violations
+    # no rewrite was possible (her own proactive message): a guessed finding is still left out, as before
+    return guard.drop_lines(content, violations if regenerate is None else _certain(violations)), violations
 
 
 def enforce_follow_up_preference(user_message: str, content: str, regenerate=None) -> tuple[str, dict[str, Any] | None]:
@@ -297,11 +298,10 @@ def enforce_follow_up_preference(user_message: str, content: str, regenerate=Non
     consistency guard. Otherwise the original stays: no question mark is ever cut out, and a question the user
     invited, a question of the user's own, or a turn without the preference is never touched.
     Returns (text, check) -- check is None when nothing applied."""
-    from ai.context_engine import context_style
     from ai.interaction import FOLLOW_UP_NOTE, follow_up_preference, follow_up_violation
     from ai.profile_store import Profile
     from ai.settings import env_bool
-    if not content or regenerate is None or not env_bool("VIOLET_FOLLOW_UP_CHECK", True) or context_style() != "natural":
+    if not content or regenerate is None or not env_bool("VIOLET_FOLLOW_UP_CHECK", True):
         return content, None
     try:
         pref = follow_up_preference(Profile(violetdb).preferences.effective())
@@ -413,171 +413,72 @@ def parse_json_object(raw: str | None) -> dict[str, Any] | None:
     return None
 
 
-DEFAULT_INTENT: dict[str, Any] = {
-    "route": "chat",
-    "should_reply": True,
-    "user_intent": "",
-    "emotion": "neutral",
-    "silent_reason": None,
-    "active_task_id": None,
-    "task": {"exists": False, "name": None, "description": None},
-}
-
-
-def normalize_intent(raw: dict[str, Any] | None) -> tuple[dict[str, Any], str | None]:
-    """Validate IntentAgent output. Returns (intent, problem-or-None).
-
-    Anything unusable degrades to a plain chat turn instead of failing the turn.
-    """
-    if not isinstance(raw, dict):
-        return {**DEFAULT_INTENT, "fallback": True}, "intent output is not a JSON object"
-
-    intent = dict(raw)
-    problem = None
-    route = intent.get("route")
-    if route not in ("chat", "task", "silent"):
-        problem = f"unknown route {route!r}"
-        route = "chat"
-
-    if route == "task":
-        task = intent.get("task") if isinstance(intent.get("task"), dict) else {}
-        active_task_id = intent.get("active_task_id")
-        if active_task_id is not None:
-            try:
-                active_task_id = int(active_task_id)
-            except (TypeError, ValueError):
-                problem = f"invalid active_task_id {active_task_id!r}"
-                active_task_id = None
-        if active_task_id is not None and violetdb.get_task_session(active_task_id) is None:
-            problem = f"active_task_id {active_task_id} does not exist"
-            active_task_id = None
-        name = (task.get("name") or "").strip() if isinstance(task.get("name"), str) else ""
-        if active_task_id is None and not name:
-            problem = problem or "task route without task name"
-            route = "chat"
-        intent["active_task_id"] = active_task_id
-        intent["task"] = {
-            "exists": route == "task",
-            "name": name or task.get("name"),
-            "description": task.get("description") or name or None,
-        }
-    intent["route"] = route
-    return intent, problem
-
-
 # ---------------------------------------------------------------------------
-# Multi-agent pipeline
+# One turn of the owner's chat
 # ---------------------------------------------------------------------------
+# 2026-11-11 (audit, rework): the turn is  tools available -> Chat (with its tools) -> checks -> Memory.
+# The Intent call, the Performer and the per-turn "tool plan" are gone: they had been off since 0.7.28 and only the
+# tests still ran them. Chat decides itself what to look up or do; every action is one of its tools.
 
-def _failed_performer_result(active_task_id: int | None, exc: Exception) -> dict[str, Any]:
-    return {
-        "content": json.dumps(
-            {
-                "task_status": "failed",
-                "task_id": active_task_id,
-                "actions_taken": [],
-                "result": {"summary": "任务执行过程中出错，这次没有完成", "data": {}},
-                "user_visible_facts": ["这件事这次没办成"],
-                "internal_notes": f"performer error: {exc.__class__.__name__}",
-            },
-            ensure_ascii=False,
-        ),
-        "messages": [],
-        "raw": {},
-        "error": f"{exc.__class__.__name__}: {exc}",
-    }
+TOOL_NOTE_CHARS = 400
 
 
-def settle_reminder_request(user_message: str, turn_id: str | None) -> dict[str, Any] | None:
-    """Phase 7 B.10.1: an explicit "提醒我…" request is saved BEFORE the reply, so the reply can say what
-    really happened. None when the message is not such a request (or the feature is off).
-
-    status: "set"            -- a pending commitment was saved (or already saved for this very turn)
-            "already_pending" -- the same reminder was already pending from an earlier turn: nothing new
-            "not_set"         -- nothing was saved (reason says why); the reply must not claim otherwise
-    A saved reminder is only a pending row: it says nothing about the later delivery."""
-    from ai.memory_model import parse_reminder_request, reminder_before_reply_enabled
-    if not reminder_before_reply_enabled():
-        return None
-    parsed = parse_reminder_request(user_message)
-    if not parsed["requested"]:
-        return None
-    outcome = {"status": "not_set", "reason": parsed["reason"], "content": parsed["content"],
-               "due_at": parsed["due_at"], "evidence": parsed["evidence"], "commitment_id": None}
-    if not parsed["ok"]:
-        return outcome
-    try:
-        result = violetdb.add_commitment(parsed["content"], parsed["due_at"], kind="reminder", evidence=parsed["evidence"],
-                                      source_turn_id=turn_id, created_by="user")
-        row = violetdb.get_commitment(int(result["commitment"]["id"]))      # what is really stored, not what was asked
-    except Exception:
-        logger.exception("could not save the reminder of turn %s", turn_id)
-        return {**outcome, "reason": "storage_error"}
-    if not row or row["status"] != "pending":
-        return {**outcome, "reason": "storage_error"}
-    status = "already_pending" if result["action"] == "duplicate" else "set"
-    return {**outcome, "status": status, "reason": result["action"], "commitment_id": row["id"],
-            "content": row["content"], "due_at": row["due_at"]}
+def tool_notes_from(messages: list[dict[str, Any]]) -> str | None:
+    """What she looked up in this turn, kept with the chat (audit A1): the external tools and memory searches she
+    called and the beginning of what came back. Without it the next turn saw only her words -- "那明天呢" after a
+    weather search had nothing to go on, and she searched again or made it up."""
+    calls: dict[str, tuple[str, str]] = {}
+    lines: list[str] = []
+    for m in messages or []:
+        if not isinstance(m, dict):
+            continue
+        if m.get("role") == "assistant":
+            for call in m.get("tool_calls") or []:
+                fn = (call or {}).get("function") or {}
+                calls[str(call.get("id"))] = (str(fn.get("name") or ""), str(fn.get("arguments") or ""))
+        elif m.get("role") == "tool":
+            name, args = calls.get(str(m.get("tool_call_id")), ("", ""))
+            if "__" not in name and name != "query_memory":
+                continue                                  # stickers, pictures, reminders show up in the chat itself
+            text = str(m.get("content") or "")
+            text = re.sub(r"【外部工具数据[^】]*】|【外部工具数据结束】", "", text).strip()
+            text = re.sub(r"\s+", " ", text)
+            lines.append(f"- {name.split('__', 1)[-1]}({args[:120]}) → {text[:TOOL_NOTE_CHARS]}")
+    return "\n".join(lines[-4:]) or None
 
 
-def reminder_note(outcome: dict[str, Any]) -> str:
-    """What the reply must know about this turn's reminder (facts only, no promise about delivery)."""
-    from ai.memory_model import parse_time, reminder_failure_text
-    if outcome["status"] in ("set", "already_pending"):
-        when = parse_time(outcome["due_at"])
-        label = f"{when.month}月{when.day}日 {when:%H:%M}" if when else outcome["due_at"]
-        if outcome["status"] == "set":
-            return (f"【提醒】用户要你设的提醒已经保存好了（系统里的真实记录）：{label} 提醒“{outcome['content']}”。"
-                    "回复里简短确认时间和事项就行，不要说设不了，也不要让用户自己另设。")
-        return (f"【提醒】同样的提醒之前已经设好了：{label} 提醒“{outcome['content']}”，这次没有重复设置。"
-                "简短告诉用户已经有这个提醒了。")
-    return (f"【提醒】用户像是要你设提醒，但这次没有设置成功：{reminder_failure_text(outcome['reason'])}。"
-            "不要说已经设好，也不要说到时会提醒；如果用户确实想设提醒，请他说清楚哪天几点、提醒什么。"
-            "如果用户其实不是在请你设提醒，就当没有这条。")
+def rewrite_reply(chat_agent, user_message: str, chat_context: dict[str, Any], chat_result: dict[str, Any],
+                  draft: str, note: str) -> str:
+    """One corrected version of a reply, written WITHOUT tools (audit A2): the model sees its draft, what the tools
+    of this turn returned and what is wrong with it. The old way ran the whole turn again -- tools included, so a
+    like, a recall or a reminder could happen twice, and the picked sticker changed."""
+    found = tool_notes_from(chat_result.get("messages") or [])
+    result = chat_agent.run(user_message, call_context={
+        **{k: v for k, v in chat_context.items() if not k.startswith("_")},
+        "rewrite": {"draft": draft, "note": note, "tool_notes": found}})
+    return result.get("content", "") or ""
 
 
 def run_pipeline(
     user_message: str,
-    intent_agent,
     chat_agent,
-    performer_agent,
     memory_agent,
     defer_memory: bool = False,
     turn_id: str | None = None,
     turn_key: str | None = None,
 ) -> dict[str, Any]:
-    """One user turn (see _run_pipeline). Phase 9.2: the turn is one tool scope -- an MCP server that fails in it is
-    not tried again by a later agent of the same turn (ai.mcp.tool_turn)."""
+    """One user turn (see _run_pipeline). The turn is one tool scope -- an MCP server that fails in it is not tried
+    again later in the same turn (ai.mcp.tool_turn)."""
     from ai.diagnostics import turn_scope
     from ai.mcp import tool_turn
     from ai.schedule.access import turn_message
-    # phase 9.4.2: the user's own words of this turn decide which personal timetable fields a lookup may return
-    # phase 10.6: the turn id is the correlation id of every log line and diagnosis event of this turn
     with turn_scope(turn_id), tool_turn(), turn_message(user_message):
         try:
-            result = _run_pipeline(user_message, intent_agent, chat_agent, performer_agent, memory_agent,
-                                   defer_memory=defer_memory, turn_id=turn_id, turn_key=turn_key)
+            return _run_pipeline(user_message, chat_agent, memory_agent, defer_memory=defer_memory, turn_id=turn_id,
+                                 turn_key=turn_key)
         except Exception as exc:
             _ps.pipeline_end(error=f"{exc.__class__.__name__}: {exc}")   # the 流程 page: not "running" forever
             raise
-        _record_tool_plan(result)
-        return result
-
-
-def _record_tool_plan(result: dict[str, Any]) -> None:
-    """Phase 10.6: what this turn did with tools, for the diagnosis (names and states only)."""
-    try:
-        plan = result.get("tool_plan") or {}
-        called = [n for n in ((result.get("chat") or {}).get("tools_called") or []) if "__" in n]
-        if not plan.get("needed") and not called and plan.get("mode") != "blocked":
-            return
-        from ai.diagnostics import record
-        unknown = list(plan.get("tools") or []) if plan.get("mode") == "blocked" and \
-            plan.get("status") == "not_configured" else []
-        record("tool_plan", plan.get("mode") != "blocked", mode=plan.get("mode"), status=plan.get("status"),
-               tools=list(plan.get("tools") or []), called=called, unknown_tools=unknown)
-    except Exception:
-        logger.exception("could not record the tool plan of this turn")
 
 
 def _phone_line_for_chat() -> str:
@@ -591,41 +492,22 @@ def _phone_line_for_chat() -> str:
 
 def _run_pipeline(
     user_message: str,
-    intent_agent,
     chat_agent,
-    performer_agent,
     memory_agent,
     defer_memory: bool = False,
     turn_id: str | None = None,
     turn_key: str | None = None,
 ) -> dict[str, Any]:
-    """
-    串行执行 intent -> chat -> memory 三阶段 pipeline。
+    """Chat -> (checks) -> Memory. defer_memory=True: MemoryAgent runs later (ai/memory_jobs.py, after the reply went
+    out). No stage makes the turn raise: Chat failing gives chat["failed"], Memory failing is skipped.
 
-    defer_memory=True 时不在这里运行 MemoryAgent（由 ai/memory_jobs.py 在回复发送后后台处理）。
-
-    任何单个阶段失败都不会让整轮抛出异常：
-      - Intent 失败或输出非法 JSON -> 按普通聊天处理；
-      - Performer 失败 -> 任务标记 failed，Chat 以失败结果自然回复；
-      - Chat 失败 -> chat["failed"]=True，由调用方决定降级回复；
-      - Memory 失败 -> 跳过记忆更新。
-
-    Returns:
-        {
-            "intent": dict,   # IntentAgent 原始输出
-            "chat":   dict,   # ChatAgent   原始输出（含 content / messages / raw）
-            "memory": dict,   # MemoryAgent 原始输出
-            "errors": dict,   # 各阶段错误摘要（无错误时为空）
-            "chat_failed": bool,
-        }
-    """
+    Returns {"chat", "memory", "recalled_memories", "user_raised_memory_ids", "actions", "tool_notes", "errors",
+    "chat_failed"}."""
     visualize_pipeline_start(user_message)
     _ps.pipeline_start("chat", user_message[:60], turn_id=turn_id)
     errors: dict[str, str] = {}
 
-    # Step 0 (phase 9.2): the external tools that are really available now -- Intent decides with this list
-    from ai.tool_manager import (Catalog, abilities_note, chat_note, direct_note, direct_tools, discover, intent_note,
-                                 plan_for_turn, tool_results_from)
+    from ai.tool_manager import Catalog, abilities_note, direct_note, direct_tools, discover
     try:
         catalog = discover()
     except Exception:
@@ -635,202 +517,73 @@ def _run_pipeline(
     trace.step("可用工具", 工具=sorted(catalog.tools) or None, 连不上=[u.get("server") for u in catalog.unavailable] or None,
                已停用=catalog.disabled or None, 未授权=catalog.refused or None)
 
-    # Step 1: 意图识别 (2026-11-01: off by default -- Chat decides itself, see intent_agent.intent_step)
-    from ai.agents.intent_agent import intent_step
-    use_intent = intent_step()
-    if use_intent:
-        visualize_step("Intent Recognition", "识别用户意图：对话 or 任务")
-        _ps.node_start("Intent", input_data={"user_message": user_message})
-        try:
-            intent_result = intent_agent.run(user_message, call_context={"tool_catalog_note": intent_note(catalog)})
-            parsed = parse_json_object(intent_result.get("content"))
-        except Exception as exc:
-            logger.exception("IntentAgent failed; falling back to plain chat route")
-            errors["intent"] = f"{exc.__class__.__name__}: {exc}"
-            intent_result = {"content": "", "messages": [], "raw": {}, "error": errors["intent"]}
-            parsed = None
-        intent_json, problem = normalize_intent(parsed)
-        if problem:
-            logger.warning("Intent output unusable (%s); continuing as %s", problem, intent_json["route"])
-            errors.setdefault("intent", problem)
-        trace.step("意图识别", 路线=intent_json.get("route"), 要回复=intent_json.get("should_reply"),
-                   工具请求=intent_json.get("tool_query") or "没有", 问题=problem,
-                   原始输出=trace.text(intent_result.get("content")))
-    else:
-        _ps.node_skip("Intent", "意图识别已关闭（默认）：她直接回复，自己决定用不用工具")
-        intent_result ={"content": "", "messages": [], "raw": {}, "skipped": True}
-        intent_json = {**DEFAULT_INTENT, "fallback": True, "skipped": True}
-
-    def intent_done(*args, **kwargs) -> None:
-        if use_intent:
-            _ps.node_done(*args, **kwargs)
-    recalled_memories = extract_tool_memories(intent_result)
     from ai import test_mode
-    testing = test_mode.active()          # 2026-10-30: no memories, no topic bookkeeping, no persona checks
+    testing = test_mode.active()          # no memories, no topic bookkeeping, no persona checks
+    recalled_memories: list[dict[str, Any]] = []
     try:
-        # phase 9.1 (A2): memories the user's own words are about, whether or not Intent searched
+        # memories the owner's own words are about (a search by the code; she can search more with query_memory)
         from ai.recall_search import user_word_recall
         if not testing:
-            recalled_memories += user_word_recall(violetdb, user_message,
-                                                  exclude_ids=[m.get("id") for m in recalled_memories])
+            recalled_memories = user_word_recall(violetdb, user_message, exclude_ids=[])
     except Exception:
-        logger.exception("word recall failed; continuing with Intent's results only")
+        logger.exception("word recall failed; continuing without")
     try:
         user_raised = [] if testing else TopicTracker(violetdb).note_user_mentions(user_message, recalled_memories)
     except Exception:
         logger.exception("could not record user-raised topics")
         user_raised = []
 
-    if intent_json.get("route") == "silent" or intent_json.get("should_reply") is False:
-        intent_done("Intent", output_data={"messages": intent_result.get("messages", []), "content": intent_json})
-        _ps.node_skip("Performer")
-        _ps.node_skip("Chat")
-        _ps.node_skip("Memory")
-        _ps.pipeline_end()
-        visualize_pipeline_end()
-        return {
-            "intent": intent_result,
-            "chat": {"content": "", "messages": [], "raw": {}, "skipped": True},
-            "memory": {"content": "", "messages": [], "raw": {}, "skipped": True},
-            "recalled_memories": recalled_memories,
-            "should_reply": False,
-            "errors": errors,
-            "chat_failed": False,
-        }
-
+    forget = None
     try:
-        reminder = settle_reminder_request(user_message, turn_id)
-    except Exception:
-        logger.exception("reminder request check failed for turn %s", turn_id)
-        reminder = None
-    if reminder is not None and intent_json["route"] == "task" and intent_json.get("active_task_id") is None:
-        # the reminder is handled above with the product's commitment store; the Performer has no reminder
-        # tool and would only mark a new task as failed (phase 7 B.10 round 26)
-        intent_json = {**intent_json, "route": "chat", "route_override": "reminder_before_reply"}
-    try:
-        # phase 9.1.2 (D-P911-R2): "那件事你忘掉吧" is carried out here, before the reply, by the memory store itself;
-        # the Performer has no memory tools (in p911-real-1 it made a failed task and the reply said "抹不掉")
+        # "那件事你忘掉吧" is carried out here, before the reply, by the memory store itself
         from ai.memory_forget import forget_note, settle_forget_request
         forget = settle_forget_request(violetdb, user_message, turn_id)
     except Exception:
         logger.exception("forget request check failed for turn %s", turn_id)
-        forget = None
-    if forget is not None and intent_json["route"] == "task" and intent_json.get("active_task_id") is None:
-        intent_json = {**intent_json, "route": "chat", "route_override": "forget_before_reply"}
     if forget is not None and forget["status"] == "forgotten":
-        # its own memory was just deleted: what Intent / word recall found for it must not reach Chat
         recalled_memories = [m for m in recalled_memories if m.get("id") != forget["memory_id"]]
 
-    # phase 9.2: what this turn does with tools. A read-only query is answered in Chat's own run (no task); an
-    # execution tool goes to the Performer; a tool that is missing / off / down / not permitted never becomes a task.
-    plan = {"needed": False, "mode": "none", "tools": []}
-    if reminder is None and forget is None:
-        try:
-            plan = plan_for_turn(intent_json, catalog)
-        except Exception:
-            logger.exception("tool plan failed; this turn runs without external tools")
-    trace.step("工具计划", 方式=plan.get("mode"), 工具=plan.get("tools") or None, 状态=plan.get("status"),
-               原因=plan.get("reason"), 缺少=plan.get("missing"),
-               说明="提醒 / 遗忘请求这一轮不用工具" if reminder is not None or forget is not None else None)
-    new_task = intent_json["route"] == "task" and intent_json.get("active_task_id") is None
-    if plan["mode"] in ("chat", "blocked", "direct") and new_task:
-        intent_json = {**intent_json, "route": "chat", "route_override": f"tool_{plan['mode']}"}
-    elif plan["mode"] == "performer" and intent_json["route"] != "task":
-        intent_json = {**intent_json, "route": "task", "route_override": "tool_performer", "active_task_id": None,
-                       "task": {"exists": True, "name": (plan.get("reason") or "工具任务")[:60],
-                                "description": plan.get("reason") or user_message[:120]}}
-
-    performer_result = None
-    if intent_json["route"] == "task":
-        intent_done("Intent", "Performer", output_data={"messages": intent_result.get("messages", []), "content": intent_json})
-        visualize_step("Task Performer", "执行任务相关操作")
-        active_task_id = intent_json.get("active_task_id")
-        try:
-            if active_task_id is None:
-                task = intent_json["task"]
-                active_task_id = violetdb.create_task_session(
-                    task_name=task["name"],
-                    task_description=task["description"] or task["name"],
-                    task_info={},
-                    status="pending_info",
-                )
-            performer_input = {
-                "user_message": user_message,
-                "intent": intent_json,
-                "active_task_id": active_task_id,
-                "recalled_memories": recalled_memories,
-            }
-            _ps.node_start("Performer", input_data=performer_input)
-            performer_result = performer_agent.run(
-                json.dumps(performer_input, ensure_ascii=False)
-            )
-        except Exception as exc:
-            logger.exception("PerformerAgent failed for task %s", active_task_id)
-            errors["performer"] = f"{exc.__class__.__name__}: {exc}"
-            if active_task_id is not None:
-                try:
-                    violetdb.update_task_session(
-                        task_id=active_task_id,
-                        status="failed",
-                        error_message=f"performer error: {exc.__class__.__name__}"[:300],
-                    )
-                except Exception:
-                    logger.exception("could not mark task %s as failed", active_task_id)
-            performer_result = _failed_performer_result(active_task_id, exc)
-        _ps.node_done("Performer", "Chat", output_data={"messages": performer_result.get("messages", []), "content": performer_result.get("content")})
-    else:
-        intent_done("Intent", "Chat", output_data={"messages": intent_result.get("messages", []), "content": intent_json})
-        _ps.node_skip("Performer", "这一轮不需要执行任务")
-
-    direct = direct_tools(catalog) if reminder is None and forget is None else []
-    # Step 2: 对话生成
+    direct = direct_tools(catalog)
     visualize_step("Chat Generation", "生成回复消息")
-    chat_input = {"user_message": user_message, "performer_result": bool(performer_result), "recalled_memories_count": len(recalled_memories)}
-    _ps.node_start("Chat", input_data=chat_input)
+    _ps.node_start("Chat", input_data={"user_message": user_message, "recalled_memories_count": len(recalled_memories)})
     chat_context = {
-        "performer_result": performer_result,
         "recalled_memories": recalled_memories,
         "restricted_topics": [] if testing else cooling_topics_for_turn(recalled_memories),
-        "route": intent_json.get("route"),
-        # phase 8.9.8: IntentAgent's reading of this message (8.9.7: it read "调侃" / "带撒娇" well, Chat never saw it)
-        "intent_reading": None if intent_json.get("fallback") else
-        {"user_intent": intent_json.get("user_intent"), "emotion": intent_json.get("emotion")},
         "turn_id": turn_id,
         "turn_key": turn_key or turn_id,       # stable across crash recovery (inbound ids): idempotent images
-        "reminder_note": reminder_note(reminder) if reminder is not None else None,
         "forget_note": forget_note(forget) if forget is not None else None,
-        # phase 9.2: the turn's tool plan (ChatAgent offers / forces the tools from it), what Chat must know about
-        # it, and the external data the Performer's tools returned (to answer from, not only a task log)
-        "tool_plan": plan,
-        "tool_note": chat_note(plan, catalog) or direct_note(direct),
-        # 2026-10-30 (rework step 2, "他不会用工具"): the read-only tools go to Chat on every turn, it decides itself;
-        # Intent's tool_query still makes the named one come first. Off: VIOLET_CHAT_TOOLS_DIRECT=0 (only when planned)
-        "direct_tools": direct,
-        "tool_results": tool_results_from((performer_result or {}).get("messages") or []),
-        # 2026-10-30: one list, written by the code, of what she can do now and how (and what not, and why)
+        "direct_tools": direct,                # the connected tools assigned to Chat: offered on every turn
+        "tool_note": direct_note(direct),
         "abilities_note": abilities_note(catalog, direct),
-        # 2026-11-03: what the owner's phone says now -- only with VIOLET_PHONE_CONTEXT_CHAT (default off)
-        "phone_note": _phone_line_for_chat(),
+        "phone_note": _phone_line_for_chat(),  # only with VIOLET_PHONE_CONTEXT_CHAT (default off)
     }
+    actions: list[dict[str, Any]] = []
+    tool_notes = None
     try:
         chat_result = chat_agent.run(user_message, call_context=chat_context)
+        actions = list(chat_result.get("actions") or [])
+        tool_notes = tool_notes_from(chat_result.get("messages") or [])
         known = {m.get("id") for m in recalled_memories}
-        recalled_memories += [m for m in extract_tool_memories(chat_result) if m.get("id") not in known]  # 11-01
-        # phase 9.3: a link in the reply must come from this turn's tools, the user's words or the recent conversation
+        recalled_memories += [m for m in extract_tool_memories(chat_result) if m.get("id") not in known]
+        # a link in the reply must come from this turn's tools, the user's words or the recent conversation
         from ai.web.citations import checked_reply
         recent = [r.get("content") for r in violetdb.get_recent_messages(limit=30)]
-        chat_result = checked_reply(chat_result, user_message, [*chat_context["tool_results"], *recent])
+        chat_result = checked_reply(chat_result, user_message, recent)
+
         def used(server: str) -> bool:
             return any(isinstance(m, dict) and m.get("role") == "tool"
                        and str(m.get("content") or "").startswith(f"【外部工具数据｜来源 {server}/")
                        for m in chat_result.get("messages") or [])
         guard_flags = {"turn_used_web": used("violet-web")}
         if used("violet-schedule"):
-            guard_flags["turn_used_schedule"] = True        # phase 9.4.2 (only passed when true: older wrappers)
+            guard_flags["turn_used_schedule"] = True
+        first = chat_result
         guarded, violations = (chat_result.get("content", ""), []) if testing else guard_reply(
             chat_result.get("content", ""),
-            regenerate=lambda note: chat_agent.run(user_message, call_context={**chat_context, "consistency_note": note})
-            .get("content", ""),
+            regenerate=lambda note: rewrite_reply(
+                chat_agent, user_message, chat_context, first, first.get("content", ""),
+                "里面有和已记录的事实对不上的说法：" + note + "。没有记录的事不要说自己做过，计划不要说成已经完成，"
+                "不要编造家人、工作、学校等背景"),
             **guard_flags,
         )
         if violations:
@@ -839,10 +592,10 @@ def _run_pipeline(
                 errors["chat"] = "consistency: every line contradicted recorded facts"
                 chat_result["failed"] = True
         if not chat_result.get("failed") and not testing:
+            before = chat_result.get("content", "")
             content, follow_up = enforce_follow_up_preference(
-                user_message, chat_result.get("content", ""),
-                regenerate=lambda note: chat_agent.run(user_message, call_context={**chat_context, "follow_up_note": note})
-                .get("content", ""))
+                user_message, before,
+                regenerate=lambda note: rewrite_reply(chat_agent, user_message, chat_context, first, before, note))
             if follow_up is not None:
                 chat_result = {**chat_result, "content": content, "follow_up_check": follow_up}
     except Exception as exc:
@@ -853,26 +606,19 @@ def _run_pipeline(
                                                 "usage": (chat_result.get("raw") or {}).get("usage"),
                                                 "error": chat_result.get("error")})
 
-    # Step 3: 记忆判断（以本轮对话为输入）；测试模式不记
+    def result(memory_result: dict[str, Any]) -> dict[str, Any]:
+        visualize_pipeline_end()
+        _ps.pipeline_end(error="; ".join(f"{k}: {v}" for k, v in errors.items())[:500] if errors else None)
+        return {"chat": chat_result, "memory": memory_result, "recalled_memories": recalled_memories,
+                "user_raised_memory_ids": user_raised, "actions": actions, "tool_notes": tool_notes,
+                "errors": errors, "chat_failed": bool(chat_result.get("failed"))}
+
     if defer_memory or testing:
         if testing:
             _ps.node_skip("Memory", "测试模式不记")
         else:
             _ps.node_queue("Memory", "回复发出后在后台整理，结果会显示在这里")
-        memory_result = {"content": "", "messages": [], "raw": {}, "skipped": True, "deferred": True}
-        visualize_pipeline_end()
-        _ps.pipeline_end(error="; ".join(f"{k}: {v}" for k, v in errors.items())[:500] if errors else None)
-        return {
-            "intent": intent_result,
-            "chat": chat_result,
-            "memory": memory_result,
-            "recalled_memories": recalled_memories,
-            "user_raised_memory_ids": user_raised,
-            "reminder": reminder,
-            "tool_plan": plan,
-            "errors": errors,
-            "chat_failed": bool(chat_result.get("failed")),
-        }
+        return result({"content": "", "messages": [], "raw": {}, "skipped": True, "deferred": True})
 
     visualize_step("Memory Processing", "处理记忆存储")
     memory_input = f"用户说：{user_message}"
@@ -882,31 +628,10 @@ def _run_pipeline(
     except Exception as exc:
         logger.warning("MemoryAgent failed, continue without memory update: %s", exc)
         errors["memory"] = f"{exc.__class__.__name__}: {exc}"
-        memory_result = {
-            "content": json.dumps(
-                {"should_save": False, "reason": f"MemoryAgent failed: {exc}"},
-                ensure_ascii=False,
-            ),
-            "messages": [],
-            "raw": {},
-            "error": str(exc),
-        }
+        memory_result = {"content": json.dumps({"should_save": False, "reason": f"MemoryAgent failed: {exc}"},
+                                               ensure_ascii=False), "messages": [], "raw": {}, "error": str(exc)}
     _ps.node_done("Memory", output_data={"messages": memory_result.get("messages", []), "content": memory_result.get("content")})
-
-    visualize_pipeline_end()
-    _ps.pipeline_end(error="; ".join(f"{k}: {v}" for k, v in errors.items())[:500] if errors else None)
-
-    return {
-        "intent": intent_result,
-        "chat": chat_result,
-        "memory": memory_result,
-        "recalled_memories": recalled_memories,
-        "user_raised_memory_ids": user_raised,
-        "reminder": reminder,
-        "tool_plan": plan,
-        "errors": errors,
-        "chat_failed": bool(chat_result.get("failed")),
-    }
+    return result(memory_result)
 
 
 def _safe_json_loads(raw: str, default: Any) -> Any:
@@ -914,53 +639,20 @@ def _safe_json_loads(raw: str, default: Any) -> Any:
     return parsed if parsed is not None else default
 
 
-def is_proactive_task_allowed(task: dict[str, Any] | None, event_context: dict[str, Any]) -> tuple[bool, str]:
-    if not task or not isinstance(task, dict):
-        return False, "missing task"
-
-    task_name = task.get("name")
-    allowed_tasks = event_context.get("allowed_tasks") or {}
-    task_config = allowed_tasks.get(task_name)
-    if not task_config or not task_config.get("enabled", False):
-        return False, f"proactive task is not enabled: {task_name}"
-
-    constraints = task.get("constraints") or {}
-    configured_constraints = task_config.get("constraints") or {}
-    budget_max = configured_constraints.get("budget_max", task_config.get("budget_max"))
-    requested_budget = constraints.get("budget_max") or (task.get("task_info") or {}).get("budget_max")
-    try:
-        if budget_max is not None and requested_budget is not None and float(requested_budget) > float(budget_max):
-            return False, f"requested budget exceeds configured budget_max: {requested_budget} > {budget_max}"
-    except (TypeError, ValueError):
-        return False, f"invalid budget value: {requested_budget!r}"
-
-    return True, "allowed"
-
-
-def get_proactive_task_config(task: dict[str, Any] | None, event_context: dict[str, Any]) -> dict[str, Any]:
-    if not task:
-        return {}
-    return (event_context.get("allowed_tasks") or {}).get(task.get("name"), {}) or {}
-
-
 def run_proactive_pipeline(
     event_context: dict[str, Any],
     proactive_agent,
     chat_agent,
-    performer_agent,
 ) -> dict[str, Any]:
     """
-    串行执行 proactive -> performer? -> chat 主动触达 pipeline。
-
-    ProactiveAgent 只做决策；是否真的执行任务由 Python 层根据 event_context
-    和配置硬校验。主动链路不调用 MemoryAgent。
+    串行执行 proactive -> chat 主动触达 pipeline（ProactiveAgent 只做决策；主动链路不调用 MemoryAgent）。
 
     任何阶段抛出的异常都会被记录为 proactive_events.status = failed，
     不会再让事件停留在 planned / task_started。
     """
-    state: dict[str, Any] = {"event_id": None, "task_id": None}
+    state: dict[str, Any] = {"event_id": None}
     try:
-        return _run_proactive_pipeline(event_context, proactive_agent, chat_agent, performer_agent, state)
+        return _run_proactive_pipeline(event_context, proactive_agent, chat_agent, state)
     except Exception as exc:
         logger.exception("proactive pipeline failed")
         reason = f"pipeline error: {exc.__class__.__name__}: {exc}"[:500]
@@ -976,8 +668,6 @@ def run_proactive_pipeline(
                 )
             else:
                 violetdb.update_proactive_event(state["event_id"], status="failed", reason=reason)
-            if state["task_id"] is not None:
-                violetdb.update_task_session(task_id=state["task_id"], status="failed", error_message=reason[:300])
         except Exception:
             logger.exception("could not record proactive failure")
         visualize_pipeline_end()
@@ -986,7 +676,6 @@ def run_proactive_pipeline(
             "event_id": state["event_id"],
             "proactive": None,
             "proactive_decision": None,
-            "performer": None,
             "chat": None,
             "should_send": False,
             "error": reason,
@@ -997,7 +686,6 @@ def _run_proactive_pipeline(
     event_context: dict[str, Any],
     proactive_agent,
     chat_agent,
-    performer_agent,
     state: dict[str, Any],
 ) -> dict[str, Any]:
     event_input = json.dumps(event_context, ensure_ascii=False)
@@ -1015,7 +703,9 @@ def _run_proactive_pipeline(
 
     should_act = bool(proactive_json.get("should_act"))
     action_type = proactive_json.get("action_type", "none")
-    if action_type not in ("none", "chat", "task"):
+    if action_type == "task":
+        action_type = "chat"          # 2026-11-11: no task executor any more -- she just writes
+    if action_type not in ("none", "chat"):
         logger.warning("ProactiveAgent returned unknown action_type %r; treating as 'none'", action_type)
         action_type = "none"
     conversation_state = event_context.get("conversation_state") or {}
@@ -1026,7 +716,6 @@ def _run_proactive_pipeline(
             logger.info("proactive decision rejected by policy: %s", violation)
     if not should_act or action_type == "none" or violation:
         _ps.node_done("Proactive", output_data={"messages": proactive_result.get("messages", []), "content": proactive_json})
-        _ps.node_skip("Performer")
         _ps.node_skip("Chat")
         event_id = violetdb.add_proactive_event(
             event_type=event_context.get("event_type", "scheduled_check"),
@@ -1045,7 +734,6 @@ def _run_proactive_pipeline(
             "event_id": event_id,
             "proactive": proactive_result,
             "proactive_decision": proactive_json,
-            "performer": None,
             "chat": None,
             "should_send": False,
         }
@@ -1061,82 +749,16 @@ def _run_proactive_pipeline(
     )
     state["event_id"] = event_id
 
-    performer_result = None
-    active_task_id = None
-    if action_type == "task":
-        task = proactive_json.get("task")
-        allowed, reason = is_proactive_task_allowed(task, event_context)
-        if not allowed:
-            _ps.node_done("Proactive", output_data={"messages": proactive_result.get("messages", []), "content": proactive_json})
-            _ps.node_skip("Performer")
-            _ps.node_skip("Chat")
-            violetdb.update_proactive_event(event_id, status="failed", reason=reason)
-            visualize_pipeline_end()
-            _ps.pipeline_end(error=reason)
-            return {
-                "event_id": event_id,
-                "proactive": proactive_result,
-                "proactive_decision": proactive_json,
-                "performer": None,
-                "chat": None,
-                "should_send": False,
-                "error": reason,
-            }
-
-        task_config = get_proactive_task_config(task, event_context)
-        _ps.node_done("Proactive", "Performer", output_data={"messages": proactive_result.get("messages", []), "content": proactive_json})
-        visualize_step("Task Performer", "执行主动触达任务")
-        performer_input_data = {
-            "origin": "proactive",
-            "event_context": event_context,
-            "proactive_decision": proactive_json,
-            "active_task_id": None,
-            "task": task,
-        }
-        _ps.node_start("Performer", input_data=performer_input_data)
-        active_task_id = violetdb.create_task_session(
-            task_name=task["name"],
-            task_description=task.get("description") or task["name"],
-            task_info={
-                "origin": "proactive",
-                "proactive_event_id": event_id,
-                "configured_task": {
-                    "description": task_config.get("description"),
-                    "task_info": task_config.get("task_info") or {},
-                    "constraints": task_config.get("constraints") or {},
-                },
-                **(task.get("task_info") or {}),
-                "constraints": {
-                    **(task_config.get("constraints") or {}),
-                    **(task.get("constraints") or {}),
-                },
-            },
-            status="pending_info",
-        )
-        state["task_id"] = active_task_id
-        violetdb.update_proactive_event(event_id, status="task_started", task_id=active_task_id)
-        performer_input = {
-            "origin": "proactive",
-            "event_context": event_context,
-            "proactive_decision": proactive_json,
-            "active_task_id": active_task_id,
-            "task": task,
-        }
-        performer_result = performer_agent.run(json.dumps(performer_input, ensure_ascii=False))
-        _ps.node_done("Performer", "Chat", output_data={"messages": performer_result.get("messages", []), "content": performer_result.get("content")})
-    else:
-        _ps.node_done("Proactive", "Chat", output_data={"messages": proactive_result.get("messages", []), "content": proactive_json})
-        _ps.node_skip("Performer")
+    _ps.node_done("Proactive", "Chat", output_data={"messages": proactive_result.get("messages", []), "content": proactive_json})
 
     visualize_step("Chat Generation", "生成主动触达消息")
-    _ps.node_start("Chat", input_data={"trigger": "[proactive event]", "proactive_decision": proactive_json, "performer_done": bool(performer_result)})
+    _ps.node_start("Chat", input_data={"trigger": "[proactive event]", "proactive_decision": proactive_json})
     restricted = restricted_topics_from_state(conversation_state)
     chat_result = chat_agent.run(
         "[proactive event]",
         call_context={
             "is_proactive": True,
             "proactive_result": proactive_json,
-            "performer_result": performer_result,
             "restricted_topics": restricted,
             "proactive_note": event_context.get("proactive_habit_note"),     # phase 8.9.5
             # 2026-11-03 (ai/phone_state.py, ai/phone_events.py): the phone now, and the moment that woke her up
@@ -1154,19 +776,18 @@ def _run_proactive_pipeline(
             visualize_pipeline_end()
             _ps.pipeline_end()
             return {"event_id": event_id, "proactive": proactive_result, "proactive_decision": proactive_json,
-                    "performer": performer_result, "chat": chat_result, "should_send": False, "error": reason}
+                    "chat": chat_result, "should_send": False, "error": reason}
     touched = find_touched_topic(chat_result.get("content", ""), restricted)
     if touched is not None:
         reason = f"policy: generated message touches restricted topic (memory {touched.get('memory_id') or touched.get('topic_key')})"
         logger.info(reason)
-        violetdb.update_proactive_event(event_id, status="skipped", reason=reason, decision=proactive_json, task_id=active_task_id)
+        violetdb.update_proactive_event(event_id, status="skipped", reason=reason, decision=proactive_json)
         visualize_pipeline_end()
         _ps.pipeline_end()
         return {
             "event_id": event_id,
             "proactive": proactive_result,
             "proactive_decision": proactive_json,
-            "performer": performer_result,
             "chat": chat_result,
             "should_send": False,
             "error": reason,
@@ -1176,7 +797,6 @@ def _run_proactive_pipeline(
         event_id,
         action_type=action_type,
         decision=proactive_json,
-        task_id=active_task_id,
     )
     visualize_pipeline_end()
     _ps.pipeline_end()
@@ -1185,7 +805,6 @@ def _run_proactive_pipeline(
         "event_id": event_id,
         "proactive": proactive_result,
         "proactive_decision": proactive_json,
-        "performer": performer_result,
         "chat": chat_result,
         "should_send": True,
         "topic_key": decision_topic_key(proactive_json),

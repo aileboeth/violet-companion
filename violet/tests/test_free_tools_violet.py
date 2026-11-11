@@ -101,12 +101,13 @@ def test_sticker_tools_find_send_and_save(clean_stickers, monkeypatch):
     found = json.loads(sticker_tools.find(db, {"query": "猫"}))
     assert found["count"] == 2 and found["stickers"][0]["number"] == cat["id"]
     assert "还没有说明" in next(s["description"] for s in found["stickers"] if s["number"] == plain["id"])
-    guard = sticker_tools.StickerGuard()
-    ctx = {"_tool_guard": CompositeGuard(guard)}
-    assert json.loads(sticker_tools.send(db, ctx, {"number": plain["id"]}))["ok"]   # sendable without a description
-    assert json.loads(sticker_tools.send(db, ctx, {"number": cat["id"]}))["error_code"] == "STICKER_TURN_LIMIT"
-    assert json.loads(sticker_tools.send(db, ctx, {"number": 999999}))["error_code"] == "STICKER_NOT_SENDABLE"
-    assert CompositeGuard(guard).result_extras()["sticker_ids"] == [plain["id"]]
+    # 2026-11-11: sending is a line "[[表情:N]]" in the reply, the one way -- no send tool, the finder says how
+    assert "[[表情:编号]]" in found["message"] and not hasattr(sticker_tools, "send")
+    assert {s["function"]["name"] for s in sticker_tools.SCHEMAS} == {"find_stickers", "save_sticker"}
+    from ai.channels.outbound import build_reply
+    reply = build_reply({"chat": {"content": f"哈哈\n[[表情:{plain['id']}]]"}})       # sendable without a description
+    assert [m.kind for m in reply.messages] == ["text", "sticker"] and reply.messages[1].sticker_id == plain["id"]
+    assert "[[表情:编号]]" in stickers.chat_section(db) and "send_sticker" not in stickers.chat_section(db)
     assert json.loads(sticker_tools.save(db, {}, {}))["error_code"] in ("NO_RECENT_IMAGE", "SAVE_FAILED")
     asset = MediaAssetStore(db).store_bytes(PNG + b"yz", direction="inbound", media_kind="image", ai_generated=False)
     monkeypatch.setattr(stickers, "describe", lambda path: "主人发的图")
@@ -114,18 +115,6 @@ def test_sticker_tools_find_send_and_save(clean_stickers, monkeypatch):
     assert saved["ok"] and stickers.get(db, saved["number"])["description"] == "表示无语"
     again = json.loads(sticker_tools.save(db, {}, {"image_number": asset["id"]}))
     assert again["number"] == saved["number"]                                     # the same picture stays one sticker
-
-
-def test_a_sticker_picked_with_the_tool_goes_out_with_the_reply():
-    from ai.channels.outbound import build_reply
-    reply = build_reply({"chat": {"content": "哈哈", "sticker_ids": [7]}})
-    assert [m.kind for m in reply.messages] == ["text", "sticker"] and reply.messages[1].sticker_id == 7
-    alone = build_reply({"chat": {"content": "", "sticker_ids": [7]}})
-    assert [m.kind for m in alone.messages] == ["sticker"]
-    marked = build_reply({"chat": {"content": "[[表情:3]]", "sticker_ids": [7]}})
-    assert [m.sticker_id for m in marked.messages] == [3]                         # the reply's own one wins
-    assert not build_reply({"chat": {"content": "[NO_REPLY]", "sticker_ids": [7]}}).should_send
-    assert not build_reply({"chat": {"content": "x", "sticker_ids": [7], "failed": True}}).should_send
 
 
 def test_sticker_tools_are_offered_only_when_they_can_do_something(clean_stickers):
@@ -142,7 +131,7 @@ def test_sticker_tools_are_offered_only_when_they_can_do_something(clean_sticker
         after = {t["function"]["name"] for t in agent._filter_tools_for_run(list(SCHEMAS))}
     finally:
         _CALL_CONTEXT.reset(token)
-    assert not before & {"find_stickers", "send_sticker"} and {"find_stickers", "send_sticker"} <= after
+    assert "find_stickers" not in before and "find_stickers" in after
 
 
 def test_a_sticker_may_follow_a_web_answer():
@@ -150,7 +139,7 @@ def test_a_sticker_may_follow_a_web_answer():
     guard = WebToolGuard("今天有什么新闻")
     assert guard.check(WEB_SEARCH, {"query": "新闻"}) is None
     guard.observe(WEB_SEARCH, json.dumps({"results": []}))
-    assert guard.check("send_sticker", {"number": 1}) is None
+    assert guard.check("find_stickers", {"query": "开心"}) is None
     assert json.loads(guard.check("campus__get_weather", {}))["error_code"] == "DENIED_AFTER_WEB"
 
 
@@ -193,16 +182,6 @@ def test_she_decides_herself_when_a_picture_fits(violetdb, monkeypatch):
     assert "IMAGE_NOT_REQUESTED" in ImageToolGuard(violetdb, "今天天气真好").check("create_image", {"subject": "other"})
 
 
-def test_tool_plan_without_a_task_when_chat_has_the_tools():
-    from ai.tool_manager import Catalog, ToolInfo, plan_for_turn
-    catalog = Catalog(configured=True, tools={
-        "phone__torch_on": ToolInfo("phone__torch_on", "phone", "torch_on", "开手电筒", "write", ["chat", "performer"])})
-    task = {"route": "task", "active_task_id": None, "task": {"name": "开手电筒"}}
-    assert plan_for_turn(task, catalog)["mode"] == "direct"
-    asked = {**task, "tool_query": {"needed": True, "tools": ["phone__torch_on"]}}
-    assert plan_for_turn(asked, catalog)["mode"] == "chat"
-
-
 def test_one_list_of_what_she_can_do(clean_stickers, monkeypatch):
     from ai import stickers
     from ai.tool_manager import Catalog, ToolInfo, abilities_note
@@ -228,30 +207,6 @@ def ai_persona(tmp_path, monkeypatch):
     (tmp_path / "data" / "control").mkdir(parents=True, exist_ok=True)
     (tmp_path / "data" / "control" / "persona_core.json").write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
     return data
-
-
-def test_the_ai_persona_speaks_in_the_models_own_way(violetdb, ai_persona, monkeypatch):
-    from ai.agents.chat_agent import AI_PROMPT_FILE, ai_prompt
-    from ai.context_engine import ContextEngine
-    from ai.persona import PersonaCore
-    monkeypatch.delenv("CHAT_LLM_PROMPT", raising=False)
-    text = PersonaCore.load().render()
-    assert "本来的样子" in text and "说话习惯" not in text and "性格：" not in text
-    packet = ContextEngine(violetdb).build("chat", "我先去睡啦")              # a "closing": a companion note before
-    assert packet.report["ai_natural"] and packet.turn_note is None
-    assert "onboarding" not in packet.report["sections"]
-    assert ai_prompt() and "本来的方式" in ai_prompt() and AI_PROMPT_FILE.endswith("chat.ai.v1.txt")
-    monkeypatch.setenv("CHAT_LLM_PROMPT", "管理员自己的提示词")
-    assert ai_prompt() is None                                                   # the admin's prompt is kept
-    monkeypatch.setenv("VIOLET_AI_NATURAL", "0")
-    assert "说话习惯" in PersonaCore.load().render()
-    assert not ContextEngine(violetdb).build("chat", "我先去睡啦").report["ai_natural"]
-
-
-def test_other_personas_keep_their_voice(violetdb):
-    from ai.context_engine import ContextEngine
-    packet = ContextEngine(violetdb).build("chat", "我先去睡啦")
-    assert not packet.report["ai_natural"] and packet.turn_note
 
 
 # ------------------------------------------------------------------------------------------------ notices

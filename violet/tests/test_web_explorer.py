@@ -264,8 +264,7 @@ def test_a_finding_is_shared_once_even_after_restart(make_world):
     row = w.db.fetch_one("SELECT * FROM web_findings WHERE id = ?", (fid,))
     assert row["share_count"] == 1 and row["shared_with_user_at"]
     # "restart": a fresh scheduler sees the persisted share
-    restarted = ProactiveScheduler(w.scheduler.proactive_agent, w.scheduler.chat_agent, w.scheduler.performer_agent,
-                                   send_messages=lambda m, e=None: None, config_path=w.scheduler.config_path)
+    restarted = ProactiveScheduler(w.scheduler.proactive_agent, w.scheduler.chat_agent, send_messages=lambda m, e=None: None, config_path=w.scheduler.config_path)
     assert restarted._conversation_state()["allowed_web_findings"] == []
     # even long after the share (spacing rule satisfied), the same finding is never offered again
     w.db.execute("UPDATE web_findings SET shared_with_user_at = ?",
@@ -332,8 +331,8 @@ def test_external_news_never_becomes_eves_experience_or_user_memory(make_world):
     w.llm.responders["fake-memory"] = lambda kw: json.dumps({"should_save": False, "reason": "t"})
 
     def reply(kw):
-        system = "\n".join(m.get("content") or "" for m in kw["messages"] if m["role"] == "system")
-        return "看到一篇文章说图书馆在办旧书交换活动" if "上一版回复" in system else "我上周末去了那个旧书交换活动"
+        system = "\n".join(m.get("content") or "" for m in kw["messages"] if m["role"] in ("system", "user"))
+        return "看到一篇文章说图书馆在办旧书交换活动" if "里面有和已记录的事实对不上的说法" in system else "我上周末去了那个旧书交换活动"
     w.llm.responders["fake-chat"] = reply
     say(w, "周末干嘛了")
     assert w.client.sent_texts[-1] == "看到一篇文章说图书馆在办旧书交换活动"

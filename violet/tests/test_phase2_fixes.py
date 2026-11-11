@@ -138,25 +138,3 @@ def test_user_raising_a_topic_is_recorded_immediately(make_world):
     assert sources[0] == "user"
     assert not w.scheduler.tracker.topic_state(f"memory:{guitar['id']}")["cooling"]
 
-
-def test_eve_follow_up_question_in_a_reply_counts_as_eve_raising_it(make_world):
-    from tests.test_phase2_scenarios import script, tool
-    from tests.fakes import intent_json
-    w = make_world()
-    quiet_memory(w)
-    outage = w.db.save_event_memory("用户的服务器出现故障", kind="event", progress="ongoing")["memory"]
-    w.llm.responders["fake-intent"] = script(tool("query_memory", query="服务器"), final=intent_json("chat"))
-    chat(w, normal="对了服务器修好了吗？")
-    say(w, "今天加班好累")                                   # user did not raise the server
-    rows = w.db.list_topic_mentions(memory_id=outage["id"])
-    assert [(r["source"], r["user_engaged"]) for r in rows] == [("violet_reply", None)]
-    chat(w, normal="嗯嗯")
-    say(w, "嗯")
-    assert w.db.list_topic_mentions(memory_id=outage["id"])[0]["user_engaged"] == 0
-
-    # a statement without a question is not a follow-up; a user-raised topic is not Violet's
-    w.llm.responders["fake-intent"] = script(tool("query_memory", query="服务器"), final=intent_json("chat"))
-    chat(w, normal="服务器那事确实烦人？")
-    say(w, "服务器的故障又出现了")
-    latest = w.db.list_topic_mentions(memory_id=outage["id"])[0]
-    assert latest["source"] == "user"

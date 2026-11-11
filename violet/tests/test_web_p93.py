@@ -267,85 +267,11 @@ def offered(kw):
 
 
 def systems(kw):
-    return "\n".join(m.get("content") or "" for m in kw["messages"] if m["role"] == "system")
+    return "\n".join(m.get("content") or "" for m in kw["messages"] if m["role"] in ("system", "user"))
 
 
 def tool_texts(kw):
     return [m["content"] for m in kw["messages"] if m["role"] == "tool"]
-
-
-def test_a_question_about_the_latest_version_searches_and_cites_a_real_link(web_world):
-    w = web_world
-    w.llm.responders["fake-intent"] = wants(SEARCH)
-    chat_plays(w, (SEARCH, {"query": "Violet 新版 发布", "recency_days": 30}),
-               final="刚查了一下，2.0 已经发布了（示例新闻 http://news.example.org/release），不过这是网页上说的哦")
-    say(w, "Violet 现在最新是哪个版本啊")
-    first = w.chats[0]
-    assert offered(first) == [SEARCH] and first["tool_choice"] == "required"          # 9.2.2: one tool -> required
-    assert "【联网工具】" in systems(first) and "不要自己编" in systems(first)
-    assert '"source": "news.example.org"' in tool_texts(w.chats[1])[0]
-    assert "http://news.example.org/release" in w.client.sent_texts[-1]
-
-
-def test_the_troubleshooting_log_follows_a_whole_turn(web_world, monkeypatch, caplog):
-    """0.7.5: with 排查日志 on, every step of the turn is one line of logger violet.trace with the turn id."""
-    import logging
-    w = web_world
-    w.llm.responders["fake-intent"] = wants(SEARCH)
-    chat_plays(w, (SEARCH, {"query": "Violet 新版 发布"}), final="刚查了一下，2.0 已经发布了 http://news.example.org/release")
-    monkeypatch.setenv("VIOLET_TRACE", "0")
-    with caplog.at_level(logging.INFO, logger="violet.trace"):
-        say(w, "Violet 现在最新是哪个版本啊")
-    assert not [r for r in caplog.records if r.name == "violet.trace"]       # off by default: nothing
-    caplog.clear()
-    monkeypatch.setenv("VIOLET_TRACE", "1")
-    with caplog.at_level(logging.INFO, logger="violet.trace"):
-        say(w, "那 2.0 有什么新功能")
-    lines = [r.getMessage() for r in caplog.records if r.name == "violet.trace"]
-    steps = [line.split(" · ")[0] for line in lines]
-    for name in ("收到消息", "可用工具", "意图识别", "工具计划", "模型调用", "工具调用", "联网搜索", "发送", "这一轮结束"):
-        assert name in steps, (name, steps)
-    assert any("工具请求=" in l and "needed" in l for l in lines if l.startswith("意图识别"))
-    assert any(f"工具=[{SEARCH}]" in l for l in lines if l.startswith("工具计划"))
-    assert any("内容=那 2.0 有什么新功能" in l for l in lines if l.startswith("收到消息"))
-    turns = {getattr(r, "turn", "") for r in caplog.records if r.name == "violet.trace"}
-    assert len(turns) == 1 and next(iter(turns)).startswith(" [turn ")      # all of them carry the same turn id
-    caplog.clear()
-    monkeypatch.setenv("VIOLET_TRACE_CONTENT", "none")
-    with caplog.at_level(logging.INFO, logger="violet.trace"):
-        say(w, "好的谢谢")
-    received = [r.getMessage() for r in caplog.records if r.name == "violet.trace" and r.getMessage().startswith("收到消息")]
-    assert received and "好的谢谢" not in received[0] and "未记录内容" in received[0]
-
-
-def test_small_talk_gets_no_web_tool_and_no_web_note(web_world):
-    w = web_world
-    chat_plays(w, final="早呀～")
-    say(w, "早上好呀")
-    assert not offered(w.chats[0]) and "【联网工具】" not in systems(w.chats[0]) and w.provider.calls == []
-
-
-def test_search_then_read_a_result_with_both_tools_on_auto(web_world):
-    w = web_world
-    w.llm.responders["fake-intent"] = wants(SEARCH, FETCH)
-    chat_plays(w, (SEARCH, {"query": "Violet 2.0 发布"}), (FETCH, {"url": "http://news.example.org/release"}),
-               final=lambda kw: "看了原文：10 月 1 日正式发布，9 月 28 日完成测试。http://news.example.org/release"
-               if any("正式发布" in t for t in tool_texts(kw)) else "没读到")
-    say(w, "帮我看看 Violet 2.0 到底什么时候发布的，最好看下原文")
-    assert w.chats[0]["tool_choice"] == "auto" and sorted(offered(w.chats[0])) == sorted([SEARCH, FETCH])
-    page = json.loads(re.search(r"\{.*\}", tool_texts(w.chats[-1])[1], re.S).group(0))
-    assert page["published_at"].startswith("2026-10-01") and page["published_verified"] is True
-    assert w.client.sent_texts[-1].startswith("看了原文：10 月 1 日正式发布")
-
-
-def test_search_only_is_reminded_once_about_the_page_it_did_not_read(web_world):
-    w = web_world
-    w.llm.responders["fake-intent"] = wants(SEARCH, FETCH)
-    chat_plays(w, (SEARCH, {"query": "Violet 2.0 发布"}), final="搜到说 2.0 发布了，原文我还没点开看")
-    say(w, "Violet 2.0 发布了吗，原文怎么说")
-    reminders = [m["content"] for m in w.chats[-1]["messages"] if (m.get("content") or "").startswith("【还没查】")]
-    assert len(reminders) == 1 and FETCH in reminders[0] and SEARCH not in reminders[0]
-    assert len(tool_texts(w.chats[-1])) == 1                                           # nothing was read
 
 
 def test_a_made_up_source_never_reaches_the_user(web_world):
@@ -358,15 +284,6 @@ def test_a_made_up_source_never_reaches_the_user(web_world):
     assert "http://news.example.org/release" in sent and "official-notice" not in sent and "官方公告：" not in sent
 
 
-def test_a_link_the_user_sent_is_read(web_world):
-    w = web_world
-    w.llm.responders["fake-intent"] = wants(FETCH)
-    chat_plays(w, (FETCH, {"url": "http://news.example.org/release"}), final="这篇说新版本加入了联网搜索")
-    say(w, "你看下这篇 http://news.example.org/release 讲了啥")
-    assert w.chats[0]["tool_choice"] == "required" and "联网搜索" in tool_texts(w.chats[-1])[0]
-    assert w.provider.calls == []
-
-
 def test_search_failure_is_reported_as_such(web_world):
     from ai.web.providers import SearchError
     w = web_world
@@ -377,22 +294,6 @@ def test_search_failure_is_reported_as_such(web_world):
     result = tool_texts(w.chats[-1])[0]
     assert '"error_code": "timeout"' in result and "搜索服务超时了" in result
     assert "http://" not in "".join(w.client.sent_texts)
-
-
-def test_a_switched_off_search_tool_is_reported_as_switched_off(web_world):
-    from ai.tool_manager import tool_store
-    w = web_world
-    tool_store().set_tool("violet-web", "web_search", False)
-
-    def intent(kw):
-        names = re.findall(r"violet-web__\w+", systems(kw))
-        tools = [n for n in dict.fromkeys(names) if n.endswith("web_search")]
-        return intent_json("chat", tool_query={"needed": True, "tools": tools, "missing": "联网搜索"})
-    w.llm.responders["fake-intent"] = intent
-    chat_plays(w, final="搜索现在关着，我只能说我原来知道的，可能不是最新的")
-    say(w, "最新版本是哪个")
-    assert not offered(w.chats[0]) and "需要的工具已经停用了" in systems(w.chats[0])
-    assert "不是刚查到的" in systems(w.chats[0]) and w.provider.calls == []
 
 
 def test_an_unconfigured_provider_says_not_configured(web_world):

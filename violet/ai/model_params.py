@@ -122,9 +122,8 @@ def _late_system_as_user(messages: list[Any]) -> list[Any]:
     """2026-11-01 (--probe-cache on the user's relay: a system message after the conversation began had 0 cache hits,
     the same text inside a user message 7040 of 7250 -- the relay moves every system message to the front, so this
     turn's time / memories / notes changed the beginning of every call). After the first non-system message, system
-    messages go as labelled user messages. VIOLET_LATE_SYSTEM_AS_USER=0: as they are."""
-    if not env_str("VIOLET_LATE_SYSTEM_AS_USER", "1").strip().lower() in ("1", "true", "yes", "on"):
-        return messages
+    messages go as labelled user messages. (2026-11-11: a chat request has no such message any more -- one system
+    message, the chat, one user message; this stays as the net under the other callers.)"""
     # the unchanging beginning ends at the first CACHE_MARK (ChatAgent marks it; with an empty history this turn's notes
     # follow the fixed system messages directly -- the second probe run: still 0%), else at the first non-system one
     out, started = [], False

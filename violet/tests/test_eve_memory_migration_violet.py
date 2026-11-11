@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai.agents.chat_agent import merge_runs
+from ai.agents.chat_agent import compose
 from ai.chat import format_recalled_memories
 from ai.context_engine import LEGACY_CORE_HEADER, legacy_core_label
 
@@ -36,7 +36,7 @@ def test_recalled_eve_record_says_who_calls_whom():
     assert "“用户”就是对方" not in format_recalled_memories([own])          # Violet's own records need no note
 
 
-def test_lines_in_a_row_are_one_message(monkeypatch):
+def test_lines_in_a_row_are_one_message():
     history = [
         {"role": "user", "content": "我要睡了"},
         {"role": "assistant", "content": "晚安臭宝"},
@@ -46,13 +46,12 @@ def test_lines_in_a_row_are_one_message(monkeypatch):
         {"role": "user", "content": "醒了"},
         {"role": "user", "content": "好困"},
     ]
-    merged = merge_runs(history)
-    assert [m["role"] for m in merged] == ["user", "assistant", "system", "assistant", "user"]
+    merged = compose(["规则"], history, [], "在吗")[1:]
+    assert [m["role"] for m in merged] == ["user", "assistant", "user", "assistant", "user"]
     assert merged[1]["content"] == "晚安臭宝\n被子盖好"
-    assert merged[4]["content"] == "醒了\n好困"
+    assert "隔了5小时" in merged[2]["content"]                              # the gap is said in a user turn, never hers
+    assert merged[4]["content"].startswith("醒了\n好困")
     assert history[1]["content"] == "晚安臭宝"                               # the input is not changed
-    monkeypatch.setenv("VIOLET_CONTEXT_MERGE_RUNS", "0")
-    assert merge_runs(history) == history
 
 
 def test_pack_command_never_copies_its_own_old_package():

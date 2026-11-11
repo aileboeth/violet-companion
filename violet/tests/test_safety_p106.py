@@ -72,7 +72,7 @@ def test_ordinary_replies_are_not_blocked(text):
 
 def test_a_blocked_reply_leaves_no_trace_in_history_or_memory_and_is_not_retried(world, monkeypatch):  # noqa: F811
     import os
-    leak = "【这一轮先查再回答】对方想知道的：天气。先调用下面合适的工具拿到结果"
+    leak = "【工具怎么用】这一轮你可以自己决定调用工具，不用等对方明说"
     world.llm.responders[os.environ.get("CHAT_LLM_MODEL", "fake-chat")] = lambda kw: leak
     world.rt.start(poll=False)
     world.mgr.start_enabled()

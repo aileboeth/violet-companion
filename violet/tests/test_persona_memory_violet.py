@@ -296,19 +296,6 @@ def test_compact_memory_tools_keep_names_params_and_enums(monkeypatch):
     assert memory_tools_compact.compact(full["save_memory"]) == full["save_memory"]
 
 
-def test_decision_without_tasks_drops_the_task_rules_and_keeps_the_rest(monkeypatch):
-    import json as _json
-    from ai.agents.proactive_agent import ProactiveAgent
-    msgs = ProactiveAgent().build_context_messages(_json.dumps({"allowed_tasks": {}}))
-    rules, contract = msgs[1]["content"], msgs[2]["content"]
-    assert "allowed_tasks 中明确允许的任务" not in rules and "10. conversation_state.restricted_memories" in rules
-    assert '"task"' not in contract and "should_act" in contract
-    with_tasks = ProactiveAgent().build_context_messages(_json.dumps({"allowed_tasks": {"x": {}}}))
-    assert "allowed_tasks 中明确允许的任务" in with_tasks[1]["content"] and '"task"' in with_tasks[2]["content"]
-    monkeypatch.setenv("VIOLET_DECISION_ALWAYS_TASK_RULES", "1")
-    assert "allowed_tasks 中明确允许的任务" in ProactiveAgent().build_context_messages("{}")[1]["content"]
-
-
 def test_decision_sees_the_last_turns_only(violetdb):
     from ai.context_engine import ContextEngine
     for i in range(30):

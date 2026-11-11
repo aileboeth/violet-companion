@@ -15,8 +15,8 @@ from tests.fakes import FakeLLM, default_responders, install_fake_llm
 @pytest.fixture()
 def agents(monkeypatch, violetdb):
     install_fake_llm(monkeypatch, FakeLLM(default_responders()))
-    from ai.agents import IntentAgent, MemoryAgent
-    return {"intent": IntentAgent(), "memory": MemoryAgent()}
+    from ai.agents import ChatAgent, MemoryAgent
+    return {"chat": ChatAgent(), "memory": MemoryAgent()}
 
 
 @contextlib.contextmanager
@@ -45,7 +45,7 @@ def test_recall_does_not_make_memory_more_important(agents, violetdb):
     memory_id = violetdb.add_event_memory("用户的服务器出现故障", category="event", kind="event", progress="ongoing")
     before = violetdb.get_event_memory(memory_id)
     for _ in range(5):
-        result = agents["intent"]._tool_query_memory({"query": "服务器 故障"})
+        result = agents["chat"]._tool_query_memory({"query": "服务器 故障"})
         assert result["memories"][0]["id"] == memory_id
     after = violetdb.get_event_memory(memory_id)
     assert after["forget_weight"] == before["forget_weight"]
@@ -65,7 +65,7 @@ def test_user_remention_adjusts_importance_only_with_new_information(violetdb):
 
 def test_exact_short_query_finds_the_memory_that_contains_it(agents, violetdb):
     memory_id = violetdb.save_event_memory("用户的服务器故障已经修好了", kind="event", progress="done")["memory"]["id"]
-    found = agents["intent"]._tool_query_memory({"query": "服务器"})["memories"]
+    found = agents["chat"]._tool_query_memory({"query": "服务器"})["memories"]
     assert [m["id"] for m in found] == [memory_id]
     assert violetdb.text_similarity("服务器", "用户的服务器故障已经修好了") >= 0.8
 
@@ -237,7 +237,7 @@ def test_retracted_memory_is_never_recalled(agents, violetdb):
     memory = violetdb.save_event_memory("用户有个姐姐叫小雨", kind="fact")["memory"]
     with turn_context(turn_id="t-r", user_message="我没有姐姐，你记错人了"):
         call(agents["memory"], "retract_memory", memory_id=memory["id"], reason="我没有姐姐")
-    assert agents["intent"]._tool_query_memory({"query": "姐姐 小雨"})["memories"] == []
+    assert agents["chat"]._tool_query_memory({"query": "姐姐 小雨"})["memories"] == []
 
 
 # --- context formatting ------------------------------------------------------------------

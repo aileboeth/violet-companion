@@ -15,14 +15,14 @@ from tests.fakes import FakeLLM, completion, default_responders, install_fake_ll
 def agents(monkeypatch, violetdb):
     monkeypatch.setenv("VIOLET_INTENT_STEP", "0")
     fake = install_fake_llm(monkeypatch, FakeLLM(default_responders()))
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent
-    return fake, {"intent": IntentAgent(), "chat": ChatAgent(), "memory": MemoryAgent(), "performer": PerformerAgent()}
+    from ai.agents import ChatAgent, MemoryAgent
+    return fake, {"chat": ChatAgent(), "memory": MemoryAgent()}
 
 
 def _run(a, text):
     from ai.chat import run_pipeline
-    return run_pipeline(user_message=text, intent_agent=a["intent"], chat_agent=a["chat"],
-                        performer_agent=a["performer"], memory_agent=a["memory"])
+    return run_pipeline(user_message=text, chat_agent=a["chat"],
+                        memory_agent=a["memory"])
 
 
 def _tool_names(call):
@@ -48,17 +48,6 @@ def test_chat_looks_memories_up_itself(agents, violetdb):
     assert "query_memory" in _tool_names(first)
     assert result["chat"]["content"] == "你周三考高数吧 加油"
     assert any("高数" in (m.get("content") or "") for m in result["recalled_memories"])
-
-
-def test_no_memory_tool_without_memories_or_with_the_intent_step(agents, monkeypatch):
-    fake, a = agents
-    _run(a, "在吗")
-    assert "query_memory" not in _tool_names(fake.calls_for("fake-chat")[-1])     # nothing to find
-    from tests.fakes import intent_json
-    fake.responders["fake-intent"] = lambda kw: intent_json("chat")
-    monkeypatch.setenv("VIOLET_INTENT_STEP", "1")
-    _run(a, "在吗")
-    assert fake.calls_for("fake-intent")                                        # the old way still works
 
 
 def test_the_abilities_list_names_her_voice(monkeypatch, violetdb):
@@ -97,7 +86,6 @@ def test_system_messages_after_the_conversation_began_go_as_user(monkeypatch):
     msgs = [{"role": "system", "content": "规则"}, {"role": "system", "content": "人设"},
             {"role": "user", "content": "昨天的话"}, {"role": "system", "content": "当前时间 20:01"},
             {"role": "user", "content": "今天好累"}]
-    monkeypatch.setenv("VIOLET_LATE_SYSTEM_AS_USER", "1")
     sent = mp.apply({"model": "gpt-6-luna", "messages": msgs})["messages"]
     assert [m["role"] for m in sent] == ["system", "system", "user", "user", "user"]
     assert sent[3]["content"] == mp.LATE_SYSTEM_LABEL + "当前时间 20:01" and sent[:3] == msgs[:3]
@@ -105,14 +93,11 @@ def test_system_messages_after_the_conversation_began_go_as_user(monkeypatch):
     fresh = [{"role": "system", "content": "规则", mp.CACHE_MARK: True}, {"role": "system", "content": "当前时间 20:14"},
              {"role": "user", "content": "早安"}]
     assert [m["role"] for m in mp.apply({"model": "gpt-6-luna", "messages": fresh})["messages"]] == ["system", "user", "user"]
-    monkeypatch.setenv("VIOLET_LATE_SYSTEM_AS_USER", "0")
-    assert mp.apply({"model": "gpt-6-luna", "messages": msgs})["messages"] == msgs
 
 
 def test_chat_sends_only_the_fixed_part_as_system(agents, monkeypatch, violetdb):
     """With and without history, every system message the model gets is part of the fixed beginning."""
     fake, a = agents
-    monkeypatch.setenv("VIOLET_LATE_SYSTEM_AS_USER", "1")
     _run(a, "早安")                                                            # no history
     violetdb.add_message("user", "incoming", "text", "昨天的话")
     _run(a, "今天好累")                                                        # with history
@@ -158,9 +143,9 @@ def test_chat_puts_this_turn_after_the_history(agents, violetdb):
     messages = fake.calls_for("fake-chat")[-1]["messages"]
     roles = [m["role"] for m in messages]
     first_history = roles.index("user")
-    assert messages[-1] == {"role": "user", "content": "今天好累"}
+    assert messages[-1]["role"] == "user" and messages[-1]["content"].endswith("今天好累")
     # the time (base section) is this turn's: after the history, the persona before it
-    time_at = next(i for i, m in enumerate(messages) if m["role"] == "system" and "当前时间" in (m["content"] or ""))
+    time_at = next(i for i, m in enumerate(messages) if m["role"] in ("system", "user") and "当前时间" in (m["content"] or ""))
     persona_at = next(i for i, m in enumerate(messages) if "人设" in str(m.get("content")))
     assert persona_at < first_history < time_at
     assert all("_cache_break" not in m for m in messages)
@@ -183,7 +168,7 @@ def test_two_different_turns_begin_the_same(agents, violetdb):
                 break
             out.append(m)
         return out
-    assert front(first) == front(second) and len(front(first)) >= 3
+    assert front(first) == front(second) and len(front(first)) == 1
     assert [t["function"]["name"] for t in first.get("tools") or []] == [t["function"]["name"] for t in second.get("tools") or []]
 
 
@@ -246,30 +231,6 @@ def test_a_group_nobody_calls_her_in_is_looked_at_in_batches(violetdb, monkeypat
     assert made[-1].delay <= 6                                   # she is in the conversation: keeps up
 
 
-@pytest.mark.parametrize("text, minutes, content", [
-    ("十分钟后提醒我喝水", 10, "喝水"),
-    ("半小时后提醒我收衣服", 30, "收衣服"),
-    ("过两个小时提醒我吃药", 120, "吃药"),
-    ("一个半小时以后提醒我出门", 90, "出门"),
-    ("5分钟之后提醒我关火", 5, "关火"),
-])
-def test_relative_reminders(text, minutes, content):
-    """2026-11-01 scenario eval: "十分钟后提醒我喝水" was refused (only 今天 / 明天 / 后天)."""
-    from datetime import datetime, timedelta, timezone
-    from ai.memory_model import parse_reminder_request
-    now = datetime(2026, 11, 1, 19, 8, 30, tzinfo=timezone(timedelta(hours=8)))
-    parsed = parse_reminder_request(text, now=now)
-    assert parsed["ok"] and parsed["content"] == content
-    assert datetime.fromisoformat(parsed["due_at"]) == (now + timedelta(minutes=minutes)).replace(second=0)
-
-
-def test_unclear_relative_reminders_are_not_set():
-    from ai.memory_model import parse_reminder_request
-    assert parse_reminder_request("十分钟后，三点提醒我开会")["reason"] == "ambiguous_time"
-    assert parse_reminder_request("十分钟后提醒我")["reason"] == "no_content"
-    assert parse_reminder_request("明天下午三点提醒我开会")["ok"]                         # the old way still works
-
-
 def test_a_repeated_search_in_one_turn_is_not_run():
     """The three queries the eval saw for "最近有什么科技新闻吗" (2026-11-01)."""
     from ai.web.tool_guard import WebToolGuard
@@ -280,9 +241,3 @@ def test_a_repeated_search_in_one_turn_is_not_run():
     assert json.loads(again)["error_code"] == "SAME_SEARCH"
     assert guard.check("violet-web__web_search", {"query": "杭州 明天 天气"}) is None     # something else: fine
 
-
-def test_the_setting_exists_and_defaults_off():
-    from ai.control_config import SETTINGS
-    setting = next(s for s in SETTINGS if s.key == "VIOLET_INTENT_STEP")
-    assert setting.default is False and setting.kind == "bool"
-    assert json.dumps(setting.label, ensure_ascii=False)

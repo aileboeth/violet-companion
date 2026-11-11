@@ -20,11 +20,11 @@ def world(monkeypatch, violetdb, tmp_path):
     monkeypatch.setenv("DEBOUNCE_EXTRA", "0.1")
     monkeypatch.setenv("VIOLET_SEND_RETRY_DELAY_SECONDS", "0")
     llm = install_fake_llm(monkeypatch, FakeLLM(default_responders("嗯嗯")))
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent, ProactiveAgent
+    from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
     from ai.proactive_scheduler import ProactiveScheduler
     from violet_runtime import VioletRuntime, MessageSender
     client = FakeILinkClient()
-    agents = {"intent": IntentAgent(), "chat": ChatAgent(), "memory": MemoryAgent(), "performer": PerformerAgent()}
+    agents = {"chat": ChatAgent(), "memory": MemoryAgent()}
     config = tmp_path / "proactive.json"
 
     def write_config(**overrides):
@@ -36,8 +36,7 @@ def world(monkeypatch, violetdb, tmp_path):
 
     write_config()
     holder = {}
-    scheduler = ProactiveScheduler(ProactiveAgent(), agents["chat"], agents["performer"],
-                                   send_messages=lambda m, e=None: holder["rt"].send_proactive(m, e), config_path=config)
+    scheduler = ProactiveScheduler(ProactiveAgent(), agents["chat"], send_messages=lambda m, e=None: holder["rt"].send_proactive(m, e), config_path=config)
     rt = VioletRuntime(client, violetdb, agents, proactive_scheduler=scheduler,
                     sender=MessageSender(client, violetdb, simulate_typing=False, sleep=lambda s: None))
     holder["rt"] = rt
@@ -81,10 +80,10 @@ def test_reply_is_sent_before_memory_consolidation_runs(world):
 def test_memory_can_be_switched_back_inline(monkeypatch, violetdb):
     monkeypatch.setenv("VIOLET_ASYNC_MEMORY", "0")
     install_fake_llm(monkeypatch, FakeLLM(default_responders()))
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent
+    from ai.agents import ChatAgent, MemoryAgent
     from violet_runtime import VioletRuntime
-    rt = VioletRuntime(FakeILinkClient(), violetdb, {"intent": IntentAgent(), "chat": ChatAgent(),
-                                               "memory": MemoryAgent(), "performer": PerformerAgent()})
+    rt = VioletRuntime(FakeILinkClient(), violetdb, {"chat": ChatAgent(),
+                                               "memory": MemoryAgent()})
     assert rt.memory_worker is None and rt.async_memory is False
 
 
@@ -135,19 +134,6 @@ def test_fixed_task_skips_quiet_hours(world):
     _fixed_task_config(world, quiet_hours={"start": hhmm(current - timedelta(hours=1)), "end": hhmm(current + timedelta(hours=1))})
     world.scheduler.tick()
     assert world.llm.calls_for("fake-proactive") == []
-
-
-def test_fixed_task_runs_once_and_ignores_chat_budget(world):
-    _fixed_task_config(world)
-    for _ in range(3):   # chat budget used up earlier today
-        eid = world.db.add_proactive_event("scheduled_proactive_check", status="sent", action_type="chat")
-        world.db.execute("UPDATE proactive_events SET created_at = ?, updated_at = ? WHERE id = ?",
-                         ((now(world.db) - timedelta(hours=2)).isoformat(),) * 2 + (eid,))
-    world.scheduler.tick()
-    world.scheduler.tick()
-    calls = world.llm.calls_for("fake-proactive")
-    assert len(calls) == 1
-    assert json.loads(calls[0]["messages"][-1]["content"])["event_type"] == "fixed_time_task_check"
 
 
 def test_fixed_task_not_right_after_another_proactive_message(world):

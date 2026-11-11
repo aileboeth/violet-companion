@@ -85,14 +85,8 @@
 "IANA 名称，例如 Asia/Shanghai；上课时间都是这个时区的钟点": [
 "control_schedule.js"
 ],
-"Intent 只在“设置 → 聊天行为 → 回复前先做意图识别”打开时才用（默认关：回复模型自己判断要不要查记忆、用工具）。Performer 只在意图识别把一句话判断成“任务”、或者你配置的主动任务开始执行时才用。都不用时，这里的模型选什么都不会被调用。": [
-"control_model.js"
-],
 "Intent 要用的工具名不存在：{0}（{1} 轮）": [
 "ai/diagnostics.py"
-],
-"IntentAgent（理解每句话；默认不用，见 设置 → 聊天行为）": [
-"ai/control_config.py"
 ],
 "JSON 按文件里写了的部分整体替换，不用选择追加 / 替换": [
 "ai/schedule/importer.py"
@@ -123,12 +117,6 @@
 ],
 "OpenAI 兼容接口，例如 https://relay.example/v1": [
 "ai/control_config.py"
-],
-"PerformerAgent（执行任务）": [
-"ai/control_config.py"
-],
-"Performer（执行任务）": [
-"control_mcp.js"
 ],
 "ProactiveAgent（主动联系决策）": [
 "ai/control_config.py"
@@ -581,9 +569,6 @@
 ],
 "“先问你”时，她会私聊你要做的事，你回“同意 编号”或“不同意 编号”就行，也可以在下面点。24 小时没回就作废。": [
 "control.js"
-],
-"“提醒我……”在回复前就保存，回复里如实说有没有设成": [
-"ai/control_config.py"
 ],
 "“自己决定”的群安静了一阵（15 分钟以上、3 天以内有人说过话），她偶尔会想想要不要自己起个话题；9:00–23:00，刚说过话的群不会；大多数时候她会选择不说。会多用一些模型调用": [
 "ai/control_config.py"
@@ -1234,9 +1219,6 @@
 "会改动东西的工具": [
 "ai/permissions.py"
 ],
-"会改动东西的工具也交给回复": [
-"ai/control_config.py"
-],
 "会改动东西的工具：要你同意，或点“允许直接用”": [
 "ai/mcp_admin.py"
 ],
@@ -1580,9 +1562,6 @@
 "先用 set-password 设置管理员密码，否则禁用令牌后就无法登录": [
 "wx_ilink_py/auth.py"
 ],
-"先设提醒再回复": [
-"ai/control_config.py"
-],
 "先选一个画图模型并保存": [
 "wx_ilink_py/image_routes.py"
 ],
@@ -1686,9 +1665,6 @@
 ],
 "关闭（任务在服务器上继续）": [
 "control.js"
-],
-"关（推荐）：她直接回复，自己决定要不要用工具、查记忆，快一倍、省一半 token；开：先多调用一次模型判断意图（以前的做法，出问题时可以切回来）": [
-"ai/control_config.py"
 ],
 "兴趣": [
 "control_persona.js"
@@ -1908,9 +1884,6 @@
 "wx_ilink_py/channel_routes.py",
 "wx_ilink_py/control_routes.py",
 "wx_ilink_py/mcp_routes.py"
-],
-"判断这句话要做什么（默认关闭）": [
-"control_flow.js"
 ],
 "别人私聊她": [
 "ai/control_config.py",
@@ -2226,7 +2199,7 @@
 "只能是 Authorization 或 X-… 开头的请求头": [
 "ai/mcp_admin.py"
 ],
-"只能是 chat / performer / proactive 中的几个": [
+"只能是 chat / proactive 中的几个": [
 "ai/mcp_admin.py"
 ],
 "只能是 read / write / high_risk / deny": [
@@ -2438,12 +2411,6 @@
 "ai/permissions.py"
 ],
 "回复一致性检查": [
-"ai/control_config.py"
-],
-"回复习惯提示": [
-"ai/control_config.py"
-],
-"回复前先做意图识别": [
 "ai/control_config.py"
 ],
 "回复发出后在后台整理，结果会显示在这里": [
@@ -2943,9 +2910,6 @@
 "ai/control_config.py"
 ],
 "对方连发几条时，最后一条之后等多久再一起处理": [
-"ai/control_config.py"
-],
-"对话中途的系统提示当成带标记的用户消息发": [
 "ai/control_config.py"
 ],
 "对话接口返回图片": [
@@ -3503,9 +3467,6 @@
 "平常回复也看手机": [
 "ai/control_config.py"
 ],
-"平时用不到的 Agent：Intent、Performer": [
-"control_model.js"
-],
 "座位": [
 "control_schedule.js"
 ],
@@ -3583,12 +3544,6 @@
 "开学日期": [
 "control_schedule.js"
 ],
-"开（推荐）：有些中转会把所有 system 消息挪到最前面，每一轮的时间、记忆一变，缓存就全部失效；开着时这些提示带“系统给你的提示”标记、以 user 身份放在原位。关：照原样发 system": [
-"ai/control_config.py"
-],
-"开：会改动东西的工具（例如手机上的操作）也由她在聊天里直接调用，不再单独建任务；没单独放行的，每次都先问你（“设置 → 她能自己做的事”）。关：这些工具走任务执行（以前的做法）": [
-"ai/control_config.py"
-],
 "开：你加的 MCP 服务器里没分类的工具，声明自己只读的当查询工具用，其余的当“会改动东西”的工具（要你放行或同意）；关：没分类的工具全部藏起来（以前的做法）": [
 "ai/control_config.py"
 ],
@@ -3599,9 +3554,6 @@
 "ai/control_config.py"
 ],
 "开：已经发出去的照常，还没发的几条不再发，下一轮把你新说的和刚才的一起回。关：一次回复总是全部发完": [
-"ai/control_config.py"
-],
-"开：每一轮回复都能直接用连上的只读工具（联网搜索、课表、手机状态等），自己判断要不要查；关：只在意图识别判断要查时才给（以前的做法，少一点 token，但容易漏查）": [
 "ai/control_config.py"
 ],
 "开：用 AI 人设时，不再给她“像手机上随手回消息”这类陪聊规则、性格和说话习惯清单，也不加每句话的小提示，她用底层模型自己的方式说话（只保留诚实和格式）；关：和其他人设一样": [
@@ -3784,9 +3736,6 @@
 "恢复失败：": [
 "control.js"
 ],
-"意图识别": [
-"control_flow.js"
-],
 "愿意听建议": [
 "control.js"
 ],
@@ -3899,12 +3848,6 @@
 ],
 "扣了费但没出图": [
 "control_diag.js"
-],
-"执行任务": [
-"control_flow.js"
-],
-"执行任务（查资料、用工具）": [
-"control_model.js"
 ],
 "执行过（失败）": [
 "ai/permissions.py"
@@ -4071,9 +4014,6 @@
 "control.html",
 "control.js",
 "control_diag.js"
-],
-"提醒 Chat 最近已经问过、关心过什么": [
-"ai/control_config.py"
 ],
 "提醒、静默时段、课表和每天 03:00 的记忆整理都按这个时区（IANA 名称，例如 Asia/Shanghai）": [
 "ai/control_config.py"
@@ -4741,9 +4681,6 @@
 "查询": [
 "control.html"
 ],
-"查询工具直接交给回复": [
-"ai/control_config.py"
-],
 "查询来源：{0}{1}。": [
 "control_setup.js"
 ],
@@ -5339,9 +5276,6 @@
 "测试模式": [
 "control_persona.js"
 ],
-"测试模式不记": [
-"ai/chat.py"
-],
 "测试模式已关闭": [
 "control_persona.js"
 ],
@@ -5581,9 +5515,6 @@
 "理由：": [
 "control_social.js"
 ],
-"理解你说的每句话": [
-"control_model.js"
-],
 "理论": [
 "ai/schedule/importer.py",
 "control_schedule.js"
@@ -5668,9 +5599,6 @@
 ],
 "用一个 QQ 号（建议小号）扫码登录。私聊和你聊天，还能进群、认识别人。在服务器上一键安装（SnowLuma），不用自己装。": [
 "control_channels.js"
-],
-"用会改动东西的工具": [
-"control_flow.js"
 ],
 "用你的生图模型画 12 个她的 Q 版表情包（日常反应 + AI 自嘲梗），每个算一张图片的额度": [
 "control_stickers.js"
@@ -7150,9 +7078,6 @@
 ],
 "这一行": [
 "ai/schedule/importer.py"
-],
-"这一轮不需要执行任务": [
-"ai/chat.py"
 ],
 "这一轮已经不在最近的记录里了": [
 "wx_ilink_py/control_routes.py"

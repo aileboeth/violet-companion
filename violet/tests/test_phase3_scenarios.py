@@ -34,7 +34,7 @@ def age_all(db, hours):
 def last_chat_system(w):
     call = next(c for c in reversed(w.llm.calls_for("fake-chat"))
                 if not any("主动触达" in (m.get("content") or "") for m in c["messages"] if m["role"] == "user"))
-    return "\n".join(m.get("content") or "" for m in call["messages"] if m["role"] == "system")
+    return "\n".join(m.get("content") or "" for m in call["messages"] if m["role"] in ("system", "user"))
 
 
 def facts(w, status="active"):
@@ -65,7 +65,7 @@ def test_p3_s1_user_says_they_are_a_university_student(make_world):
     system = last_chat_system(w)
     assert "身份：大学生" in system and "用户亲口说" not in system          # natural context: no source tags
     say(w, "今天的晚霞好好看")
-    assert "大学生" not in last_chat_system(w)                       # only when relevant
+    assert "身份：大学生" in last_chat_system(w)                     # 2026-11-11: what she knows is there on every turn
 
 
 # ---------------------------------------------------------------------------
@@ -81,7 +81,7 @@ def test_p3_s2_user_usually_lives_on_campus(make_world):
     quiet_memory(w)
     say(w, "宿舍今天又停水了")
     system = last_chat_system(w)
-    assert "平时住：平时住学校宿舍" in system and "不代表用户此刻在哪里" in system
+    assert "平时住：平时住学校宿舍" in system and "不代表对方此刻在哪里" in system
 
 
 # ---------------------------------------------------------------------------
@@ -119,8 +119,7 @@ def test_p3_s4_usual_residence_is_not_current_location(make_world):
     quiet_memory(w)
     say(w, "猜猜我现在在哪")
     system = last_chat_system(w)
-    assert "此刻在哪里、在做什么：不知道（不要根据常住地或生活规律推断）" in system
-    assert "平时住学校宿舍" not in system
+    assert "对方此刻在哪里、在做什么：没有记录（不要按常住地或生活规律推断" in system
     assert "车辆" not in system and "用户当前位置" not in system
     # a phone/vehicle signal cannot set the location either
     assert Profile(w.db).situations.observe("location", "学校", "vehicle")["action"] == "rejected"
@@ -250,11 +249,10 @@ def test_p3_s9_forbidden_memory_never_reaches_context_again(make_world):
     # Phase 7 B.2: query_memory is only offered while some event is searchable; an unrelated enabled event
     # keeps it offered, so the search below still has to filter the disabled one out by itself.
     w.db.save_event_memory("用户周末去看了一场电影", kind="event", progress="done")
-    w.llm.responders["fake-intent"] = script(tool("query_memory", query="室友 矛盾"), final=intent_json("chat"))
     quiet_memory(w)
     say(w, "室友今天又把音乐开很大声")
-    intent_tool = next(m for m in w.llm.calls_for("fake-intent")[-1]["messages"] if m["role"] == "tool")
-    assert json.loads(intent_tool["content"])["memories"] == []
+    from ai import owner_tools
+    assert owner_tools.query_memory(w.db, {"query": "室友 矛盾"})["memories"] == []
     assert "闹了点矛盾" not in last_chat_system(w)
     state = w.scheduler._conversation_state()
     assert "闹了点矛盾" not in json.dumps(state, ensure_ascii=False)
@@ -282,7 +280,7 @@ def test_p3_s10_expired_situation_is_not_used_for_the_present(make_world):
     quiet_memory(w)
     say(w, "你猜我现在在干嘛")
     system = last_chat_system(w)
-    assert "在考试" not in system and "此刻在哪里、在做什么：不知道" in system
+    assert "在考试" not in system and "此刻在哪里、在做什么：没有记录" in system
     assert w.db.fetch_one("SELECT status FROM user_situations")["status"] == "expired"
     age_all(w.db, 3)
     arm(w)

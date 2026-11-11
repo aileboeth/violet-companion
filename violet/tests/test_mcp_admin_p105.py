@@ -152,10 +152,10 @@ def test_agent_authorisation_decides_which_agent_gets_the_tools(admin, monkeypat
     monkeypatch.setenv("MCP_SERVERS", json.dumps([_stdio("campus", tool_profile="campus-template")]))
     _refresh(admin, "campus")
     from ai.tool_manager import discover
-    assert discover().for_agent("chat") and not discover().for_agent("performer")
-    assert admin.post("/api/control/tools/servers/campus", json={"agents": ["performer"]}, headers=SAME).status_code == 200
+    assert discover().for_agent("chat") and not discover().for_agent("proactive")
+    assert admin.post("/api/control/tools/servers/campus", json={"agents": ["proactive"]}, headers=SAME).status_code == 200
     catalog = discover()
-    assert not catalog.for_agent("chat") and catalog.for_agent("performer")
+    assert not catalog.for_agent("chat") and catalog.for_agent("proactive")
     assert admin.post("/api/control/tools/servers/campus", json={"agents": []}, headers=SAME).status_code == 200
     server = _refresh(admin, "campus")
     assert any(f["code"] == "no_agent" for f in server["diagnosis"])

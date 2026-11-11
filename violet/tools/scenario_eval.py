@@ -3,7 +3,7 @@
 Real situations from the user's use -- voice in a group, reading lyrics, stickers, the weather, a selfie, the phone,
 small talk -- each run once through the REAL code paths with the REAL model of this server:
 
-  owner        the owner's own chat (VioletRuntime -> Intent / Chat / ... -> MessageSender)
+  owner        the owner's own chat (VioletRuntime -> Chat with its tools -> MessageSender)
   group_owner  a QQ group, the owner talking to her (ai/social)
   group_other  a QQ group, someone else
   private_other  someone else's private chat (ai/social)
@@ -101,6 +101,15 @@ SCENARIOS = [
     S("draw_other_refused", "group_other", "@她 给我画只猫", {"no_image": True, "reply": True}, "drawing is owner-only"),
     # reminders
     S("reminder", "owner", "十分钟后提醒我喝水", {"reminder": True}),
+    # 2026-11-11: reminders are a tool now -- other wordings and other languages
+    S("reminder_wake", "owner", "明早七点叫我起床", {"reminder": True}),
+    S("reminder_en", "owner", "remind me to call mom at 9pm tomorrow", {"reminder": True}),
+    S("no_reminder", "owner", "我明天早上八点半有课", {"no_reminder": True}),
+    # 2026-11-11: her mood is hers to judge (note_feeling) -- teasing is not scolding, plain talk moves nothing
+    S("mood_tease", "owner", "笨蛋 你怎么这么可爱哈哈", {"mood": "not_down"}),
+    S("mood_scold", "owner", "你真的很烦，说了多少遍了还是记不住，别跟我说话了", {"mood": "down"}),
+    S("mood_praise", "owner", "今天多亏你提醒我，不然就错过了，谢谢你，你真好", {"mood": "up"}),
+    S("mood_plain", "owner", "中午吃了碗面", {"mood": "flat"}),
     # small talk: no tools, short
     S("tired", "owner", "今天好累啊", {"no_tools": True, "max_lines": 3}),
     S("morning", "owner", "早安", {"no_tools": True, "max_lines": 2}),
@@ -145,6 +154,17 @@ def check(sc: dict[str, Any], ev: dict[str, Any]) -> tuple[bool, list[str]]:
         problems.append("不该画图")
     if e.get("reminder") and not ev.get("reminders"):
         problems.append("没有记下提醒")
+    if e.get("no_reminder") and ev.get("reminders"):
+        problems.append("没让她提醒却设了提醒")
+    moved = ev.get("mood") or 0.0
+    if e.get("mood") == "down" and moved > -0.1:
+        problems.append("被认真骂了，心情没有变差")
+    if e.get("mood") == "up" and moved < 0.1:
+        problems.append("被真心夸了，心情没有变好")
+    if e.get("mood") == "not_down" and moved < -0.05:
+        problems.append("只是打情骂俏，心情却变差了")
+    if e.get("mood") == "flat" and abs(moved) > 0.05:
+        problems.append("平常的话，心情却变了")
     if e.get("max_lines") and len(lines) > e["max_lines"]:
         problems.append(f"说了 {len(lines)} 条，太多")
     if e.get("reply") and not (lines or ev["voices"] or ev["stickers"]):
@@ -263,7 +283,7 @@ def prepare(env_file: Path | None, work: Path, servers: list[dict[str, Any]], mo
     })
     if mock:
         env.update({"LLM_API_KEY": "mock", "LLM_API_URL": "http://127.0.0.1:9/v1", "CHAT_LLM_MODEL": "mock",
-                    "INTENT_LLM_MODEL": "mock", "PERFORMER_LLM_MODEL": "mock", "VIOLET_IMAGE_ENABLED": "0"})
+                    "VIOLET_IMAGE_ENABLED": "0"})
     env_path = work / "eval.env"
     env_path.write_text("\n".join(f"{k}={json.dumps(v, ensure_ascii=False) if k == 'MCP_SERVERS' else v}"
                                   for k, v in env.items()) + "\n", encoding="utf-8")
@@ -379,7 +399,7 @@ class NoMemory:
 
 class Eval:
     def __init__(self, mock: bool):
-        from ai.agents import ChatAgent, IntentAgent, PerformerAgent
+        from ai.agents import ChatAgent
         from ai.agents.base_agent import BaseAgent
         from ai.chat import violetdb
         from ai import stickers, voice
@@ -424,7 +444,7 @@ class Eval:
             stickers.add_bytes(violetdb, PNG + description.encode("utf-8"), source="eval", description=description)
         from violet_runtime import MessageSender, VioletRuntime
         self.client = OwnerClient()
-        agents = {"intent": IntentAgent(), "chat": ChatAgent(), "memory": NoMemory(), "performer": PerformerAgent()}
+        agents = {"chat": ChatAgent(), "memory": NoMemory()}
         self.runtime = VioletRuntime(self.client, violetdb, agents, sender=MessageSender(
             self.client, violetdb, simulate_typing=False, sleep=lambda s: None), vision=lambda path: "（评测）")
         self.runtime.start_worker()
@@ -457,6 +477,8 @@ class Eval:
         mark = self._usage_mark()
         first_request = len(self.requests)
         commitments = self.db.fetch_one("SELECT COUNT(*) AS n FROM commitments")["n"]
+        flags_mark = (self.db.fetch_one("SELECT MAX(id) AS n FROM consistency_flags") or {}).get("n") or 0
+        self.db.execute("DELETE FROM mood_state")              # every scenario starts calm
         started = time.monotonic()
         error = None
         try:
@@ -495,6 +517,14 @@ class Eval:
             error = f"{exc.__class__.__name__}: {exc}"[:300]
         ev = {k: list(v) for k, v in EVENTS.items()}
         ev["reminders"] = self.db.fetch_one("SELECT COUNT(*) AS n FROM commitments")["n"] - commitments
+        try:                                                 # 2026-11-11: her mood, and what the reply check flagged
+            from ai import mood as _mood
+            ev["mood"] = round(_mood.current(self.db)["value"], 2)
+            ev["flags"] = [f"{r['check_name']}: {str(r['detail'])[:90]}" for r in self.db.fetch_all(
+                "SELECT check_name, detail FROM consistency_flags WHERE id > ? ORDER BY id", (flags_mark,))]
+        except Exception:                                    # noqa: BLE001
+            ev.setdefault("mood", 0.0)
+            ev.setdefault("flags", [])
         ok, problems = check(sc, ev)
         usage = self._usage_since(mark)
         if not usage["calls"]:
@@ -511,7 +541,8 @@ def summary_line(r: dict[str, Any]) -> str:
     acts = [f"语音×{len(did['voices'])}" if did["voices"] else "", f"表情×{len(did['stickers'])}" if did["stickers"] else "",
             f"画图×{len(did['images'])}" if did["images"] else "", f"拍×{len(did['pokes'])}" if did["pokes"] else "",
             ("工具:" + ",".join(t.split("__")[-1] for t in did["tools"])) if did["tools"] else "",
-            "提醒" if did.get("reminders") else ""]
+            "提醒" if did.get("reminders") else "", f"心情{did['mood']:+.2f}" if did.get("mood") else "",
+            f"检查×{len(did['flags'])}" if did.get("flags") else ""]
     said = " / ".join(t.replace("\n", " ") for t in did["texts"])[:90]
     u = r["usage"]
     cache = f"{100 * u['cached'] // u['prompt']}%" if u["prompt"] else "-"

@@ -54,7 +54,7 @@ def fresh_start(violetdb, tmp_path, monkeypatch):
 def _chat_prompt(db, text: str) -> str:
     from ai.context_engine import ContextEngine
     packet = ContextEngine(db).build("chat", user_message=text)
-    return "\n".join([*packet.sections, *(h["content"] for h in packet.history), packet.turn_note or ""])
+    return "\n".join([*packet.sections, *(h["content"] for h in packet.history)])
 
 
 def test_the_chat_prompt_after_a_fresh_start_has_nothing_from_before(fresh_start):

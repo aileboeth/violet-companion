@@ -30,12 +30,12 @@ def world(monkeypatch, violetdb, tmp_path):
     monkeypatch.setenv("VIOLET_SEND_RETRY_DELAY_SECONDS", "0")
     monkeypatch.setenv("VIOLET_DATA_DIR", str(tmp_path / "data"))
     llm = install_fake_llm(monkeypatch, FakeLLM(default_responders("好呀\n我在听")))
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent
+    from ai.agents import ChatAgent, MemoryAgent
     from ai.channels.manager import ChannelManager
     from violet_runtime import VioletRuntime, MessageSender
 
     client = FakeILinkClient()
-    agents = {"intent": IntentAgent(), "chat": ChatAgent(), "memory": MemoryAgent(), "performer": PerformerAgent()}
+    agents = {"chat": ChatAgent(), "memory": MemoryAgent()}
     sender = MessageSender(client, violetdb, simulate_typing=False, sleep=lambda s: None)
     rt = VioletRuntime(client, violetdb, agents, vision=lambda path: "一只橘猫", sender=sender)
     manager = ChannelManager(rt, data_dir=tmp_path / "data")
@@ -63,7 +63,7 @@ def _bind(w, adapter, peer: str = "4242"):
 
 
 def _system_texts(call) -> list[str]:
-    return [m["content"] for m in call["messages"] if m.get("role") == "system" and isinstance(m.get("content"), str)]
+    return [m["content"] for m in call["messages"] if m.get("role") in ("system", "user") and isinstance(m.get("content"), str)]
 
 
 # ------------------------------------------------------------------------------------------------ identity isolation
@@ -114,11 +114,12 @@ def test_chat_on_telegram_is_told_where_it_is_and_wechat_wording_is_not_used(wor
     assert wait_until(lambda: "我在听" in adapter.sent_texts)
     chat = world.llm.calls_for(os.environ.get("CHAT_LLM_MODEL", "fake-chat"))[-1]
     systems = _system_texts(chat)
-    notes = [s for s in systems if s.startswith("【这次聊天的地方】")]
+    lines = "\n".join(systems).splitlines()
+    notes = [s for s in lines if s.startswith("【这次聊天的地方】")]
     assert len(notes) == 1 and "Telegram" in notes[0]
-    assert all("微信" not in s for s in systems if s not in notes)
+    assert all("微信" not in s for s in lines if s not in notes)
     users = [m["content"] for m in chat["messages"] if m.get("role") == "user"]
-    assert users[-1] == "在吗"                                    # the user's words are never rewritten
+    assert users[-1].endswith("\n在吗")                                  # the user's words are never rewritten
 
 
 def test_on_wechat_the_prompt_is_exactly_as_before(world):

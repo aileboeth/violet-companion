@@ -19,8 +19,8 @@ from tests.test_phase2_scenarios import make_world, say, script, tool  # noqa: F
 @pytest.fixture()
 def agents(monkeypatch, violetdb):
     install_fake_llm(monkeypatch, FakeLLM(default_responders()))
-    from ai.agents import IntentAgent, MemoryAgent
-    return {"intent": IntentAgent(), "memory": MemoryAgent()}
+    from ai.agents import ChatAgent, MemoryAgent
+    return {"chat": ChatAgent(), "memory": MemoryAgent()}
 
 
 @contextlib.contextmanager
@@ -38,7 +38,7 @@ def call(agent, name, **args):
 
 
 def system_text(request) -> str:
-    return "\n".join(m.get("content") or "" for m in request["messages"] if m["role"] == "system")
+    return "\n".join(m.get("content") or "" for m in request["messages"] if m["role"] in ("system", "user"))
 
 
 # --- A1: daily decay hard-deleted memories ------------------------------------------------------------
@@ -51,7 +51,7 @@ def test_decay_never_deletes_and_old_shared_experience_stays_recallable(agents, 
         violetdb.decay_event_memories()
     row = violetdb.get_event_memory(target["id"])
     assert row["status"] != "deleted"
-    found = agents["intent"]._tool_query_memory({"query": "海上钢琴师"})["memories"]
+    found = agents["chat"]._tool_query_memory({"query": "海上钢琴师"})["memories"]
     assert [m["id"] for m in found] == [target["id"]]
     # 'deleted' stays reserved for a user / dashboard retraction, which always leaves a revision
     assert not [r for r in violetdb.list_memory_revisions("event_memories", target["id"]) if r["action"] == "retract"]
@@ -90,19 +90,12 @@ def test_unrelated_message_does_not_pull_memories(make_world):
     assert seen and not any("相关记忆" in s for s in seen)
 
 
-def test_recall_question_without_a_hit_is_not_treated_as_never_said(violetdb):
-    from ai.context_engine import ContextEngine
-    packet = ContextEngine(violetdb).build("chat", "你还记得我上次说的那家店叫什么吗", {"recalled_memories": [], "route": "chat"})
-    text = "\n".join(packet.sections)
-    assert "不代表对方没说过" in text
-
-
 # --- A3: synonyms after the first query word were useless -----------------------------------------------
 
 def test_later_query_variant_is_used_when_the_first_word_has_no_hit(agents, violetdb):
     target = violetdb.add_event_memory("用户最近总是睡不着，压力很大", kind="event", progress="ongoing")
     violetdb.add_event_memory("用户的猫最近不爱吃饭", kind="event", progress="ongoing")
-    found = agents["intent"]._tool_query_memory({"query": "失眠 睡不着 焦虑 安慰方式"})["memories"]
+    found = agents["chat"]._tool_query_memory({"query": "失眠 睡不着 焦虑 安慰方式"})["memories"]
     assert [m["id"] for m in found] == [target]
 
 
@@ -112,7 +105,7 @@ def test_old_low_weight_memory_is_still_a_search_candidate(agents, violetdb):
     target = violetdb.add_event_memory("用户小时候学过三年钢琴", kind="event", progress="done", forget_weight=0.2)
     for i in range(320):
         violetdb.add_event_memory(f"用户第{i}次提到天气不错", kind="background", forget_weight=5.0)
-    found = agents["intent"]._tool_query_memory({"query": "钢琴"})["memories"]
+    found = agents["chat"]._tool_query_memory({"query": "钢琴"})["memories"]
     assert [m["id"] for m in found] == [target]
 
 
@@ -145,13 +138,6 @@ def test_substantive_message_in_a_silent_turn_is_still_consolidated(make_world):
     w.llm.responders["fake-intent"] = lambda kw: intent_json("silent")
     say(w, "晚安啦，对了明早八点我要去医院复查")
     assert [j["status"] for j in w.db.list_memory_jobs()] == ["done"]
-
-
-def test_bare_goodnight_in_a_silent_turn_costs_no_memory_call(make_world):
-    w = make_world()
-    w.llm.responders["fake-intent"] = lambda kw: intent_json("silent")
-    say(w, "晚安")
-    assert w.db.list_memory_jobs() == [] and w.llm.calls_for("fake-memory") == []
 
 
 # --- A7: dashboard corrections could be silently overwritten by chat consolidation ----------------------

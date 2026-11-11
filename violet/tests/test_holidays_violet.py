@@ -62,7 +62,7 @@ def sched(monkeypatch, violetdb, tmp_path):
         [holidays.Holiday("qixi", "七夕", "partner")], {"kind": "partner", "label": "恋人", "call": None}))
     sent = []
     chat = FakeChat()
-    s = ProactiveScheduler(None, chat, None, send_messages=lambda m, e=None: sent.append((m, e)) or {"sent_messages": m},
+    s = ProactiveScheduler(None, chat, send_messages=lambda m, e=None: sent.append((m, e)) or {"sent_messages": m},
                            config_path=cfg)
     return type("S", (), dict(s=s, sent=sent, chat=chat, now=now_china(), db=violetdb))
 

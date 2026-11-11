@@ -216,28 +216,6 @@ def test_explicit_wishes_quiet_hours_and_busy_come_first(make_world, clock, time
     assert w.scheduler._is_due(clock.now())[1] == "quiet hours"
 
 
-def test_a_fixed_time_task_in_class_is_skipped_not_queued(make_world, clock, timetable):
-    w = world(make_world, **ON)
-    cfg = json.loads(w.scheduler.config_path.read_text(encoding="utf-8"))
-    cfg["allowed_tasks"] = {"daily_checkin": {"enabled": True, "fixed_check_time": "08:30", "description": "测试任务"}}
-    w.scheduler.config_path.write_text(json.dumps(cfg), encoding="utf-8")
-    w.scheduler.load_config()
-
-    def fixed_runs():
-        return [c for c in w.llm.calls_for("fake-proactive")
-                if json.loads(c["messages"][-1]["content"]).get("event_type") == "fixed_time_task_check"]
-    started(w, clock, at(7, 8, 30))
-    w.scheduler.tick()
-    assert w.llm.calls_for("fake-proactive") == []
-    assert not w.db.get_proactive_setting("fixed_check_done_daily_checkin_2026-09-07")      # not marked, not queued
-    clock(at(7, 9, 50))                                                      # after class: its time has passed
-    w.scheduler.tick()
-    assert fixed_runs() == []                                                # (an ordinary check may run here)
-    clock(at(8, 8, 30))                                                      # Tue 08:30, no class: it runs
-    w.scheduler.tick()
-    assert len(fixed_runs()) == 1
-
-
 def test_reminders_the_user_asked_for_still_arrive_in_class(make_world, clock, timetable):
     w = world(make_world, **ON)
     started(w, clock, at(7, 8, 30))
@@ -257,7 +235,7 @@ def test_the_user_writing_in_class_gets_an_answer(make_world, clock, timetable):
     w.llm.responders["fake-chat"] = lambda kw: (seen.append(kw), "我在呢")[1]
     say(w, "上课好无聊")
     assert w.client.sent_texts == ["我在呢"]
-    system = "\n".join(m.get("content") or "" for m in seen[0]["messages"] if m["role"] == "system")
+    system = "\n".join(m.get("content") or "" for m in seen[0]["messages"] if m["role"] in ("system", "user"))
     assert "按课表，对方这会儿可能在上课（大约到 09:45）" in system and "照常回复" in system
     assert "高等数学" not in system and ROOM not in system and TEACHER not in system
 
@@ -296,7 +274,7 @@ def test_switched_off_means_exactly_the_old_behaviour(make_world, clock, timetab
     arm(w)
     w.scheduler.tick()
     assert w.client.sent_texts == ["在干嘛呀"]                               # in class by the plan: not looked at
-    context = json.loads(w.llm.calls_for("fake-proactive")[-1]["messages"][-1]["content"])
+    context = json.loads(w.llm.calls_for("fake-proactive")[-1]["messages"][-1]["content"].splitlines()[-1])
     assert "schedule_note" not in context and "allowed_schedule_moments" not in context["conversation_state"]
     monkeypatch.delenv("VIOLET_SCHEDULE_ENABLED")
     monkeypatch.setenv("VIOLET_SCHEDULE_PROACTIVE", "1")                        # without the master switch: nothing
@@ -313,7 +291,7 @@ def test_exam_tomorrow_is_offered_with_the_minimum_and_wished_once(make_world, c
     chat(w, proactive="明天小测加油呀")
     arm(w)
     w.scheduler.tick()
-    context = json.loads(w.llm.calls_for("fake-proactive")[-1]["messages"][-1]["content"])
+    context = json.loads(w.llm.calls_for("fake-proactive")[-1]["messages"][-1]["content"].splitlines()[-1])
     offered = context["conversation_state"]["allowed_schedule_moments"]
     exam = next(m for m in offered if m["type"] == "exam_tomorrow")
     assert (exam["exam"], exam["kind"], exam["start"]) == ("高数小测（虚构）", "小测", "10:00")
@@ -351,7 +329,7 @@ def test_a_restart_remembers_what_was_already_said(make_world, clock, timetable)
     arm(w)
     w.scheduler.tick()
     from ai.proactive_scheduler import ProactiveScheduler
-    fresh = ProactiveScheduler(None, None, None, send_messages=lambda m, e=None: None,
+    fresh = ProactiveScheduler(None, None, send_messages=lambda m, e=None: None,
                                config_path=w.scheduler.config_path)          # a new process would build this
     context = fresh._build_event_context(clock.now())
     assert not [m for m in context["conversation_state"].get("allowed_schedule_moments") or []

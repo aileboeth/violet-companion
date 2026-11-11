@@ -225,46 +225,6 @@ def searx_world(make_world, monkeypatch, searx):
     return w
 
 
-def test_intent_chooses_search_and_the_reply_cites_a_searxng_result(searx_world):
-    w = searx_world
-    w.llm.responders["fake-intent"] = wants(SEARCH)
-    chat_plays(w, (SEARCH, {"query": "Python 最新版本", "recency_days": 30}),
-               final="刚查了一下，3.14 已经发布了（http://news.example.org/release）")
-    say(w, "Python 现在最新是哪个版本")
-    assert offered(w.chats[0]) == [SEARCH] and w.chats[0]["tool_choice"] == "required"
-    assert '"provider": "searxng"' in tool_texts(w.chats[1])[0] and len(searches(w.web)) == 1
-    assert "http://news.example.org/release" in w.client.sent_texts[-1]
-
-
-def test_search_then_read_the_page(searx_world):
-    w = searx_world
-    w.llm.responders["fake-intent"] = wants(SEARCH, FETCH)
-    chat_plays(w, (SEARCH, {"query": "Violet 2.0 发布"}), (FETCH, {"url": "http://news.example.org/release"}),
-               final=lambda kw: "看了原文：10 月 1 日正式发布" if any("正式发布" in t for t in tool_texts(kw)) else "没读到")
-    say(w, "帮我搜一下 Violet 2.0 什么时候发布的，再看看原文")
-    assert w.chats[0]["tool_choice"] == "auto" and sorted(offered(w.chats[0])) == sorted([SEARCH, FETCH])
-    assert w.client.sent_texts[-1].startswith("看了原文：10 月 1 日正式发布")
-    assert any(r["host"] == "news.example.org" for r in w.web.requests)
-
-
-def test_small_talk_and_a_switched_off_search_tool_never_reach_searxng(searx_world):
-    from ai.tool_manager import tool_store
-    w = searx_world
-    chat_plays(w, final="早呀～")
-    say(w, "早上好呀")
-    assert not offered(w.chats[0]) and searches(w.web) == []
-    tool_store().set_tool("violet-web", "web_search", False)
-
-    def intent(kw):
-        tools = [n for n in dict.fromkeys(re.findall(r"violet-web__\w+", systems(kw))) if n.endswith("web_search")]
-        return intent_json("chat", tool_query={"needed": True, "tools": tools, "missing": "联网搜索"})
-    w.llm.responders["fake-intent"] = intent
-    w.chats.clear()
-    chat_plays(w, final="搜索现在关着，我只能说原来知道的")
-    say(w, "最新版本是哪个")
-    assert not offered(w.chats[0]) and "需要的工具已经停用了" in systems(w.chats[0]) and searches(w.web) == []
-
-
 def test_searxng_down_degrades_naturally(searx_world, monkeypatch):
     w = searx_world
     monkeypatch.setenv("VIOLET_WEB_SEARXNG_URL", "http://127.0.0.1:1")              # the container is not running

@@ -84,7 +84,7 @@ def new_thread(store, title="读《边城》", item="边城", days_ago=5, key=No
 
 
 def system_text(call):
-    return "\n".join(m.get("content") or "" for m in call["messages"] if m["role"] == "system")
+    return "\n".join(m.get("content") or "" for m in call["messages"] if m["role"] in ("system", "user"))
 
 
 def last_normal_chat(w):
@@ -453,7 +453,7 @@ def test_invented_experience_in_a_reply_is_regenerated_or_dropped(make_world):
     w.llm.responders["fake-memory"] = lambda kw: json.dumps({"should_save": False, "reason": "t"})
 
     def reply(kw):
-        if "上一版回复里有和已记录事实不符" in system_text(kw):
+        if "里面有和已记录的事实对不上的说法" in system_text(kw):
             return "也没干嘛\n这两天在想要不要重新开始记笔记"
         return "我昨天去了海边\n风好大"
     w.llm.responders["fake-chat"] = reply
@@ -544,19 +544,6 @@ def test_busy_user_is_not_disturbed_even_with_new_life_events(make_world):
     w.scheduler.tick()
     assert len(w.llm.calls_for("fake-proactive")) == calls
     assert w.scheduler.status_snapshot()["due_reason"].startswith("the user said they are busy")
-
-
-def test_important_user_moment_keeps_eves_life_out(make_world):
-    from ai.life_store import LifeStore
-    w = make_world()
-    w.llm.responders["fake-memory"] = lambda kw: json.dumps({"should_save": False, "reason": "t"})
-    store = LifeStore(w.db)
-    happened(store, "又往后读了几章《边城》", hours_ago=20, thread=new_thread(store))
-    say(w, "我明天面试，现在紧张得睡不着，怎么办啊")
-    text = system_text(last_normal_chat(w))
-    assert "专心回应对方，不要主动谈你自己的生活" in text and "边城" not in text
-    say(w, "今天天气不错")                                  # unrelated small talk: Violet's life stays out of the prompt too
-    assert "边城" not in system_text(last_normal_chat(w))
 
 
 # ---------------------------------------------------------------------------

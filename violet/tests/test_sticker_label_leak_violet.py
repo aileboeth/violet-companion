@@ -107,8 +107,8 @@ def test_in_the_prompt_her_sticker_reads_as_its_marker(db, single, monkeypatch):
 
 
 def test_a_turn_of_only_a_gone_sticker_is_left_out(db, single):
-    from ai.agents.chat_agent import compose_single
-    out = compose_single([{"role": "system", "content": "规则"}],
+    from ai.agents.chat_agent import compose
+    out = compose(["规则"],
                          [{"role": "user", "content": "在吗"}, {"role": "assistant", "content": "[表情包：早就删掉的]"}],
                          [], "人呢")
     assert [m["role"] for m in out] == ["system", "user"] and "表情包" not in out[1]["content"]

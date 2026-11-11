@@ -51,8 +51,7 @@ def phone_style(url, token=TEST_TOKEN, **extra):
         "name": "android-phone",
         "transport": "streamable_http",
         "url": url,
-        "headers": {"Authorization": f"Bearer {token}"},
-    }
+        "headers": {"Authorization": f"Bearer {token}"}}
     cfg.update(extra)
     return cfg
 
@@ -250,12 +249,12 @@ def test_agent_allowlist_defaults():
 
 def _pipeline(agents):
     from ai.chat import run_pipeline
-    return run_pipeline("在干嘛", agents["intent"], agents["chat"], agents["performer"], agents["memory"])
+    return run_pipeline("在干嘛", agents["chat"], agents["memory"])
 
 
 def _make_agents():
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent
-    return {"intent": IntentAgent(), "chat": ChatAgent(), "memory": MemoryAgent(), "performer": PerformerAgent()}
+    from ai.agents import ChatAgent, MemoryAgent
+    return {"chat": ChatAgent(), "memory": MemoryAgent()}
 
 
 def test_chat_works_when_all_mcp_servers_are_offline(monkeypatch, violetdb):
@@ -270,7 +269,7 @@ def test_chat_works_when_all_mcp_servers_are_offline(monkeypatch, violetdb):
         assert time.monotonic() - start < 15
         assert not result["errors"]
         chat_call = fake.calls_for("fake-chat")[0]
-        assert chat_call.get("tools") is None
+        assert not [t for t in chat_call.get("tools") or [] if "__" in t["function"]["name"]]     # no external tool
         # intent and memory are not authorised for these servers, so only the chat
         # agent attempted a connection: exactly one failure per server.
         failures = {s["server"]: s["total_failures"] for s in mcp_module.get_health_snapshot()}
@@ -290,7 +289,7 @@ def test_injected_tool_output_is_wrapped_and_flagged(monkeypatch, violetdb, mcp_
     result = ChatAgent().run("你手机屏幕亮着吗")
     assert result["content"] == "嗯"
     first_call = fake.calls_for("fake-chat")[0]
-    assert any(m.get("content") == mcp_module.UNTRUSTED_TOOL_NOTICE for m in first_call["messages"])
+    assert mcp_module.UNTRUSTED_TOOL_NOTICE in first_call["messages"][0]["content"]
     assert all(m.get("role") != "system" or INJECTION_TEXT not in (m.get("content") or "") for m in result["messages"])
     tool_msg = next(m for m in result["messages"] if m.get("role") == "tool")
     assert INJECTION_TEXT in tool_msg["content"] and tool_msg["content"].startswith("【外部工具数据")

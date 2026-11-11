@@ -11,7 +11,6 @@ def setup_function():
 
 def test_runs_are_kept_per_thread_and_limited():
     ps.pipeline_start("chat", "你好", turn_id="t-1")
-    ps.node_skip("Intent", "关闭")
     ps.node_start("Chat", {"user_message": "你好"})
 
     def social():
@@ -30,9 +29,7 @@ def test_runs_are_kept_per_thread_and_limited():
     assert [r["pipeline_type"] for r in runs] == ["social", "chat"]          # newest started first
     chat = ps.get_run(runs[1]["id"])
     assert chat["turn_id"] == "t-1" and chat["running"] is False
-    assert chat["nodes"]["Intent"]["status"] == "skipped" and chat["nodes"]["Intent"]["note"] == "关闭"
     assert chat["nodes"]["Chat"]["status"] == "done" and chat["nodes"]["Chat"]["output"]["content"] == "嗨"
-    assert chat["nodes"]["Performer"]["status"] == "skipped"          # never reached: skipped at the end
     assert runs[0]["nodes"]["Act"]["status"] == "skipped" and runs[0]["channel"] == "qq"
     for i in range(ps.RUN_LIMIT + 5):
         ps.pipeline_start("proactive", str(i))

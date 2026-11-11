@@ -36,21 +36,19 @@ def make_world(monkeypatch, violetdb, tmp_path):
         for key, value in env.items():
             monkeypatch.setenv(key, value)
         llm = install_fake_llm(monkeypatch, FakeLLM(default_responders("嗯嗯")))
-        from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent, ProactiveAgent
+        from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
         from ai.proactive_scheduler import ProactiveScheduler
         from violet_runtime import VioletRuntime, MessageSender
         client = FakeILinkClient()
-        agents = {"intent": IntentAgent(), "chat": ChatAgent(), "memory": MemoryAgent(), "performer": PerformerAgent()}
+        agents = {"chat": ChatAgent(), "memory": MemoryAgent()}
         config = tmp_path / f"proactive-{len(worlds)}.json"
         config.write_text(json.dumps({
             "enabled": True, "quiet_hours": far_quiet_hours(), "daily_message_limit": 3,
             "min_minutes_after_user_message": 90, "min_minutes_between_proactive_messages": 180,
             "random_delay_minutes": {k: [60, 60] for k in ("morning", "noon", "afternoon", "evening", "night", "other")},
-            "allowed_tasks": {},
-        }), encoding="utf-8")
+            "allowed_tasks": {}}), encoding="utf-8")
         holder = {}
-        scheduler = ProactiveScheduler(ProactiveAgent(), agents["chat"], agents["performer"],
-                                       send_messages=lambda m, e=None: holder["rt"].send_proactive(m, e),
+        scheduler = ProactiveScheduler(ProactiveAgent(), agents["chat"], send_messages=lambda m, e=None: holder["rt"].send_proactive(m, e),
                                        config_path=config)
         sender = MessageSender(client, violetdb, simulate_typing=False, sleep=lambda s: None)
         rt = VioletRuntime(client, violetdb, agents, proactive_scheduler=scheduler, sender=sender,
@@ -104,8 +102,7 @@ def age_everything(db, hours):
         "proactive_events": ["created_at", "updated_at"],
         "topic_mentions": ["created_at"],
         "commitments": ["created_at", "due_at", "next_attempt_at"],
-        "inbound_messages": ["received_at"],
-    }
+        "inbound_messages": ["received_at"]}
     for table, cols in columns.items():
         for row in db.fetch_all(f"SELECT id, {', '.join(cols)} FROM {table}"):
             updates = {}
@@ -135,7 +132,7 @@ def is_proactive_chat(kw):
 
 def chat(w, normal="嗯嗯", proactive=None, reminder=None):
     def respond(kw):
-        system = "\n".join(m.get("content") or "" for m in kw["messages"] if m["role"] == "system")
+        system = "\n".join(m.get("content") or "" for m in kw["messages"] if m["role"] in ("system", "user"))
         if reminder is not None and "要提醒的事" in system:
             return reminder(kw) if callable(reminder) else reminder
         if proactive is not None and is_proactive_chat(kw):
@@ -180,7 +177,7 @@ def test_s1_open_event_is_not_followed_up_days_later(make_world):
     event = latest_event(w)
     assert event["status"] == "skipped" and f"memory {memory['id']} may not be raised" in event["reason"]
     proactive_input = w.llm.calls_for("fake-proactive")[-1]["messages"][-1]["content"]
-    assert "用户的服务器出现故障" in json.loads(proactive_input)["conversation_state"]["restricted_memories"][0]["content"]
+    assert "用户的服务器出现故障" in json.loads(proactive_input.splitlines()[-1])["conversation_state"]["restricted_memories"][0]["content"]
     assert w.db.get_event_memory(memory["id"])["progress"] == "ongoing"    # 3 days later: not assumed done
 
     # (b) same intent reworded under a generic topic: the generated text is blocked
@@ -319,7 +316,7 @@ def test_s4_user_restarting_a_cooled_topic_is_continued_naturally(make_world):
     chat(w, normal="哇，哪首")
     say(w, "对了我终于把那首吉他曲练会了！")
     chat_call = w.llm.calls_for("fake-chat")[-1]
-    system = "\n".join(m.get("content") or "" for m in chat_call["messages"] if m["role"] == "system")
+    system = "\n".join(m.get("content") or "" for m in chat_call["messages"] if m["role"] in ("system", "user"))
     assert "用户在学吉他" in system                                     # recalled for this turn
     assert "不适合由你主动提起" not in system or "用户在学吉他" not in system.split("不适合由你主动提起")[1]
     assert w.client.sent_texts[-1] == "哇，哪首"
@@ -504,5 +501,5 @@ def test_s10_user_correction_replaces_the_wrong_memory(make_world):
 
     w.llm.responders["fake-intent"] = script(tool("query_memory", query="狗 养"), final=intent_json("chat"))
     say(w, "我家狗今天又拆家了")
-    system = "\n".join(m.get("content") or "" for m in w.llm.calls_for("fake-chat")[-1]["messages"] if m["role"] == "system")
+    system = "\n".join(m.get("content") or "" for m in w.llm.calls_for("fake-chat")[-1]["messages"] if m["role"] in ("system", "user"))
     assert "用户养了一只狗" in system and "用户养了一只猫" not in system

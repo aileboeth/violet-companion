@@ -31,12 +31,6 @@ def _production_layout(monkeypatch):
     monkeypatch.setenv("VIOLET_PROMPT_LAYOUT", "single")          # conftest pins the old tests to "classic"
 
 
-def test_the_default_is_the_single_layout(monkeypatch):
-    from ai.agents.chat_agent import single_layout
-    monkeypatch.delenv("VIOLET_PROMPT_LAYOUT", raising=False)
-    assert single_layout()
-
-
 @pytest.fixture()
 def night(violetdb, monkeypatch):
     from ai import settings
@@ -154,11 +148,11 @@ def test_a_whole_turn_through_the_pipeline_in_the_production_layout(night, monke
     monkeypatch.setenv("VIOLET_INTENT_STEP", "0")
     night.add_event_memory("对方蓝牙连接的是手表，不是耳机", category="other", kind="fact", importance=2.0)
     fake = install_fake_llm(monkeypatch, FakeLLM(default_responders("好啦 哥哥")))
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent
+    from ai.agents import ChatAgent, MemoryAgent
     from ai.agents.chat_agent import notes_and_words
     from ai.chat import run_pipeline
-    result = run_pipeline(user_message=SAID, intent_agent=IntentAgent(), chat_agent=ChatAgent(),
-                          performer_agent=PerformerAgent(), memory_agent=MemoryAgent(), defer_memory=True)
+    result = run_pipeline(user_message=SAID, chat_agent=ChatAgent(),
+                          memory_agent=MemoryAgent(), defer_memory=True)
     assert not result["chat_failed"] and result["chat"]["content"] == "好啦 哥哥"
     sent = next(c["messages"] for c in fake.calls if c["messages"][-1]["role"] == "user"
                 and SAID in str(c["messages"][-1]["content"]))
@@ -167,12 +161,6 @@ def test_a_whole_turn_through_the_pipeline_in_the_production_layout(night, monke
     assert words == SAID
     assert "你现在能做的事" in sent[0]["content"]                      # the abilities: fixed part
     assert "手表" in sent[0]["content"] + notes                       # what the owner told her reaches the turn
-
-
-def test_the_old_layout_is_still_there_to_compare(night, monkeypatch):
-    monkeypatch.setenv("VIOLET_PROMPT_LAYOUT", "classic")
-    messages = _sent(monkeypatch)
-    assert [m["role"] for m in messages].count("system") > 3 and messages[-1] == {"role": "user", "content": SAID}
 
 
 def test_clearing_the_memory_also_clears_her_mood(violetdb, tmp_path, monkeypatch):

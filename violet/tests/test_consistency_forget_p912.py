@@ -240,7 +240,7 @@ def pipeline_world(make_world, route="task"):
 
 
 def system_of(kw) -> str:
-    return "\n".join(m.get("content") or "" for m in kw["messages"] if m["role"] == "system")
+    return "\n".join(m.get("content") or "" for m in kw["messages"] if m["role"] in ("system", "user"))
 
 
 def test_in_the_pipeline_no_failed_task_and_the_reply_is_told_the_truth(make_world, first_turn):

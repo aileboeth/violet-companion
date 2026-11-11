@@ -123,26 +123,6 @@ def test_mcp_not_connected_and_unauthorized_tools_are_separate_findings_with_saf
     assert not [f for f in _report(app, "tool_unauthorized") if "phone" in f["message"]]
 
 
-def test_tool_planning_and_tool_call_failures_are_reported_per_turn(app):
-    from ai import diagnostics
-    from ai.chat import _record_tool_plan
-    from ai.agents.base_agent import _record_tool_call
-    with diagnostics.turn_scope("t-1"):
-        _record_tool_plan({"tool_plan": {"needed": True, "mode": "chat", "status": "ok", "tools": ["campus__get_weather"]},
-                           "chat": {"tools_called": []}})
-    with diagnostics.turn_scope("t-2"):
-        _record_tool_plan({"tool_plan": {"needed": True, "mode": "blocked", "status": "not_configured",
-                                         "tools": ["campus__old_name"]}, "chat": {}})
-    with diagnostics.turn_scope("t-3"):
-        _record_tool_call("campus__get_weather", json.dumps({"ok": False, "error_code": "MCP_TIMEOUT"}), "ChatAgent")
-        _record_tool_call("campus__get_weather", "【外部工具数据｜来源 campus/get_weather】\n{}", "ChatAgent")
-    planned = _report(app, "tool_not_planned")
-    assert any("没有调用" in f["message"] and "t-1" in f["turns"] for f in planned)
-    assert any("campus__old_name" in f["message"] and "t-2" in f["turns"] for f in planned)
-    failed = _report(app, "tool_failed")
-    assert len(failed) == 1 and "MCP_TIMEOUT" in failed[0]["message"] and "1 次" in failed[0]["message"]
-
-
 def test_service_ok_but_outside_network_unreachable_is_its_own_finding(world, app, monkeypatch):  # noqa: F811
     monkeypatch.setenv("LLM_API_URL", "http://127.0.0.1:9/v1")          # nothing listens there (no DNS in tests)
     monkeypatch.setenv("LLM_API_KEY", "sk-test-p106-0000000000")

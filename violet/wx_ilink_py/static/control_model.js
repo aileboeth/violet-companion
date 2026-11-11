@@ -4,18 +4,16 @@
 // reversible), then tests with one short real request. Built with DOM nodes only.
 "use strict";
 (() => {
-  const ROLES = ["CHAT", "INTENT", "MEMORY", "PROACTIVE", "PERFORMER"];
-  const NAMES = { CHAT: ["Chat", "写回复"], INTENT: ["Intent", "理解你说的每句话"], MEMORY: ["Memory", "整理记忆"],
-    PROACTIVE: ["Proactive", "决定要不要主动找你"], PERFORMER: ["Performer", "执行任务（查资料、用工具）"] };
+  const ROLES = ["CHAT", "MEMORY", "PROACTIVE"];
+  const NAMES = { CHAT: ["Chat", "写回复"], MEMORY: ["Memory", "整理记忆"], PROACTIVE: ["Proactive", "决定要不要主动找你"] };
   const MANUAL = "__manual__";
   // 2026-11-02 (user: 说了不同厂商缓存不同，但没找到在哪切换): the two cache settings were in the "api" group, which
   // the settings page leaves to this page -- and this page did not show them
-  const ADVANCED = ["VIOLET_LLM_PROVIDER", "VIOLET_LATE_SYSTEM_AS_USER", "LLM_REQUEST_TIMEOUT_SECONDS", "LLM_CONNECT_TIMEOUT_SECONDS", "LLM_TOTAL_TIMEOUT_SECONDS",
+  const ADVANCED = ["VIOLET_LLM_PROVIDER", "LLM_REQUEST_TIMEOUT_SECONDS", "LLM_CONNECT_TIMEOUT_SECONDS", "LLM_TOTAL_TIMEOUT_SECONDS",
     "LLM_MAX_RETRY_ATTEMPTS", "LLM_RETRY_BASE_DELAY"];
   let settings = null;
   let models = [];                 // from the API (this page visit)
   const advanced = {};
-  let rareOpen = false;
   const byKey = (k) => (settings.settings || []).find((s) => s.key === k);
 
   // a model picker: the API's list (+ "手动输入…"), or only a text box while there is no list
@@ -38,11 +36,7 @@
     return h("span", { class: "picker" }, sel, input);
   }
 
-  // 2026-11-09 UI pass: since 0.7.28 the intent step is off by default, and Performer only runs after it (a "task"
-  // route) or for a configured proactive task -- both rows move into a fold that says so, unless the step is on
   function renderRows() {
-    const intentOn = ["1", "true", true].includes((byKey("VIOLET_INTENT_STEP") || {}).value);
-    const rare = intentOn ? [] : ["INTENT", "PERFORMER"];
     const rows = ROLES.map((r) => {
       const main = byKey(`${r}_LLM_MODEL`), fb = byKey(`${r}_LLM_FALLBACK_MODEL`), temp = byKey(`${r}_LLM_MODEL_TEMPERATURE`);
       if (!main) return null;
@@ -57,17 +51,9 @@
         h("label", {}, h("span", { class: "note", text: "模型" }), picker(main)),
         fb ? h("label", {}, h("span", { class: "note", text: "备用模型" }), picker(fb)) : null,
         t ? h("label", { class: "temp" }, h("span", { class: "note", text: "温度" }), t) : null,
-        warn && !rare.includes(r) ? h("p", { class: "err", text: warn }) : null)];
+        warn ? h("p", { class: "err", text: warn }) : null)];
     }).filter(Boolean);
-    const shown = rows.filter(([r]) => !rare.includes(r)).map(([, el]) => el);
-    const folded = rows.filter(([r]) => rare.includes(r)).map(([, el]) => el);
-    const fold = folded.length ? h("details", { class: "sub-box", id: "model-rare", open: rareOpen ? true : null },
-      h("summary", { text: "平时用不到的 Agent：Intent、Performer" }),
-      h("p", { class: "note", text: "Intent 只在“设置 → 聊天行为 → 回复前先做意图识别”打开时才用（默认关：回复模型自己判断要不要查记忆、用工具）。" +
-        "Performer 只在意图识别把一句话判断成“任务”、或者你配置的主动任务开始执行时才用。都不用时，这里的模型选什么都不会被调用。" }),
-      ...folded) : null;
-    if (fold) fold.addEventListener("toggle", () => { rareOpen = fold.open; });
-    $("#model-rows").replaceChildren(...shown, ...(fold ? [fold] : []));
+    $("#model-rows").replaceChildren(...rows.map(([, el]) => el));
     // choosing here fills every Agent at once (saved with the button below)
     const all = models.length ? h("select", { id: "model-all", onchange: applyAll },
       h("option", { value: "", text: "选一个模型…" }), ...models.map((m) => h("option", { value: m, text: m })))

@@ -16,62 +16,22 @@ from tests.fakes import (
 @pytest.fixture()
 def agents(monkeypatch, violetdb):
     fake = install_fake_llm(monkeypatch, FakeLLM(default_responders()))
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent, ProactiveAgent
+    from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
     return fake, {
-        "intent": IntentAgent(), "chat": ChatAgent(), "memory": MemoryAgent(),
-        "performer": PerformerAgent(), "proactive": ProactiveAgent(),
-    }
+        "chat": ChatAgent(), "memory": MemoryAgent(),
+        "proactive": ProactiveAgent()}
 
 
 def _run(agents_map, text="今天好累"):
     from ai.chat import run_pipeline
     return run_pipeline(
         user_message=text,
-        intent_agent=agents_map["intent"],
         chat_agent=agents_map["chat"],
-        performer_agent=agents_map["performer"],
         memory_agent=agents_map["memory"],
     )
 
 
 # --- JSON robustness ---------------------------------------------------------
-
-@pytest.mark.parametrize("raw", [
-    "not json at all",
-    "```json\n{\"route\": \"chat\", \"should_reply\": true\n```",   # truncated
-    "",
-    "[1, 2, 3]",
-    json.dumps({"route": "weird"}),
-    json.dumps({"route": "task", "task": {"name": None}}),       # task without name
-    json.dumps({"route": "task", "active_task_id": 999, "task": {}}),  # unknown task id
-])
-def test_bad_intent_output_degrades_to_chat(agents, raw):
-    fake, a = agents
-    fake.responders["fake-intent"] = lambda kw: raw
-    result = _run(a)
-    assert result["chat"]["content"] == "好呀\n我在听"
-    assert not result["chat_failed"]
-    assert "intent" in result["errors"]
-
-
-def test_intent_json_wrapped_in_prose_is_recovered(agents):
-    fake, a = agents
-    fake.responders["fake-intent"] = lambda kw: "好的，结果如下：\n```json\n" + intent_json("silent") + "\n```"
-    result = _run(a)
-    assert result.get("should_reply") is False
-    assert not fake.calls_for("fake-chat")
-
-
-def test_intent_agent_exception_still_replies(agents):
-    fake, a = agents
-
-    def boom(kw):
-        raise api_connection_error()
-    fake.responders["fake-intent"] = boom
-    result = _run(a)
-    assert result["chat"]["content"]
-    assert "intent" in result["errors"]
-
 
 def test_chat_failure_is_reported_not_raised(agents):
     fake, a = agents
@@ -84,23 +44,6 @@ def test_chat_failure_is_reported_not_raised(agents):
     assert result["chat"]["content"] == ""
 
 
-def test_performer_failure_marks_task_failed_and_chat_continues(agents, violetdb, monkeypatch):
-    from tests.fake_mcp import campus_server, use
-    use(monkeypatch, campus_server(agents=("performer",)))   # phase 9.2: a task needs a tool that could carry it out
-    fake, a = agents
-    fake.responders["fake-intent"] = lambda kw: intent_json("task")
-
-    def boom(kw):
-        raise RuntimeError("performer crashed")
-    fake.responders["fake-performer"] = boom
-    result = _run(a, "帮我点个外卖")
-    assert result["chat"]["content"]
-    tasks = violetdb.list_task_sessions()
-    assert len(tasks) == 1 and tasks[0]["status"] == "failed"
-    chat_call = fake.calls_for("fake-chat")[0]
-    assert any("任务执行结果" in (m.get("content") or "") for m in chat_call["messages"])
-
-
 def test_memory_failure_is_isolated(agents):
     fake, a = agents
     fake.responders["fake-memory"] = lambda kw: (_ for _ in ()).throw(RuntimeError("memory down"))
@@ -109,18 +52,6 @@ def test_memory_failure_is_isolated(agents):
 
 
 # --- local tool robustness ---------------------------------------------------
-
-def test_local_tool_exception_becomes_tool_error(agents):
-    fake, a = agents
-    script = iter([
-        completion(tool_calls=[{"name": "get_task", "arguments": {"task_id": "not-a-number"}}]),
-        completion(content=json.dumps({"task_status": "failed"})),
-    ])
-    fake.responders["fake-performer"] = lambda kw: next(script)
-    result = a["performer"].run(json.dumps({"active_task_id": None}))
-    tool_messages = [m for m in result["messages"] if m.get("role") == "tool"]
-    assert tool_messages and "LOCAL_TOOL_ERROR" in tool_messages[0]["content"]
-
 
 # --- shared agent state --------------------------------------------------------
 
@@ -197,8 +128,7 @@ def test_fallback_model_used_when_primary_fails(monkeypatch, violetdb):
     monkeypatch.setenv("LLM_MAX_RETRY_ATTEMPTS", "1")
     fake = install_fake_llm(monkeypatch, FakeLLM({
         "fake-chat": lambda kw: (_ for _ in ()).throw(api_connection_error()),
-        "fake-chat-backup": lambda kw: "备用模型回复",
-    }))
+        "fake-chat-backup": lambda kw: "备用模型回复"}))
     from ai.agents import ChatAgent
     assert ChatAgent().run("hi")["content"] == "备用模型回复"
     assert [c["model"] for c in fake.calls] == ["fake-chat", "fake-chat-backup"]
@@ -210,8 +140,7 @@ def _proactive(a, ctx=None):
     from ai.chat import run_proactive_pipeline
     return run_proactive_pipeline(
         event_context=ctx or {"event_type": "scheduled_proactive_check", "allowed_tasks": {}},
-        proactive_agent=a["proactive"], chat_agent=a["chat"], performer_agent=a["performer"],
-    )
+        proactive_agent=a["proactive"], chat_agent=a["chat"], )
 
 
 def test_proactive_garbage_json_is_skip(agents, violetdb):

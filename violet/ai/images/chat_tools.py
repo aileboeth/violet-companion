@@ -172,8 +172,6 @@ class CompositeGuard:
                 extras["web_finding_ids"] = list(guard.finding_ids)
             if isinstance(guard, ImageToolGuard):
                 extras["image_asset_ids"] = list(guard.asset_ids)
-            if hasattr(guard, "sticker_ids"):                 # 2026-10-30: ai/sticker_tools.StickerGuard
-                extras["sticker_ids"] = list(guard.sticker_ids)
         return extras
 
     def get(self, cls):

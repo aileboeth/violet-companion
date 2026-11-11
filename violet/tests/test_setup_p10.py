@@ -35,9 +35,9 @@ def env_guard(tmp_path, monkeypatch):
 @pytest.fixture()
 def made(env_guard, violetdb, monkeypatch):
     llm = install_fake_llm(monkeypatch, FakeLLM({}))
-    from ai.agents import ChatAgent, IntentAgent
+    from ai.agents import ChatAgent
     from wx_ilink_py import ILinkClient, create_app
-    agents = [IntentAgent(), ChatAgent()]
+    agents = [ChatAgent()]
     app = create_app(client=ILinkClient(data_dir=env_guard, auto_login=False), violetdb=violetdb, proactive_scheduler=None,
                      all_agents=agents, admin_token=ADMIN)
     app.testing = True
@@ -72,7 +72,7 @@ def test_the_model_test_uses_the_running_settings_and_keeps_only_the_outcome(mad
     llm.default = lambda kw: "在的"
     admin = _login(app)
     result = admin.post("/api/control/setup/test-model", json={}, headers=SAME).get_json()["data"]
-    assert result["ok"] and result["kind"] == "ok" and result["model"] == agents[1]._config.reply_model
+    assert result["ok"] and result["kind"] == "ok" and result["model"] == agents[-1]._config.reply_model
     call = llm.calls[-1]
     assert call["max_tokens"] == 16 and call["messages"][0]["role"] == "user"
     stored = (env_guard / "control" / "setup.json").read_text(encoding="utf-8")

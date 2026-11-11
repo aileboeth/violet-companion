@@ -251,38 +251,6 @@ def tasks(w):
     return w.db.fetch_one("SELECT COUNT(*) AS n FROM task_sessions")["n"]
 
 
-def test_intent_catalog_lists_the_schedule_tools_for_chat_only(school):
-    seen = []
-    school.llm.responders["fake-intent"] = lambda kw: (seen.append(kw), intent_json("chat"))[1]
-    chat_plays(school, final="嗯嗯")
-    say(school, "早上好呀")
-    catalog = systems(seen[0])
-    for name in (DAY, RANGE, STATUS, FIND):
-        assert name in catalog
-    assert "查用户自己的课表里某一天的课和考试" in catalog
-    assert not offered(school.chats[0]) and "【这一轮先查再回答】" not in systems(school.chats[0])   # small talk
-    from ai.mcp import builtin_servers, server_applies_to_agent
-    server = next(s for s in builtin_servers() if s["name"] == "violet-schedule")
-    assert server["agents"] == ["chat"] and server["offer"] == "on_demand"
-    assert not server_applies_to_agent(server, "proactive") and not server_applies_to_agent(server, "performer")
-
-
-def test_tomorrow_morning_is_looked_up_with_one_required_tool(school):
-    w = school
-    w.llm.responders["fake-intent"] = wants(DAY, reason="明天上午有没有课")
-
-    def reply(kw):
-        data = result_of(kw)
-        morning = [i for i in data["items"] if i["occupies"] and i["start"] < "12:00"]
-        return f"明天上午有{morning[0]['course'].split('（')[0]}，{morning[0]['start']} 开始哦" if morning else "明天上午没课～"
-    chat_plays(w, (DAY, {"date": "tomorrow"}), final=reply)
-    say(w, "明天上午有课吗？")
-    assert offered(w.chats[0]) == [DAY] and w.chats[0]["tool_choice"] == "required"
-    assert "【这一轮先查再回答】" in systems(w.chats[0])
-    assert w.client.sent_texts[-1] == "明天上午有高等数学，10:00 开始哦"
-    assert tasks(w) == 0
-
-
 def test_which_day_is_free_this_week(school):
     w = school
     w.llm.responders["fake-intent"] = wants(RANGE, reason="这周哪天空")
@@ -346,61 +314,6 @@ def test_the_classroom_only_when_the_user_asks_for_it(school):
     say(w, "明天有什么课？")
     assert w.client.sent_texts[-1] == "明天在（不知道）"
     assert ROOM not in tool_texts(w.chats[-1])[0] and TEACHER not in tool_texts(w.chats[-1])[0]
-
-
-def test_a_mood_with_a_class_in_it_is_left_to_intent(school):
-    w = school
-    w.llm.responders["fake-intent"] = lambda kw: intent_json("chat")              # Intent reads it as a mood
-    chat_plays(w, final="抱抱你，明天的事明天再说")
-    say(w, "最近有点烦，明天又要上课了")
-    assert not offered(w.chats[0]) and "【这一轮先查再回答】" not in systems(w.chats[0])
-    w.chats.clear()
-    w.llm.responders["fake-intent"] = wants(DAY, reason="明天的课")               # ...or decides to look it up
-    chat_plays(w, (DAY, {"date": "tomorrow"}), final="明天只有上午一节，下午可以歇歇")
-    say(w, "最近有点烦，明天又要上课了")
-    assert offered(w.chats[0]) == [DAY]
-
-
-def test_two_tools_are_offered_on_auto(school):
-    w = school
-    w.llm.responders["fake-intent"] = wants(STATUS, DAY, reason="现在和明天")
-    chat_plays(w, (STATUS, {}), (DAY, {"date": "tomorrow"}), final="现在没课，明天上午有一节")
-    say(w, "我现在有课吗，明天呢")
-    assert sorted(offered(w.chats[0])) == sorted([STATUS, DAY]) and w.chats[0]["tool_choice"] == "auto"
-
-
-def test_a_switched_off_tool_degrades_and_creates_no_task(school):
-    from ai.tool_manager import tool_store
-    w = school
-    tool_store().set_tool("violet-schedule", "get_day_schedule", False)
-
-    def intent(kw):
-        return intent_json("task", task={"exists": True, "name": "查课表", "description": "查明天的课"},
-                           tool_query={"needed": True, "tools": [DAY], "reason": "明天的课"})
-    w.llm.responders["fake-intent"] = intent
-    chat_plays(w, final="课表查询现在关着，我这边看不了")
-    say(w, "明天有什么课？")
-    assert not offered(w.chats[0]) and "需要的工具已经停用了" in systems(w.chats[0])
-    assert tasks(w) == 0
-
-
-def test_not_enabled_means_not_configured_and_no_task(make_world, clock, violetdb):
-    from ai.schedule.store import ScheduleStore
-    w = make_world()                                                             # VIOLET_SCHEDULE_ENABLED unset
-    fill(ScheduleStore(violetdb))
-    w.chats = []
-    w.llm.responders["fake-memory"] = lambda kw: json.dumps({"should_save": False, "reason": "t"})
-    seen = []
-
-    def intent(kw):
-        seen.append(kw)
-        return intent_json("task", task={"exists": True, "name": "查课表", "description": "查课表"},
-                           tool_query={"needed": True, "tools": [DAY], "reason": "课表"})
-    w.llm.responders["fake-intent"] = intent
-    chat_plays(w, final="我这边还没法看你的课表")
-    say(w, "明天有什么课？")
-    assert "violet-schedule" not in systems(seen[0])                                # not in the catalog at all
-    assert not offered(w.chats[0]) and "没有配置" in systems(w.chats[0]) and tasks(w) == 0
 
 
 def test_a_failing_lookup_is_reported_not_invented(school, monkeypatch):
@@ -544,47 +457,6 @@ def _weekday(day: str) -> str:
     from ai.schedule.access import WEEKDAY_NAMES
     from datetime import date
     return WEEKDAY_NAMES[date.fromisoformat(day).isoweekday()]
-
-
-def test_offline_dialogue_replay(school, clock):
-    """The eight phrases of the 9.4.2 brief through the whole pipeline; VIOLET_P942_REPLAY=<path> saves the record."""
-    import os
-    from pathlib import Path
-    w = school
-    clock.set(datetime(2026, 9, 8, 10, 0, tzinfo=SH))                             # Tue 10:00, week 1
-    record = []
-    def intent_for(tools):
-        extra = {"tool_query": {"needed": True, "tools": tools, "reason": "课表"}} if tools else {}
-        return lambda kw: intent_json("chat", **extra)
-
-    for text, planned, calls, style in REPLAY:
-        w.llm.responders["fake-intent"] = intent_for(planned)
-        w.chats.clear()
-        chat_plays(w, *calls, final=lambda kw, style=style: _word(style, [
-            json.loads(re.search(r"\{.*\}", t, re.S).group(0)) for t in tool_texts(kw)]))
-        if style == "status":
-            clock.set(datetime(2026, 9, 7, 9, 0, tzinfo=SH))                      # this one is asked in Monday's class
-        say(w, text)
-        if style == "status":
-            clock.set(datetime(2026, 9, 8, 10, 0, tzinfo=SH))
-        first, last = w.chats[0], w.chats[-1]
-        results = [json.loads(re.search(r"\{.*\}", t, re.S).group(0)) for t in tool_texts(last)]
-        record.append({"user": text, "intent_tools": planned, "offered": offered(first),
-                       "tool_choice": first.get("tool_choice") if offered(first) else None,
-                       "calls": [{"tool": n, "arguments": a} for n, a in calls],
-                       "results": [{k: r.get(k) for k in ("data_state", "state_note", "date", "free_days", "in_class_by_plan",
-                                                          "details_included") if k in r} for r in results],
-                       "reply": w.client.sent_texts[-1]})
-    replies = [r["reply"] for r in record]
-    assert replies == [
-        "有的，明天上午10:00有高等数学，别迟到啦", "看了下课表，这周周四最空，一节课都没有", "高数下一次是周三（09-09）10:00",
-        "按课表你这会儿应该还在上高等数学，09:40才下课", "周三下午没课，上午那节上完就自由啦", "这周有一个：周五的高数小测",
-        f"明天在{ROOM}", "抱抱你～烦的时候就先别想明天啦，今晚早点休息"]
-    assert [r["tool_choice"] for r in record] == ["required"] * 7 + [None]
-    assert tasks(w) == 0 and events(w.db) == 0
-    out = os.environ.get("VIOLET_P942_REPLAY")
-    if out:
-        Path(out).write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
 # ----------------------------------------------------------------------------------------------- web stays apart

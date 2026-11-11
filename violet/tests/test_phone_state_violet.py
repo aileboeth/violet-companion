@@ -204,7 +204,7 @@ def test_a_moment_makes_the_decision_run_now(monkeypatch, violetdb, tmp_path):
                                 "min_minutes_after_user_message": 0, "min_minutes_between_proactive_messages": 0}),
                    encoding="utf-8")
     monkeypatch.setenv("VIOLET_PHONE_EVENTS", "1")
-    s = ProactiveScheduler(None, None, None, send_messages=lambda m, e=None: None, config_path=cfg)
+    s = ProactiveScheduler(None, None, send_messages=lambda m, e=None: None, config_path=cfg)
     current = now_china()
     violetdb.add_user_message("text", "晚安")
     s._set_next_proactive_at(current + timedelta(hours=3))
@@ -235,4 +235,4 @@ def test_the_proactive_run_and_a_reply_carry_the_line(monkeypatch):
     from ai.agents.chat_agent import ChatAgent
     ChatAgent().run("早", call_context={"phone_note": "【主人手机此刻】测试"})
     sent = [m.get("content") for c in llm.calls for m in c["messages"] if isinstance(m, dict)]
-    assert "【主人手机此刻】测试" in sent
+    assert any("【主人手机此刻】测试" in (s or "") for s in sent)

@@ -37,8 +37,8 @@ from tools import violet_sources as _sources
 
 logger = logging.getLogger("violet.control")
 
-ROLES = (("INTENT", "IntentAgent（理解每句话；默认不用，见 设置 → 聊天行为）"), ("CHAT", "ChatAgent（写回复）"), ("MEMORY", "MemoryAgent（记忆）"),
-         ("PROACTIVE", "ProactiveAgent（主动联系决策）"), ("PERFORMER", "PerformerAgent（执行任务）"))
+ROLES = (("CHAT", "ChatAgent（写回复）"), ("MEMORY", "MemoryAgent（记忆）"),
+         ("PROACTIVE", "ProactiveAgent（主动联系决策）"))
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,119}$")
 HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 PROMPT_DIRS = {"chat": PROJECT_ROOT / "persona" / "chat_prompt_versions",
@@ -104,9 +104,6 @@ SETTINGS: list[Setting] = [
             optional=True),
     Setting("VIOLET_MODEL_TELEGRAM", "Telegram 上用的聊天模型", "telegram_model", "model", "now",
             "留空 = 用 Chat 模型。在 Telegram 上回复你、主动找你时用这个模型", optional=True),
-    Setting("VIOLET_LATE_SYSTEM_AS_USER", "对话中途的系统提示当成带标记的用户消息发", "api", "bool", "now",
-            "开（推荐）：有些中转会把所有 system 消息挪到最前面，每一轮的时间、记忆一变，缓存就全部失效；"
-            "开着时这些提示带“系统给你的提示”标记、以 user 身份放在原位。关：照原样发 system", True),
     *_agent_settings(),
     Setting("LLM_REQUEST_TIMEOUT_SECONDS", "单次请求超时（秒）", "api", "float", "now", "", 90.0, 5, 600),
     Setting("LLM_CONNECT_TIMEOUT_SECONDS", "连接超时（秒）", "api", "float", "now", "", 10.0, 1, 120),
@@ -157,23 +154,11 @@ SETTINGS: list[Setting] = [
             "关闭后下一次检查起不再记录新的生活进展，打开后马上开始；临时暂停也可以用下面的“暂停 / 恢复”", True),
     Setting("VIOLET_RELATIONSHIP_STATE", "关系阶段描述", "behavior", "bool", "now", "按聊天记录判断熟悉程度并告诉 Chat", True),
     Setting("VIOLET_CONTEXT_HISTORY_TURNS", "聊天历史保留几轮", "behavior", "int", "now", "同一方连发的几行算一轮", 24, 0, 60),
-    Setting("VIOLET_REPLY_HABIT_NOTE", "回复习惯提示", "behavior", "bool", "now", "提醒 Chat 最近已经问过、关心过什么", True),
     # phase 10.7: feature switches that used to need .env (the code reads them at every agent (re)load / call)
     Setting("VIOLET_WEB_ENABLED", "联网搜索和网页阅读", "web", "bool", "now",
             "开启后 Violet 在需要实时信息时可以搜索（需要下面的 SearXNG 地址，或在 .env 里配置其他搜索服务）", False),
     Setting("VIOLET_WEB_SEARXNG_URL", "SearXNG 地址", "web", "url", "now",
             "自建 SearXNG 的地址，例如 http://127.0.0.1:18089；在“工具与手机 → 联网工具”里一键安装会自动填好", optional=True),
-    Setting("VIOLET_CHAT_TOOLS_DIRECT", "查询工具直接交给回复", "mcp", "bool", "now",
-            "开：每一轮回复都能直接用连上的只读工具（联网搜索、课表、手机状态等），自己判断要不要查；"
-            "关：只在意图识别判断要查时才给（以前的做法，少一点 token，但容易漏查）", True),
-    # 2026-11-01 (capability rework: the Intent call cost 7-22 s and ~7.7k tokens per message)
-    Setting("VIOLET_INTENT_STEP", "回复前先做意图识别", "behavior", "bool", "now",
-            "关（推荐）：她直接回复，自己决定要不要用工具、查记忆，快一倍、省一半 token；"
-            "开：先多调用一次模型判断意图（以前的做法，出问题时可以切回来）", False),
-    # 2026-10-30 (user: "比较自由调用工具，在聊天的时候知道要用什么工具")
-    Setting("VIOLET_CHAT_ACTION_TOOLS", "会改动东西的工具也交给回复", "mcp", "bool", "now",
-            "开：会改动东西的工具（例如手机上的操作）也由她在聊天里直接调用，不再单独建任务；没单独放行的，每次都先问你"
-            "（“设置 → 她能自己做的事”）。关：这些工具走任务执行（以前的做法）", True),
     Setting("VIOLET_CHAT_MAX_TOOL_ROUNDS", "一次回复最多用几轮工具", "mcp", "int", "now",
             "她连着调用工具最多几轮；用完了就按已经拿到的结果回答", 6, 1, 20),
     Setting("VIOLET_MCP_AUTO_CLASSIFY", "没分类的 MCP 工具自动处理", "mcp", "bool", "now",
@@ -319,8 +304,6 @@ SETTINGS: list[Setting] = [
             "过期只标记为过期，不删除", 14.0, 1, 3650),
     Setting("VIOLET_PROFILE_STORE_SENSITIVE", "自动记住敏感信息", "memory", "bool", "now",
             "健康、财务、证件号、联系方式、精确住址等默认不自动保存", False),
-    Setting("VIOLET_REMINDER_BEFORE_REPLY", "先设提醒再回复", "memory", "bool", "now",
-            "“提醒我……”在回复前就保存，回复里如实说有没有设成", True),
     Setting("VIOLET_COMMITMENT_DEFAULT_TIME", "提醒的默认时刻", "memory", "hhmm", "now", "只说了日期没说时间时用", "09:00"),
     Setting("VIOLET_ONBOARDING", "慢慢认识你", "behavior", "bool", "now",
             "聊天中偶尔自然地问一个关于你的问题（每次最多一个，被拒绝的不再问）", True),

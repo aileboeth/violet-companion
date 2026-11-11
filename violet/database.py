@@ -251,6 +251,9 @@ class VioletDatabase:
                               "i.stored_message_id = messages.id AND i.peer_id IS NOT NULL LIMIT 1) WHERE peer_id IS NULL")
             self.conn.execute("UPDATE messages SET peer_id = (SELECT o.peer_id FROM outbound_messages o WHERE "
                               "o.message_id = messages.id AND o.peer_id IS NOT NULL LIMIT 1) WHERE peer_id IS NULL")
+        # 2026-11-11: what she looked up with tools after one of the owner's messages (ai/chat.tool_notes_from), kept
+        # with that message so the next turns still see it
+        self._ensure_column("messages", "tool_notes", "TEXT")
         from ai.channels.identity import SCHEMA as channel_schema
         self.conn.executescript(channel_schema)
         # 2026-10-29: Violet's social life (QQ groups, other people) in its own tables -- ai/social/store.py
@@ -1050,13 +1053,16 @@ class VioletDatabase:
             peer_id=peer_id,
         )
 
+    def set_message_tool_notes(self, message_id: int, notes: str | None) -> None:
+        self.execute("UPDATE messages SET tool_notes = ? WHERE id = ?", ((notes or "")[:2000] or None, message_id))
+
     def get_message(self, message_id: int) -> Optional[dict[str, Any]]:
         return self.fetch_one("SELECT * FROM messages WHERE id = ?", (message_id,))
 
     def get_recent_messages(self, limit: int = 30) -> list[dict[str, Any]]:
         rows = self.fetch_all(
             """
-            SELECT id, role, direction, message_type, content, media_id, created_at, channel
+            SELECT id, role, direction, message_type, content, media_id, created_at, channel, tool_notes
             FROM messages
             ORDER BY created_at DESC, id DESC
             LIMIT ?

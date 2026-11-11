@@ -22,16 +22,15 @@ Users normally only run `/opt/violet/violet <command>`, which calls the scripts 
 
 ## Used during development
 
-All of these run the real Violet flow in an isolated sandbox: their own database, no connection to WeChat or other chat platforms, and no access to production data. By default they use a simulated model, which costs nothing; when a real model is wanted they ask you for the key first and do not store it.
+The evaluation tools run the real Violet flow in an isolated sandbox: their own throw-away database, no connection to WeChat or other chat platforms, and no access to your chats or memories. `--mock` uses a simulated model, which costs nothing; otherwise they use the model of the settings file you point them at.
 
 | File | What it does |
 |---|---|
-| `violet_test_chat.py`, `free_chat.py` | Chat with her yourself. A `free_chat` session can be continued next time, and can include a fake timetable and fake MCP tools |
-| `model_compat.py` | Checks whether an OpenAI-compatible API works: JSON output, tool calls, timeouts |
-| `chat_eval.py`, `chat_ab.py`, `chat_dialogue.py`, `dialogue_eval.py`, `scenario_eval.py`, `decision_eval.py` | Evaluation and A/B comparison of the chat experience: fixed scenarios, multi-turn dialogues, whether a capability should be used, whether the same result can be had with fewer tokens |
+| `scenario_eval.py` | Does she use her abilities when she should? About 40 everyday situations (voice, stickers, the weather, the phone, reminders, her mood, small talk, groups) run once each through the real code with your model; every one is scored and its tokens are counted, to compare before and after a change |
+| `decision_eval.py` | The memory step and the proactive decision with fewer tokens: the same result? |
 | `memory_conflicts.py`, `memory_restore_decayed.py` | Lists conflicting memories (read-only); recovers event memories that an older version deleted by mistake |
 | `schedule_rollback.py` | Drops the timetable tables from the database (used when rolling back the timetable feature) |
 | `fake_mcp_server.py` | An MCP server with only made-up read-only tools, for testing |
-| `harness.py`, `replay.py`, `legacy.py`, `synthetic_*.py`, `reassess_tail.py`, `memory_query_audit.py` | Shared parts of the tools above, and special-purpose scripts from early acceptance testing |
+| `legacy.py` | Reads test records written before the project was renamed |
 
 To run one: in the `violet/` directory, run `python -m tools.<name> --help`.

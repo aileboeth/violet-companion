@@ -1,13 +1,15 @@
-"""Sticker tools of the Chat agent (2026-10-30, user: "让他收藏表情包，他会说收藏了，但是让他发出来却做不到").
+"""Sticker tools of the Chat agent: looking through her collection, keeping one the owner sent.
 
-Before, sending was only a "[[表情:N]]" line and only stickers with a description were listed; collecting in the owner's
-chat had no action at all (she said "收藏了" and nothing happened). Now three local tools:
+2026-11-11 (audit B3): there is ONE way to send a sticker in the owner's chat -- a line "[[表情:N]]" in the reply.
+It is what her own earlier stickers look like in the chat she is shown, it needs no extra model call, and it is how
+voice (<voice>) and pictures ([[图片:N]]) go out too. The send_sticker tool (2026-10-30) did the same thing a second
+way at the price of one more model round per sticker; with both on offer she sometimes wrote the label of a sticker
+as text (0.7.64). Two tools stay, for what a line in the reply cannot do:
 
   find_stickers   look through her whole collection (also the ones without a description yet)
-  send_sticker    pick one: it goes out with this reply (StickerGuard -> result extra "sticker_ids" -> outbound)
   save_sticker    keep a picture / sticker the owner sent recently (the same picture twice stays one sticker)
 
-The "[[表情:N]]" line keeps working. Only numbers of this collection can be sent; never a path or an URL.
+Only numbers of this collection can be sent; never a path or an URL (checked when the reply is sent).
 """
 
 from __future__ import annotations
@@ -19,19 +21,14 @@ from typing import Any
 
 from ai import stickers
 
-TOOL_NAMES = {"find_stickers", "send_sticker", "save_sticker"}
+TOOL_NAMES = {"find_stickers", "save_sticker"}
 
 SCHEMAS = [
     {"type": "function", "function": {
         "name": "find_stickers",
-        "description": "翻一下你收藏的表情包（全部，包括还没写说明的）。想发表情包又不确定用哪个时先用它；query 可以写情绪或画面，比如“开心”“猫”。",
+        "description": "翻一下你收藏的表情包（全部，包括还没写说明的）。想发表情包、常用的那几个里又没有合适的时用它；query 可以写情绪或画面，比如“开心”“猫”。找到后在回复里单独一行写 [[表情:编号]] 就发出去了。",
         "parameters": {"type": "object", "properties": {
             "query": {"type": "string", "description": "可选：想找的情绪、画面或文字"}}}}},
-    {"type": "function", "function": {
-        "name": "send_sticker",
-        "description": "发一个你收藏的表情包，它会跟着这次回复一起发出去（回复里不用再写编号）。一次回复最多一个。",
-        "parameters": {"type": "object", "properties": {
-            "number": {"type": "integer", "description": "表情包编号"}}, "required": ["number"]}}},
     {"type": "function", "function": {
         "name": "save_sticker",
         "description": "把对方最近发来的图片或表情包收藏起来，以后可以发。对方让你收藏、或你自己很喜欢时用。",
@@ -43,27 +40,6 @@ SCHEMAS = [
 
 def _answer(**payload: Any) -> str:
     return json.dumps(payload, ensure_ascii=False)
-
-
-class StickerGuard:
-    """Per run: which sticker goes out with the reply (one)."""
-
-    def __init__(self):
-        self.sticker_ids: list[int] = []
-
-    def check(self, tool_name: str, arguments: dict[str, Any]) -> str | None:
-        return None
-
-    def observe(self, tool_name: str, result_text: str) -> None:
-        return None
-
-
-def _guard(ctx: dict[str, Any]) -> StickerGuard | None:
-    guard = ctx.get("_tool_guard")
-    if isinstance(guard, StickerGuard):
-        return guard
-    get = getattr(guard, "get", None)
-    return get(StickerGuard) if callable(get) else None
 
 
 def _words(query: str) -> list[str]:
@@ -89,25 +65,8 @@ def find(db, args: dict[str, Any]) -> str:
     shown = [{"number": r["id"], "description": r.get("description") or "（还没有说明，看不到画面）",
               "used": r.get("use_count") or 0} for r in rows[:20]]
     return _answer(ok=True, count=len(rows), stickers=shown,
-                   message="用 send_sticker 填编号就能发。" + ("没有对得上的：这次就不发表情包，不要硬配一个意思不对的。"
+                   message="想发哪个，就在回复里单独一行写 [[表情:编号]]。" + ("没有对得上的：这次就不发表情包，不要硬配一个意思不对的。"
                                                           if words and not score(rows[0]) else ""))
-
-
-def send(db, ctx: dict[str, Any], args: dict[str, Any]) -> str:
-    row, problem = stickers.sendable(db, args.get("number"))
-    if problem:
-        from ai import trace
-        trace.step("发表情包", 编号=args.get("number"), 结果="不能发", 原因=problem)
-        return _answer(ok=False, error_code="STICKER_NOT_SENDABLE", message=problem + "。可以先用 find_stickers 看看有哪些。")
-    guard = _guard(ctx)
-    if guard is None:
-        return _answer(ok=False, error_code="STICKER_UNAVAILABLE", message="这次不能发表情包")
-    if guard.sticker_ids and guard.sticker_ids[0] != row["id"]:
-        return _answer(ok=False, error_code="STICKER_TURN_LIMIT", message=f"这次已经选了表情包 {guard.sticker_ids[0]}，一次只发一个")
-    if not guard.sticker_ids:
-        guard.sticker_ids.append(int(row["id"]))
-    return _answer(ok=True, number=row["id"], description=row.get("description"),
-                   message="好了，这个表情包会跟着这次回复发出去。回复里不用再写编号，也不用说“我发了个表情包”。")
 
 
 def save(db, ctx: dict[str, Any], args: dict[str, Any]) -> str:
@@ -145,4 +104,4 @@ def save(db, ctx: dict[str, Any], args: dict[str, Any]) -> str:
             saved = stickers.update(db, saved["id"], description=described) or saved
     trace.step("收藏表情包", 来源="你发的", 编号=saved["id"], 结果="已收藏", 说明=saved.get("description"))
     return _answer(ok=True, number=saved["id"], description=saved.get("description"),
-                   message=f"收藏好了，编号 {saved['id']}，以后用 send_sticker 就能发。")
+                   message=f"收藏好了，编号 {saved['id']}，以后在回复里单独一行写 [[表情:{saved['id']}]] 就能发。")

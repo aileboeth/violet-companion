@@ -453,7 +453,7 @@ def test_proactive_settings_reach_the_scheduler_config(env_guard, tmp_path):
     from ai.proactive_scheduler import ProactiveScheduler
     store = cc.ControlStore(env_guard)
     store.save({"proactive.daily_limit": 7, "proactive.quiet_start": "23:30", "proactive.enabled": False}, "test")
-    sched = ProactiveScheduler(None, None, None, lambda *_: None, config_path=tmp_path / "missing.json")
+    sched = ProactiveScheduler(None, None, lambda *_: None, config_path=tmp_path / "missing.json")
     config = sched.load_config()
     assert config["daily_message_limit"] == 7 and config["enabled"] is False
     assert config["quiet_hours"]["start"] == "23:30" and config["quiet_hours"]["end"]          # end kept from file

@@ -71,6 +71,10 @@ def _record_tool_call(tool_name: str, result_text: str, agent: str) -> None:
     record("tool_call", code is None, server=server, tool=tool, code=code, agent=agent)
 
 
+TOOLS_USED_UP = ("〔系统提示｜不是对方说的话〕工具已经用够了，这一轮不能再调用工具。按上面已经拿到的结果直接回复；"
+                 "没拿到的照实说没拿到。")
+
+
 class BaseAgent:
     """
     所有 agent 的基类。
@@ -384,14 +388,8 @@ class BaseAgent:
         return None
 
     def _tool_choice_for_round(self, round_index: int, tools: list[dict[str, Any]]):
-        """Hook (phase 9.2): the tool_choice of one model call of this run -- "auto" unless an agent knows this turn
-        must look something up first (ChatAgent on a tool turn: "required" for the first call)."""
+        """Hook: the tool_choice of one model call of this run ("auto" when tools are offered)."""
         return "auto" if tools else None
-
-    def _lookup_reminder(self, called: list[str]) -> str | None:
-        """Hook (phase 9.2.2): when the model is about to answer, a system note asking it once more to look up what
-        this turn still needs (None: answer as is). called: the tool names run so far in this run."""
-        return None
 
     def _should_finish_after_tools(self, step: list[dict[str, Any]]) -> bool:
         """Hook: True ends the run right after this step's tools ran, without asking the model to sum up.
@@ -440,11 +438,14 @@ class BaseAgent:
             offered = {t["function"]["name"] for t in all_tools}
             guard = self._new_tool_guard(user_message)
             if any(name in mcp_bridge.tool_to_session for name in offered):
-                insert_at = 1 if chat_history and chat_history[0].get("role") == "system" else 0
-                chat_history.insert(insert_at, {"role": "system", "content": UNTRUSTED_TOOL_NOTICE})
+                # 2026-11-11: part of the one system message (it used to be a second one right behind it)
+                if chat_history and chat_history[0].get("role") == "system" and isinstance(chat_history[0].get("content"), str):
+                    chat_history[0] = {**chat_history[0],
+                                       "content": chat_history[0]["content"] + "\n\n" + UNTRUSTED_TOOL_NOTICE}
+                else:
+                    chat_history.insert(0, {"role": "system", "content": UNTRUSTED_TOOL_NOTICE})
 
             called: list[str] = []
-            reminded = False
             for round_index in range(max_tool_rounds + 1):
                 choice = self._tool_choice_for_round(round_index, all_tools)
                 request = dict(model=self._run_model(cfg), messages=chat_history, tools=all_tools or None,
@@ -463,13 +464,6 @@ class BaseAgent:
                 chat_history.append(assistant_dict)
 
                 tool_calls = getattr(assistant_message, "tool_calls", None) or []
-                if not tool_calls and not reminded and round_index < max_tool_rounds:
-                    reminder = self._lookup_reminder(called)
-                    if reminder:
-                        # phase 9.2.2: one more round (tool_choice auto) instead of an answer missing a lookup
-                        reminded = True
-                        chat_history.append({"role": "system", "content": reminder})
-                        continue
                 if not tool_calls:
                     return {
                         "content": assistant_message.content or "",
@@ -546,8 +540,8 @@ class BaseAgent:
                 raise RuntimeError(f"{self.__class__.__name__}: max tool rounds exceeded")
             # 2026-10-30 (free tool use): out of tool rounds -- one last call without tools, so she answers from what
             # she has instead of the whole turn failing
-            chat_history.append({"role": "system", "content": "工具已经用够了，这一轮不能再调用工具。按上面已经拿到的结果直接回复；"
-                                                              "没拿到的照实说没拿到。"})
+            # a user-side note, not a system message: a relay that hoists system messages would move it to the front
+            chat_history.append({"role": "user", "content": TOOLS_USED_UP})
             completion = self._create_completion(client, cfg, model=self._run_model(cfg), messages=chat_history,
                                                  temperature=cfg.reply_temperature)
             assistant_message = completion.choices[0].message
@@ -567,13 +561,16 @@ class BaseAgent:
         """同步调用 LLM（run_async 的同步包装）。
 
         Args:
-            call_context: 额外数据（如 performer_result），由 pipeline 注入，
+            call_context: 额外数据（如 recalled_memories），由 pipeline 注入，
                           build_context_messages 可通过 self._call_context 读取。
                           只对本线程/本次调用可见，调用结束后自动清空。
         """
-        token = _CALL_CONTEXT.set(dict(call_context or {}))
+        context = dict(call_context or {})
+        token = _CALL_CONTEXT.set(context)
         try:
             result = asyncio.run(self.run_async(user_message, **kwargs))
+            if context.get("_actions"):                 # tools of this run that changed something (ai/owner_tools.py)
+                result["actions"] = list(context["_actions"])
             # Visualize output
             extra_info = {
                 "user_message": user_message,

@@ -161,16 +161,6 @@ def test_write_success_is_decided_by_an_explicit_whitelist(name, payload, expect
     assert write_step_succeeded("save_memory", "not json") is False
 
 
-def test_only_memory_agent_may_end_after_tools():
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent, ProactiveAgent
-    from ai.agents.base_agent import BaseAgent
-    step = [{"name": "memory_done", "result": json.dumps({"ok": True, "action": "done_requested"}), "denied": False}]
-    for cls in (ChatAgent, IntentAgent, PerformerAgent, ProactiveAgent):
-        assert cls._should_finish_after_tools is BaseAgent._should_finish_after_tools
-    assert BaseAgent._should_finish_after_tools(object(), step) is False
-    assert MemoryAgent._should_finish_after_tools is not BaseAgent._should_finish_after_tools
-
-
 def test_chat_agent_always_answers_after_its_tools(llm, violetdb):
     from ai.agents import ChatAgent
     violetdb.add_event_memory("用户家的狗叫豆豆", category="event")
@@ -184,13 +174,13 @@ def test_chat_agent_always_answers_after_its_tools(llm, violetdb):
 
 def test_background_flag_comes_from_the_memory_worker(llm, violetdb, monkeypatch):
     """End to end: the runtime's MemoryWorker marks its jobs; one memory call instead of two."""
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent
+    from ai.agents import ChatAgent, MemoryAgent
     from violet_runtime import VioletRuntime, MessageSender
     monkeypatch.setenv("DEBOUNCE_NORMAL", "0.05")
     monkeypatch.setenv("DEBOUNCE_EXTRA", "0.1")
     _script(llm, "fake-memory", completion(tool_calls=[_fact("study.major", "天文"), DONE]))
     client = FakeILinkClient()
-    agents = {"intent": IntentAgent(), "chat": ChatAgent(), "memory": MemoryAgent(), "performer": PerformerAgent()}
+    agents = {"chat": ChatAgent(), "memory": MemoryAgent()}
     rt = VioletRuntime(client, violetdb, agents, sender=MessageSender(client, violetdb, simulate_typing=False, sleep=lambda s: None))
     rt.start_worker()
     try:
@@ -208,42 +198,10 @@ def test_background_flag_comes_from_the_memory_worker(llm, violetdb, monkeypatch
 # ---------------------------------------------------------------------------
 
 def _intent_run(llm, text="我在星河大学读大二", script=None):
-    from ai.agents import IntentAgent
+    
     if script is not None:
         llm.responders["fake-intent"] = (lambda q: lambda kw: q.pop(0) if q else intent_json("chat"))(list(script))
     return IntentAgent().run(text)
-
-
-def test_empty_event_store_offers_no_search(llm, violetdb):
-    _intent_run(llm)
-    calls = llm.calls_for("fake-intent")
-    assert len(calls) == 1 and "query_memory" not in _tools_offered(calls[0]) and calls[0].get("tools") is None
-    assert any("没有可查询的事件记忆" in (m.get("content") or "") for m in calls[0]["messages"])
-
-
-def test_a_searchable_event_keeps_the_tool_and_it_finds_it(llm, violetdb):
-    violetdb.add_event_memory("用户下周三有天文观测课程答辩", category="event")
-    _intent_run(llm, "答辩准备得差不多了", script=[
-        completion(tool_calls=[{"name": "query_memory", "arguments": {"query": "答辩 观测"}}]),
-        completion(content=intent_json("chat"))])
-    calls = llm.calls_for("fake-intent")
-    assert "query_memory" in _tools_offered(calls[0])
-    assert not any("没有可查询的事件记忆" in (m.get("content") or "") for m in calls[0]["messages"])
-    found = json.loads(next(m for m in calls[1]["messages"] if m.get("role") == "tool")["content"])
-    assert [m["content"] for m in found["memories"]] == ["用户下周三有天文观测课程答辩"]
-
-
-def test_deleted_and_disabled_events_do_not_count_but_expired_ones_do(llm, violetdb):
-    a = violetdb.add_event_memory("用户下周三有天文观测课程答辩", category="event")
-    violetdb.retract_event_memory(a)
-    b = violetdb.add_event_memory("用户周五要交实验报告", category="event")
-    violetdb.execute("UPDATE event_memories SET use_in_context = 0 WHERE id = ?", (b,))
-    _intent_run(llm)
-    assert "query_memory" not in _tools_offered(llm.calls_for("fake-intent")[-1])
-    violetdb.execute("UPDATE event_memories SET status = 'expired' WHERE id = ?", (b,))
-    violetdb.execute("UPDATE event_memories SET use_in_context = 1 WHERE id = ?", (b,))
-    _intent_run(llm)
-    assert "query_memory" in _tools_offered(llm.calls_for("fake-intent")[-1])
 
 
 @pytest.mark.parametrize("status", ["active", "expired", "archived", "deleted"])
@@ -255,30 +213,6 @@ def test_visibility_matches_the_search_filter_exactly(violetdb, status, use_in_c
     searchable = bool(violetdb.search_event_memories("实验报告", min_similarity=0.0))
     assert violetdb.has_searchable_event_memories() is searchable
     assert searchable is (status != "deleted" and use_in_context == 1)
-
-
-def test_events_added_later_are_searchable_again(llm, violetdb):
-    _intent_run(llm)
-    assert "query_memory" not in _tools_offered(llm.calls_for("fake-intent")[-1])
-    violetdb.add_event_memory("用户下周三有天文观测课程答辩", category="event")
-    _intent_run(llm)
-    assert "query_memory" in _tools_offered(llm.calls_for("fake-intent")[-1])
-
-
-def test_profile_facts_alone_do_not_need_the_query_tool_and_still_reach_chat(llm, violetdb):
-    from ai.context_engine import ContextEngine
-    from ai.profile_store import Profile
-    Profile(violetdb).facts.remember("study.school", "星河大学", evidence="我在星河大学读大二", user_message=USER)
-    _intent_run(llm)
-    assert "query_memory" not in _tools_offered(llm.calls_for("fake-intent")[-1])
-    packet = ContextEngine(violetdb).build("chat", "我在学校挺好的")
-    assert any("学校：星河大学" in s for s in packet.sections)
-
-
-def test_intent_switch_off_offers_the_tool_on_an_empty_store(llm, violetdb, monkeypatch):
-    monkeypatch.setenv("VIOLET_INTENT_HIDE_EMPTY_MEMORY_TOOL", "0")
-    _intent_run(llm)
-    assert "query_memory" in _tools_offered(llm.calls_for("fake-intent")[-1])
 
 
 # ---------------------------------------------------------------------------

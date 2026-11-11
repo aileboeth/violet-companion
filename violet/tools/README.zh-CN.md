@@ -22,16 +22,15 @@
 
 ## 开发时用的
 
-下面这些工具都在隔离的沙盒里跑真实的 Violet 流程：有自己的数据库，不连微信等聊天平台，也不碰正式数据。默认用模拟模型，不花钱；要用真实模型时会先问你要 Key，Key 不保存。
+评测工具在隔离的沙盒里跑真实的 Violet 流程：用临时数据库，不连微信等聊天平台，也不读你的聊天记录和记忆。加 `--mock` 用模拟模型，不花钱；不加就用你指定的设置文件里的模型。
 
 | 文件 | 作用 |
 |---|---|
-| `violet_test_chat.py`、`free_chat.py` | 自己和她聊天。`free_chat` 的会话可以下次接着聊，还能带上假的课表、假的 MCP 工具 |
-| `model_compat.py` | 检查一个 OpenAI 兼容接口能不能用：JSON 输出、工具调用、超时 |
-| `chat_eval.py`、`chat_ab.py`、`chat_dialogue.py`、`dialogue_eval.py`、`scenario_eval.py`、`decision_eval.py` | 聊天体验的评估和 A/B 对比：固定场景、多轮对话、该不该用某个能力、同样效果能不能少花 token |
+| `scenario_eval.py` | 该用的能力她用了吗？约 40 个日常场景（语音、表情包、天气、手机、提醒、心情、闲聊、群聊），每个用你的模型按真实代码跑一遍，自动打分并统计 token，用来比较改动前后 |
+| `decision_eval.py` | 记忆整理和主动联系的决策少用一些 token，结果是否一样 |
 | `memory_conflicts.py`、`memory_restore_decayed.py` | 只读地列出互相矛盾的记忆；找回被旧版本误删的事件记忆 |
 | `schedule_rollback.py` | 从数据库里删掉课表的表（回滚课表功能时用） |
 | `fake_mcp_server.py` | 一个只有虚构只读工具的 MCP 服务器，测试用 |
-| `harness.py`、`replay.py`、`legacy.py`、`synthetic_*.py`、`reassess_tail.py`、`memory_query_audit.py` | 上面这些工具共用的部分，以及早期验收用的专项脚本 |
+| `legacy.py` | 读取项目改名之前留下的测试记录 |
 
 运行方式：在 `violet/` 目录里执行 `python -m tools.<名字> --help`。

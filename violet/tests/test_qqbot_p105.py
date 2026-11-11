@@ -77,7 +77,8 @@ def test_qq_official_bot_binds_the_owner_and_replies_passively_in_order(world, q
     replies = [m for m in qq.sent if m.get("msg_id") == inbound]
     assert [m["msg_seq"] for m in replies] == [1, 2] and all(m["openid"] == "OPENID_OWNER" for m in replies)
     chat = world.llm.calls_for(os.environ.get("CHAT_LLM_MODEL", "fake-chat"))[-1]
-    note = [m["content"] for m in chat["messages"] if m["role"] == "system" and m["content"].startswith("【这次聊天的地方】")]
+    note = [line for m in chat["messages"] if m["role"] == "system" for line in m["content"].splitlines()
+            if line.startswith("【这次聊天的地方】")]
     assert note and "QQ" in note[0]
     assert adapter.status().state == "connected" and qq.heartbeats >= 0
 

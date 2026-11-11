@@ -24,11 +24,11 @@ def env(monkeypatch, violetdb, tmp_path):
     monkeypatch.setenv("VIOLET_POLL_INTERVAL_SECONDS", "0.02")
     monkeypatch.setenv("VIOLET_SEND_RETRY_DELAY_SECONDS", "0")
     fake_llm = install_fake_llm(monkeypatch, FakeLLM(default_responders("好呀\n我在听")))
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent
+    from ai.agents import ChatAgent, MemoryAgent
     from violet_runtime import VioletRuntime, MessageSender
 
     client = FakeILinkClient()
-    agents = {"intent": IntentAgent(), "chat": ChatAgent(), "memory": MemoryAgent(), "performer": PerformerAgent()}
+    agents = {"chat": ChatAgent(), "memory": MemoryAgent()}
     holder = {}
 
     def build(**kwargs):
@@ -130,7 +130,7 @@ def test_more_than_ten_messages_in_one_poll_are_all_processed(env):
     combined = _user_messages(db)[-1]
     assert all(f"第{i}句" in combined for i in range(15))
     assert db.count_inbound_by_status() == {"done": 15}
-    assert llm.calls_for("fake-chat")[-1]["messages"][-1]["content"] == combined
+    assert llm.calls_for("fake-chat")[-1]["messages"][-1]["content"].endswith(combined)
 
 
 def test_redelivered_messages_are_not_processed_twice(env):
@@ -271,7 +271,8 @@ def test_turns_are_serialized_and_see_previous_turn(env):
     # Phase 3: the previous turn arrives as real dialogue turns (not a system transcript),
     # in order and with the right roles, right before the new message.
     dialogue = [(m["role"], m["content"]) for m in second_call["messages"] if m["role"] in ("user", "assistant")]
-    assert dialogue[-3:] == [("user", "第一条消息"), ("assistant", "收到"), ("user", "第二条消息")]
+    assert dialogue[-3:-1] == [("user", "第一条消息"), ("assistant", "收到")]
+    assert dialogue[-1][0] == "user" and dialogue[-1][1].endswith("第二条消息")
     assert not any("第一条消息" in (m.get("content") or "") for m in second_call["messages"] if m["role"] == "system")
 
 
@@ -284,7 +285,7 @@ def test_proactive_tick_waits_while_user_turn_is_pending(env, tmp_path):
                                   "min_minutes_between_proactive_messages": 0, "daily_message_limit": 5,
                                   "allowed_tasks": {}}), encoding="utf-8")
     rt_holder = {}
-    scheduler = ProactiveScheduler(ProactiveAgent(), env["agents"]["chat"], env["agents"]["performer"],
+    scheduler = ProactiveScheduler(ProactiveAgent(), env["agents"]["chat"],
                                    send_messages=lambda m, e=None: rt_holder["rt"].send_proactive(m, e),
                                    config_path=config)
     rt = env["build"](proactive_scheduler=scheduler)
@@ -313,7 +314,7 @@ def test_proactive_send_failure_is_recorded(env, tmp_path):
     llm.responders["fake-chat"] = lambda kw: "想你了"
     client.send_failures = [requests.ReadTimeout("x")]
     rt_holder = {}
-    scheduler = ProactiveScheduler(ProactiveAgent(), env["agents"]["chat"], env["agents"]["performer"],
+    scheduler = ProactiveScheduler(ProactiveAgent(), env["agents"]["chat"],
                                    send_messages=lambda m, e=None: rt_holder["rt"].send_proactive(m, e),
                                    config_path=tmp_path / "p.json")
     rt = env["build"](proactive_scheduler=scheduler)

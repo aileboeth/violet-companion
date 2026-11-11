@@ -13,6 +13,9 @@ import json
 
 import pytest
 
+from tests.test_long_term_memory_p91 import clock  # noqa: F401  (fixture: Monday 2026-11-02 20:00 -- the test's dates
+#                                                            are of that week; on the real clock it failed from 2026-11-11 15:00 on)
+
 DOG_OLD = "家里养了一只柯基，名叫豆豆，三岁，很爱拆家"
 DOG_NEW = "家里养了一只柯基，名叫豆包，三岁，很爱拆家"
 SAY_DOG = "跟你说两件事：我家养了只柯基叫豆豆，三岁了，特别能拆家；还有我上个月刚和前任分手了，不过现在已经好多了"
@@ -163,7 +166,7 @@ def save(agent, **args):
     return json.loads(agent._tool_save_memory({"category": "event", **args}))
 
 
-def test_the_agreement_merged_into_the_interview_keeps_15_00_and_never_gets_23_59(violetdb):
+def test_the_agreement_merged_into_the_interview_keeps_15_00_and_never_gets_23_59(violetdb, clock):
     """The real calls: round 2 saved the interview at 15:00; round 3 linked the agreement to it with only the date."""
     from ai.agents import MemoryAgent
     agent = MemoryAgent()

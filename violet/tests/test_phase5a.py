@@ -294,7 +294,7 @@ def verdicts(*items):
 
 def rewrite_chat(w, first, second):
     def respond(kw):
-        return second if "上一版回复里有和已记录事实不符" in system_text(kw) else first
+        return second if "里面有和已记录的事实对不上的说法" in system_text(kw) else first
     w.llm.responders["fake-chat"] = respond
 
 
@@ -328,7 +328,7 @@ def test_semantic_clears_a_rule_false_positive_with_evidence(sem_world, store):
     say(w, "你最近在看什么")
     assert w.client.sent_texts[-2:] == ["我前几天读了沈从文写湘西的那本", "节奏好慢"]
     assert len(w.llm.calls_for("fake-semantic")) == 1
-    chat_calls = [c for c in w.llm.calls_for("fake-chat") if "上一版回复" in system_text(c)]
+    chat_calls = [c for c in w.llm.calls_for("fake-chat") if "里面有和已记录的事实对不上的说法" in system_text(c)]
     assert chat_calls == [] and w.db.fetch_all("SELECT * FROM consistency_flags") == []
 
 
@@ -357,7 +357,7 @@ def test_semantic_confirms_a_fabrication_and_the_reply_is_rephrased(sem_world):
     w.llm.responders["fake-semantic"] = verdicts(("unsupported", []))
     say(w, "你昨天干嘛了")
     assert w.client.sent_texts[-2:] == ["也没干嘛", "就在家听歌"]
-    note = next(system_text(c) for c in w.llm.calls_for("fake-chat") if "上一版回复" in system_text(c))
+    note = next(system_text(c) for c in w.llm.calls_for("fake-chat") if "里面有和已记录的事实对不上的说法" in system_text(c))
     assert "“我昨天去了海边”（没有记录能说明这件事真的发生过）" in note and "其余内容和语气尽量保持不变" in note
 
 
@@ -373,7 +373,7 @@ def test_semantic_timeout_is_retried_then_falls_back_to_rephrasing(sem_world):
     assert w.client.sent_texts[-2:] == ["这两天挺想去海边的", "你今天怎么样"]
     statuses = [r["status"] for r in w.db.fetch_all("SELECT status FROM aux_llm_calls WHERE purpose = 'semantic_guard'")]
     assert statuses == ["timeout", "timeout"]
-    note = next(system_text(c) for c in w.llm.calls_for("fake-chat") if "上一版回复" in system_text(c))
+    note = next(system_text(c) for c in w.llm.calls_for("fake-chat") if "里面有和已记录的事实对不上的说法" in system_text(c))
     assert "请自然地改成想法、打算或感受" in note
 
 

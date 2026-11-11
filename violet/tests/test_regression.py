@@ -19,10 +19,10 @@ def env(monkeypatch, violetdb, tmp_path):
     monkeypatch.setenv("DEBOUNCE_NORMAL", "0.05")
     monkeypatch.setenv("DEBOUNCE_EXTRA", "0.1")
     llm = install_fake_llm(monkeypatch, FakeLLM(default_responders("哼\n终于想起我了")))
-    from ai.agents import ChatAgent, IntentAgent, MemoryAgent, PerformerAgent, ProactiveAgent
+    from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
     from violet_runtime import VioletRuntime, MessageSender
     client = FakeILinkClient()
-    agents = {"intent": IntentAgent(), "chat": ChatAgent(), "memory": MemoryAgent(), "performer": PerformerAgent()}
+    agents = {"chat": ChatAgent(), "memory": MemoryAgent()}
     sender = MessageSender(client, violetdb, simulate_typing=False, sleep=lambda s: None)
     vision_calls = []
 
@@ -57,28 +57,6 @@ def test_normal_chat_turn(env):
     assert memory_call["messages"][-1]["content"].endswith("\n\n用户说：我回来啦\nViolet 实际回复：哼\n终于想起我了")
 
 
-def test_silent_route_sends_nothing_but_keeps_history(env):
-    env["llm"].responders["fake-intent"] = lambda kw: intent_json("silent")
-    _turn(env, "晚安啦")
-    assert env["client"].sent_texts == []
-    assert [r["content"] for r in env["db"].get_recent_messages(5)] == ["晚安啦"]
-    assert env["llm"].calls_for("fake-chat") == []
-
-
-def test_task_route_creates_task_and_runs_performer(env, monkeypatch):
-    from tests.fake_mcp import campus_server, use
-    use(monkeypatch, campus_server(agents=("performer",)))   # phase 9.2: a task needs a tool that could carry it out
-    env["llm"].responders["fake-intent"] = lambda kw: intent_json("task")
-    env["llm"].responders["fake-performer"] = lambda kw: json.dumps({"task_status": "pending_info", "task_id": 1})
-    _turn(env, "帮我点杯奶茶")
-    tasks = env["db"].list_task_sessions()
-    assert len(tasks) == 1 and tasks[0]["task_name"] == "测试任务"
-    performer_input = json.loads(env["llm"].calls_for("fake-performer")[0]["messages"][-1]["content"])
-    assert performer_input["active_task_id"] == tasks[0]["id"]
-    chat_call = env["llm"].calls_for("fake-chat")[0]
-    assert any("任务执行结果" in (m.get("content") or "") for m in chat_call["messages"])
-
-
 def test_memory_agent_tools_still_write_memories(env):
     script = iter([
         completion(tool_calls=[{"name": "save_memory", "arguments": {
@@ -91,21 +69,6 @@ def test_memory_agent_tools_still_write_memories(env):
     _turn(env, "周五要考试了，你回我短一点")
     assert [m["content"] for m in env["db"].list_event_memories()] == ["用户周五有考试"]
     assert env["db"].get_core_memory_by_key("reply_style")["content"] == "喜欢短句"
-
-
-def test_intent_recall_is_injected_into_chat(env):
-    env["db"].add_event_memory("用户家的狗叫豆豆", category="event")
-    script = iter([
-        # The legacy character-overlap similarity is unchanged in phase 1, so the
-        # query must share characters with the memory (a later phase replaces it).
-        completion(tool_calls=[{"name": "query_memory", "arguments": {"query": "狗 豆豆"}}]),
-        completion(content=intent_json("chat")),
-    ])
-    env["llm"].responders["fake-intent"] = lambda kw: next(script)
-    _turn(env, "我家狗今天不吃饭")
-    chat_call = env["llm"].calls_for("fake-chat")[0]
-    recalled = [m["content"] for m in chat_call["messages"] if "相关记忆" in (m.get("content") or "")]
-    assert recalled and "豆豆" in recalled[0]
 
 
 def test_image_is_described_and_answered(env):
@@ -151,7 +114,7 @@ def test_scheduled_proactive_message_is_sent_and_recorded(env):
                                   "min_minutes_between_proactive_messages": 60, "daily_message_limit": 2,
                                   "allowed_tasks": {}}), encoding="utf-8")
     rt = env["rt"]
-    scheduler = ProactiveScheduler(env["proactive_agent"], env["agents"]["chat"], env["agents"]["performer"],
+    scheduler = ProactiveScheduler(env["proactive_agent"], env["agents"]["chat"],
                                    send_messages=lambda m, e=None: rt.send_proactive(m, e), config_path=config,
                                    is_busy=rt.is_busy, pipeline_lock=rt.pipeline_lock)
     db = env["db"]

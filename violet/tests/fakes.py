@@ -228,3 +228,58 @@ def far_quiet_hours() -> dict[str, str]:
     from ai.settings import now_local
     far = now_local() + timedelta(hours=12)
     return {"start": far.strftime("%H:%M"), "end": (far + timedelta(minutes=1)).strftime("%H:%M")}
+
+
+# ---------------------------------------------------------------------------
+# A clock tests can set (Violet's "now" for a scenario)
+# ---------------------------------------------------------------------------
+
+class ScenarioClock:
+    """Violet's clock in a test: starts at a given moment and runs on with real elapsed time."""
+
+    def __init__(self, start):
+        self.set(start)
+
+    def set(self, when) -> None:
+        if when.tzinfo is None:
+            raise ValueError("the scenario clock needs a timezone-aware moment")
+        self._base, self._t0 = when, time.monotonic()
+
+    def now(self):
+        from datetime import timedelta, timezone
+        from ai.settings import local_timezone
+        elapsed = timedelta(seconds=time.monotonic() - self._t0)
+        return (self._base.astimezone(timezone.utc) + elapsed).astimezone(local_timezone())
+
+    def advance(self, hours: float):
+        from datetime import timedelta, timezone
+        if hours < 0:
+            raise ValueError("scenario time only moves forward")
+        self.set(self.now().astimezone(timezone.utc) + timedelta(hours=hours))
+        return self.now()
+
+    def advance_to(self, when):
+        if when < self.now():
+            raise ValueError("scenario time only moves forward")
+        self.set(when)
+        return self.now()
+
+
+_CLOCK_MODULES = ("ai.settings", "ai.memory_model", "ai.life_engine", "ai.life_scheduler")
+
+
+def install_clock(clock: ScenarioClock) -> list[tuple[Any, Any]]:
+    """Every module that binds ai.settings.now_local by name reads the scenario clock."""
+    import importlib
+    saved = []
+    for name in _CLOCK_MODULES:
+        module = importlib.import_module(name)
+        if hasattr(module, "now_local"):
+            saved.append((module, module.now_local))
+            module.now_local = clock.now
+    return saved
+
+
+def uninstall_clock(saved: list[tuple[Any, Any]]) -> None:
+    for module, original in saved:
+        module.now_local = original

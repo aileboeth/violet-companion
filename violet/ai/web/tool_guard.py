@@ -25,7 +25,7 @@ FETCH_URL = f"{SERVER_NAME}__fetch_url"
 WEB_TOOLS = {WEB_SEARCH, FETCH_URL}
 # 2026-10-30: local tools that change nothing outside and send nothing anywhere stay usable after web content came in
 # (a sticker with the answer about the news); MCP tools and image generation stay refused
-SAFE_AFTER_WEB = {"find_stickers", "send_sticker", "save_sticker", "look_at_image"}
+SAFE_AFTER_WEB = {"find_stickers", "save_sticker", "look_at_image"}
 
 
 def _norm(url: str) -> str:

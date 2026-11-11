@@ -650,26 +650,3 @@ def campus(make_world, clock, violetdb, env_guard):
     assert w.admin.post("/auth/login", data={"token": TOKEN}, headers=SAME).status_code == 302
     return w
 
-
-def test_a_whole_turn_answers_from_what_the_page_just_saved(campus):
-    w = campus
-    tid = ok(post(w.admin, f"{B}/terms", {"name": "2026 秋（虚构）", "start_date": "2026-09-07", "end_date": "2027-01-15",
-                                          "timezone": "Asia/Shanghai"}))["id"]
-    ok(w.admin.put(f"{B}/terms/{tid}/periods", json={"periods": PERIODS}, headers=SAME))
-    p = preview(w.admin, CSV, term_id=tid)
-    commit(w.admin, CSV, p, term_id=tid)
-    w.llm.responders["fake-intent"] = wants(FIND, reason="高数下一次")
-    chat_plays(w, (FIND, {"query": "高数"}),
-               final=lambda kw: "下一次是 {date} {start}".format(**next(u for u in result_of(kw)["matches"][0]["upcoming"] if u["occupies"])))
-    say(w, "高数下一次什么时候上？")
-    assert offered(w.chats[0]) == [FIND] and w.client.sent_texts[-1] == "下一次是 2026-09-09 10:00"
-    math = w.db.fetch_one("SELECT id FROM schedule_slots WHERE weekday = 3")["id"]
-    course = w.db.fetch_one("SELECT course_id FROM schedule_slots WHERE id = ?", (math,))["course_id"]
-    ok(post(w.admin, f"{B}/courses/{course}/exceptions", {"kind": "cancel", "on_date": "2026-09-09", "slot_id": math}))
-    w.chats.clear()
-    chat_plays(w, (FIND, {"query": "高数"}),
-               final=lambda kw: "下一次是 {date} {start}".format(**next(u for u in result_of(kw)["matches"][0]["upcoming"] if u["occupies"])))
-    say(w, "那高数下一次呢？")
-    assert w.client.sent_texts[-1] == "下一次是 2026-09-14 08:00"              # no restart, no cache
-    assert w.db.fetch_one("SELECT COUNT(*) AS n FROM task_sessions")["n"] == 0
-    assert not w.db.fetch_all("SELECT id FROM event_memories WHERE content LIKE '%高等数学%'")

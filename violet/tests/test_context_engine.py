@@ -22,33 +22,18 @@ def sections(packet):
     return "\n".join(s for s in packet.sections if not s.startswith("【Violet"))
 
 
-def test_profile_is_selected_by_relevance_not_dumped(engine):
-    say_fact(engine, "address_name", "小满", "叫我小满")
-    say_fact(engine, "identity.status", "大学生", "我是大学生")
-    say_fact(engine, "residence.usual", "平时住学校宿舍", "我平时住校")
-    say_fact(engine, "interest", "打羽毛球", "我喜欢打羽毛球")
-    unrelated = sections(engine.build("chat", "今天的晚霞好好看"))
-    assert "希望被称呼为：小满" in unrelated                       # always relevant
-    assert "大学生" not in unrelated and "宿舍" not in unrelated and "羽毛球" not in unrelated
-    related = engine.build("chat", "下午还有两节课，宿舍又停水")
-    text = sections(related)
-    assert "身份：大学生" in text and "平时住：平时住学校宿舍" in text and "用户亲口说" not in text   # natural: no source tags
-    assert "羽毛球" not in text
-    assert len(related.report["fact_ids"]) == 3
-
-
 def test_usual_residence_is_never_the_current_location(engine):
     say_fact(engine, "residence.usual", "平时住学校宿舍", "我平时住校")
     # asked where they are now: the usual residence is NOT offered as an answer
     text = sections(engine.build("chat", "猜猜我现在在哪"))
-    assert "此刻在哪里、在做什么：不知道（不要根据常住地或生活规律推断）" in text
-    assert "平时住学校宿舍" not in text
+    assert "对方此刻在哪里、在做什么：没有记录（不要按常住地或生活规律推断" in text
+    assert "以上是平时的情况，不代表对方此刻在哪里或正在做什么" in text
     # talking about dorm life: the fact is used, with the usual-is-not-now note
     text = sections(engine.build("chat", "宿舍今天好吵"))
-    assert "平时住：平时住学校宿舍" in text and "不代表用户此刻在哪里" in text and "不知道" in text
+    assert "平时住：平时住学校宿舍" in text and "不代表对方此刻在哪里" in text and "不知道" in text
     engine.profile.situations.observe("location", "家里", "user_stated", evidence="今天回家了", user_message="今天回家了", until="today")
     text = sections(engine.build("chat", "猜猜我现在在哪"))
-    assert "此刻所在：家里（对方说的" in text and "不知道" not in text
+    assert "此刻所在：家里（对方说的" in text and "没有记录（" not in text
 
 
 def test_expired_situation_is_not_used(engine, violetdb):
@@ -58,7 +43,7 @@ def test_expired_situation_is_not_used(engine, violetdb):
     violetdb.execute("UPDATE user_situations SET expires_at = ? WHERE id = ?",
                   ((datetime.fromisoformat(violetdb.now()) - timedelta(minutes=5)).isoformat(), s["id"]))
     text = sections(engine.build("chat", "你猜我现在在干嘛"))
-    assert "在图书馆自习" not in text and "不知道" in text
+    assert "在图书馆自习" not in text and "没有记录" in text
 
 
 def test_candidates_are_never_presented_as_facts(engine):
@@ -98,16 +83,20 @@ def test_budget_trims_low_priority_items_first(engine, violetdb, monkeypatch):
     say_fact(engine, "address_name", "小满", "叫我小满")
     for i in range(30):
         violetdb.upsert_core_memory(f"legacy_{i}", "other", f"旧系统里的一条很长很长的记忆内容，编号{i}，" + "填充" * 20)
-    # phase 8.9.3: persona 1.2.0 renders ~810 chars (1.1.0: ~670) and is never trimmed; the budget leaves room
-    # above it so the test still shows what goes first (legacy) and what stays (the address name)
-    # 2026-11-09: +150 for the base info's weekdays and, after midnight, what "明天" means (never trimmed either)
-    monkeypatch.setenv("VIOLET_CONTEXT_MAX_CHARS", "1100")
+    # 2026-11-11: the budget is for what can be trimmed (the persona, the preferences and the time are on top of it,
+    # whatever their length) -- what goes first is the legacy list, what stays is the address name
+    monkeypatch.setenv("VIOLET_CONTEXT_MAX_CHARS", "600")
     monkeypatch.setenv("VIOLET_CONTEXT_MAX_LEGACY", "30")
     packet = engine.build("chat", "早")
     assert packet.report["trimmed_items"] > 0
     text = sections(packet)
     assert "希望被称呼为：小满" in text
-    assert sum(len(s) for s in packet.sections) < 1450
+    legacy = next(s for s in packet.sections if "旧系统里的一条很长很长的记忆内容" in s)
+    assert 0 < legacy.count("旧系统里的一条") < 30 and len(legacy) < 700
+    persona = next(s for s in packet.sections if s.startswith("【Violet"))
+    monkeypatch.setenv("VIOLET_CONTEXT_MAX_CHARS", "1")                 # nothing left for the trimmable sections ...
+    tight = engine.build("chat", "早")
+    assert persona in tight.sections and "当前时间" in sections(tight)             # ... the fixed ones are whole
     assert packet.report["approx_tokens"] > 0
 
 
@@ -130,6 +119,6 @@ def test_preferences_and_boundaries_carry_their_origin(engine):
         engine.profile.preferences.observe("follow_up_questions", "less", "engagement")
     say_fact(engine, "boundary", "不想聊考研的事", "别跟我聊考研")
     text = sections(engine.build("chat", "早"))
-    assert "喜欢简短的回复（用户明确说过）：回复短一点" in text
+    assert "喜欢简短的回复（对方明确说过）：回复短一点" in text
     assert "不喜欢被连续追问（从最近的聊天看出来的倾向，不一定准）" in text
     assert "边界：不想聊考研的事（对方亲口说的）" in text

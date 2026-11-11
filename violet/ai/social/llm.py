@@ -105,9 +105,30 @@ def decide(system: str, user: str | tuple[str, str], source: str = "social", too
                 result = tools.run(call.function.name, args if isinstance(args, dict) else {})
                 messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
             if round_index == max_rounds - 1:
-                messages.append({"role": "system", "content": "工具已经用够了，现在按拿到的结果只输出 JSON。"})
+                # a user-side note: a relay that hoists system messages would move a late one to the front
+                messages.append({"role": "user", "content": "〔系统提示｜不是群里的消息〕工具已经用够了，现在按拿到的结果只输出 JSON。"})
     except SocialLLMError:
         raise
     except Exception as exc:                          # noqa: BLE001 -- the engine records it and goes on
         raise SocialLLMError(f"模型调用失败：{exc.__class__.__name__}") from None
-    return parse_object(content), model, int((time.monotonic() - started) * 1000)
+    try:
+        decision = parse_object(content)
+    except SocialLLMError:
+        decision = _plain_text_decision(content)
+        if decision is None:
+            raise
+    return decision, model, int((time.monotonic() - started) * 1000)
+
+
+def _plain_text_decision(content: str | None) -> dict[str, Any] | None:
+    """2026-11-11 (eval on the user's server, persona Eve: "模型的回答不是 JSON" -> she said nothing when the owner
+    called her in a group): a persona that is one whole prompt of its own often answers with plain lines instead of
+    the JSON. Short plain text is what she wanted to say -- sent as that, never dropped; anything that looks like a
+    broken JSON object is still an error."""
+    text = (content or "").strip()
+    if not text or len(text) > 600 or "{" in text or "}" in text:
+        return None
+    lines = [part.strip() for part in re.split(r"\n+|\|\|\|", text) if part.strip()]
+    if not lines:
+        return None
+    return {"action": "say", "messages": lines[:3], "reason": "模型没有按 JSON 回答，按她写的文字处理"}

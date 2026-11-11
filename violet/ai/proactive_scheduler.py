@@ -148,7 +148,6 @@ class ProactiveScheduler:
         self,
         proactive_agent,
         chat_agent,
-        performer_agent,
         send_messages: Callable[[list[dict[str, Any]], int], dict[str, Any] | None],
         config_path: str | Path = DEFAULT_CONFIG_PATH,
         is_busy: Callable[[], bool] | None = None,
@@ -156,7 +155,6 @@ class ProactiveScheduler:
     ):
         self.proactive_agent = proactive_agent
         self.chat_agent = chat_agent
-        self.performer_agent = performer_agent
         self.send_messages = send_messages
         self.config_path = Path(config_path)
         self._stop_event = threading.Event()
@@ -309,7 +307,6 @@ class ProactiveScheduler:
                 event_context=event_context,
                 proactive_agent=self.proactive_agent,
                 chat_agent=self.chat_agent,
-                performer_agent=self.performer_agent,
             )
             self._handle_pipeline_result(pipeline, event_context, kind="fixed")
             return
@@ -337,7 +334,6 @@ class ProactiveScheduler:
             event_context=event_context,
             proactive_agent=self.proactive_agent,
             chat_agent=self.chat_agent,
-            performer_agent=self.performer_agent,
         )
         self._handle_pipeline_result(pipeline, event_context, kind="scheduled")
 
@@ -406,7 +402,6 @@ class ProactiveScheduler:
                     event_context=event_context,
                     proactive_agent=self.proactive_agent,
                     chat_agent=self.chat_agent,
-                    performer_agent=self.performer_agent,
                 )
                 if send:
                     self._handle_pipeline_result(pipeline)

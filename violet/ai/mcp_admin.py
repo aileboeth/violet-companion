@@ -99,7 +99,7 @@ def validate_server(body: dict[str, Any], existing_names: set[str], creating: bo
     if "agents" in body:
         agents = body.get("agents")
         if not isinstance(agents, list) or any(a not in AGENTS for a in agents):
-            problems["agents"] = "只能是 chat / performer / proactive 中的几个"
+            problems["agents"] = "只能是 chat / proactive 中的几个"
         else:
             out["agents"] = list(dict.fromkeys(agents))
     elif creating:

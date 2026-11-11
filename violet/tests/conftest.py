@@ -51,24 +51,12 @@ os.environ.update({
     # image system off unless a test turns it on; media files go to the temp dir
     "VIOLET_IMAGE_ENABLED": "0",
     "VIOLET_MEDIA_DIR": str(_TMP / "media"),
-    # 2026-11-01: production skips the Intent call (ai/agents/intent_agent.intent_step); the many pipeline tests
-    # written for it keep it on, tests of the Intent-free turn switch it off
-    "VIOLET_INTENT_STEP": "1",
-    "VIOLET_TEST_INTENT_STEP": "1",                    # the same for tools/harness.py sessions
-    "VTEST_INTENT_STEP": "1",                          # ... also those started by a test (no VIOLET_ passed on)
+    # 2026-11-11 (audit R1): the tests run what production runs -- no Intent step, the single prompt layout, late
+    # system notes as production sends them. The overrides that pinned the suite to the old paths are gone.
     # 2026-11-01: the stepped history window remembers its start per process; tests of window sizes expect the plain
     # sliding window, test_capability_rework_violet.py switches it on
     "VIOLET_CONTEXT_STABLE_HISTORY": "0",
-    # 2026-11-01: production sends system messages after the conversation began as labelled user messages
-    # (ai/model_params._late_system_as_user); the many tests that look for those system messages see them as built
-    "VIOLET_LATE_SYSTEM_AS_USER": "0",
     "VIOLET_REPLY_RECHECK": "0",                       # 2026-11-02: tested on its own (test_persona_memory_violet)
-    "VTEST_LATE_SYSTEM_AS_USER": "0",                  # ... also in tools/harness.py sessions and tools a test starts
-    # 0.7.63: production sends one system message, the chat, and one last user message holding this turn's notes
-    # (ai/agents/chat_agent.compose_single). The many tests written before look for each note as its own system
-    # message: they see the pieces as built ("classic"); tests/test_single_layout_violet.py tests the real layout
-    "VIOLET_PROMPT_LAYOUT": "classic",
-    "VTEST_PROMPT_LAYOUT": "classic",
 })
 for _key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
     os.environ.pop(_key, None)

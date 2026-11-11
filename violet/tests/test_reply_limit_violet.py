@@ -62,7 +62,7 @@ def test_the_reply_starts_with_the_own_frame(monkeypatch):
     monkeypatch.setattr(chat_agent, "own_persona_prompt", lambda: "【整段人设的框架】")
     chat_agent.ChatAgent().run("早")
     first = [c["messages"][0]["content"] for c in llm.calls]
-    assert first and first[0] == "【整段人设的框架】"
+    assert first and first[0].startswith("【整段人设的框架】")
 
 
 def test_the_prompt_tells_her_the_limit(monkeypatch):

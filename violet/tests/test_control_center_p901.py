@@ -394,7 +394,7 @@ def test_proactive_settings_show_the_scheduler_config(env_guard, violetdb, tmp_p
     from ai.proactive_scheduler import ProactiveScheduler
     cfg = tmp_path / "proactive.json"
     cfg.write_text(json.dumps({"quiet_hours": {"start": "02:30", "end": "07:15"}, "daily_message_limit": 5}), encoding="utf-8")
-    sched = ProactiveScheduler(None, None, None, lambda *_: None, config_path=cfg)
+    sched = ProactiveScheduler(None, None, lambda *_: None, config_path=cfg)
     app = make_app(env_guard, violetdb, scheduler=sched, monkeypatch=monkeypatch)
     c, _ = login(app, TOKEN)
     rows = {r["key"]: r for r in c.get("/api/control/settings").get_json()["data"]["settings"]}

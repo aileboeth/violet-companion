@@ -1,8 +1,14 @@
 """Her own mood (2026-10-30, user: 人设更有灵动性; idea from dsh-aurabot-qq).
 
 One number, -1 (upset) .. +1 (happy), and what caused it. Words said to her move it -- praise and thanks up, scolding
-and insults down (the owner counts more than someone in a group) -- and it drifts back to calm with a half-life
-(VIOLET_MOOD_HALF_LIFE_HOURS, 3). Keyword detection only: no model call.
+and insults down -- and it drifts back to calm with a half-life (VIOLET_MOOD_HALF_LIFE_HOURS, 3).
+
+Who decides that it moved (2026-11-11, audit A12):
+  * the owner's chat: she does, with the note_feeling tool (ai/owner_tools.py). The reply model reads the tone -- a
+    teasing "笨蛋" is not an insult, "谢谢" out of politeness is not delight -- which keywords never could (0.7.60
+    had to special-case 打情骂俏, and the cause line "主人对你说了「笨蛋」" then argued with what she could read
+    herself);
+  * groups and other people's private chats: keywords (feel, below) -- many messages, mostly not addressed to her.
 
 What it changes, only while it is clearly there (|mood| >= 0.3):
   * a short line in the owner's chat and in the social prompts: how she feels and why, and that it may colour her
@@ -112,11 +118,16 @@ def feel(db, text: str, who: str = "主人", weight: float = 1.0) -> float | Non
         delta, cause = -0.15, "主人心情不好，你有点担心"
     if not delta:
         return None
-    value = max(-1.0, min(1.0, current(db)["value"] + delta * weight))
+    return shift(db, delta * weight, cause)
+
+
+def shift(db, delta: float, cause: str | None) -> float:
+    """Move her mood by ``delta`` (kept within -1 .. 1) and remember why. Returns the new value."""
+    value = max(-1.0, min(1.0, current(db)["value"] + delta))
     db.execute("INSERT INTO mood_state (id, value, cause, updated_at) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
                "value = excluded.value, cause = excluded.cause, updated_at = excluded.updated_at", (value, cause, db.now()))
     from ai import trace
-    trace.step("心情", 变化=round(delta * weight, 2), 现在=round(value, 2), 原因=cause)
+    trace.step("心情", 变化=round(delta, 2), 现在=round(value, 2), 原因=cause)
     return value
 
 

@@ -388,7 +388,8 @@ def chat_section(db) -> str:
     lines = prompt_lines(db)
     if not lines:
         return ""
-    # 2026-10-30: sending is the send_sticker tool (ai/sticker_tools.py); the marker line still works
-    return ("【你收藏的表情包】聊到合适的时候可以发一个：调用 send_sticker 填编号（或单独一行写 [[表情:编号]]）。"
+    # 2026-11-11: one way to send -- the marker line (ai/sticker_tools.py says why)
+    return ("【你收藏的表情包】聊到合适的时候可以发一个：在回复里单独一行写 [[表情:编号]]，它就会作为表情包发出去"
+            "（那一行只写这个标记，不要加别的字，也不要把说明文字写出来）。"
             "不用每次都发，一次最多一个；按说明里“什么时候发”挑，没有真正合适的就不发，不要硬配一个意思不对的；表情包只是配语气，不能代替回答。"
-            "下面是常用的，全部的用 find_stickers 看。\n" + "\n".join(lines))
+            "下面是常用的，想找别的用 find_stickers。\n" + "\n".join(lines))

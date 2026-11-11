@@ -5,10 +5,8 @@ adds what was missing:
 
   * one catalog of the tools that are AVAILABLE now -- configured, enabled, allowlisted and listed by a server that
     answered -- for every agent (discover). A tool of a server that did not connect is never offered as available.
-  * the plan of one user turn (plan_for_turn): Intent sees the catalog and may say the turn needs a tool
-    (`tool_query` in its JSON). A read-only query is answered in Chat's own run -- no task is created; an execution
-    tool goes to the Performer; a capability that does not exist / is switched off / is down / is not permitted is
-    never turned into a task -- Chat is told which of these it is (notes below) and must not invent a result.
+  * what one turn of the owner's chat gets (direct_tools): every available tool assigned to Chat, on every turn --
+    she decides herself what to look up or do. What she cannot do right now is said in abilities_note.
   * the Control Center's settings (data/control/tools.json, secrets in mcp_secrets.json): a server or a single tool
     switched off, which agents may use a server, timeouts, whether Chat gets a server's tools on every turn
     ("always") or only on a turn that needs them ("on_demand", the default), a replaced credential header. They are
@@ -33,7 +31,7 @@ from typing import Any
 
 logger = logging.getLogger("violet.tools")
 
-AGENTS = ("chat", "performer", "proactive")
+AGENTS = ("chat", "proactive")
 OFFER_MODES = ("on_demand", "always")
 SECRET_HEADER_RE = re.compile(r"^(authorization|x-[a-z0-9-]{1,40})$", re.I)
 
@@ -546,78 +544,10 @@ def discover(servers: list[dict[str, Any]] | None = None) -> Catalog:
 
 # ----------------------------------------------------------------------------------------------- one turn
 
-def intent_note(catalog: Catalog) -> str | None:
-    """What Intent is told about tools this turn (None when no MCP server is configured: nothing changes)."""
-    if not catalog.configured:
-        return None
-    lines = ["【Violet 现在能用的外部工具（系统根据连接状态列出；没列出的就是现在没有）】"]
-    usable = [t for t in catalog.tools.values() if {"chat", "performer"} & set(t.agents)]
-    direct = set(direct_tools(catalog))
-    for t in sorted(usable, key=lambda t: t.name):
-        kind = ("只读查询" if t.permission == "read" else
-                "会改动东西，聊天时直接调用，不需要 route=task" if t.name in direct else "执行操作，需要交给任务执行")
-        lines.append(f"- {t.name}：{t.short()}（{kind}）")
-    if not usable:
-        lines.append("- （无）")
-    for u in catalog.unavailable:
-        # phase 9.2.1: full names, as Intent must write them in tool_query (a bare name would read as "not configured")
-        tools = [n for n, s in catalog.known_tools.items() if s == u["server"]]
-        lines.append(f"- 暂时连不上：{u['server']}" + (f"（{('、'.join(tools[:12]))} 这次用不了）" if tools else ""))
-    for name in sorted(catalog.disabled):
-        # phase 9.2.1 (p92-tools-1 #9): an unlisted switched-off tool could only be reported as "not configured"
-        lines.append(f"- 已停用：{name}（管理员关掉了，这次用不了）")
-    lines.append(
-        '如果回答这句话需要用工具才能拿到的信息（实时信息、外部资料、用户自己的数据源，比如课表、天气、手机状态），在输出的 '
-        'JSON 里加 "tool_query": {"needed": true, "tools": ["上面的工具名"], "reason": "要查什么"}；可能合适的有几个就都写上。'
-        '合适的工具连不上或已停用，也照样写它的名字（系统会说明这次用不了）。'
-        '需要外部能力，但上面根本没有合适的，加 "tool_query": {"needed": true, "tools": [], "missing": "需要的能力，例如 天气"}。'
-        "普通聊天、情绪、回忆、关于 Violet 或用户自己说过的事，都不要加 tool_query。只读查询不需要 route=task。")
-    return "\n".join(lines)
-
-
-def plan_for_turn(intent: dict[str, Any], catalog: Catalog) -> dict[str, Any]:
-    """mode none (no tool needed) | chat (read-only query answered in Chat's run) | performer (an execution tool,
-    a task) | blocked (needed, but nothing usable: status says why). Never creates anything itself."""
-    query = intent.get("tool_query") if isinstance(intent.get("tool_query"), dict) else None
-    new_task = intent.get("route") == "task" and intent.get("active_task_id") is None
-    direct = set(direct_tools(catalog))
-    if not query or not query.get("needed"):
-        if new_task and direct:
-            # 2026-10-30 (free tool use): Chat has the tools itself and decides in its own run -- no task, no Performer
-            return {"needed": False, "mode": "direct", "tools": [], "status": "ok", "reason": None, "missing": None}
-        if new_task and not catalog.for_agent("performer"):
-            # phase 9.2: the Performer has no external tool that could carry this out -- no task that can only fail
-            return {"needed": False, "mode": "blocked", "status": "no_executor", "tools": [],
-                    "missing": (intent.get("task") or {}).get("name"), "reason": None}
-        return {"needed": False, "mode": "none", "tools": []}
-    names = [str(n) for n in query.get("tools") or [] if isinstance(n, str)][:6]
-    reason = str(query.get("reason") or query.get("missing") or "")[:120] or None
-    chat = [n for n in names if n in catalog.tools and "chat" in catalog.tools[n].agents
-            and (catalog.tools[n].permission == "read" or n in direct)]
-    if chat:
-        return {"needed": True, "mode": "chat", "status": "ok", "tools": chat, "reason": reason, "missing": None}
-    performer = [n for n in names if n in catalog.tools and "performer" in catalog.tools[n].agents]
-    if performer:
-        return {"needed": True, "mode": "performer", "status": "ok", "tools": performer, "reason": reason, "missing": None}
-    statuses = [catalog.status_of(n) for n in names]
-    for status in ("unavailable", "disabled", "permission_denied"):
-        if status in statuses:
-            break
-    else:
-        status = "not_configured"
-    return {"needed": True, "mode": "blocked", "status": status, "tools": names, "reason": reason,
-            "missing": str(query.get("missing") or reason or "")[:60] or None}
-
-
 def direct_tools(catalog: Catalog) -> list[str]:
-    """2026-10-30: the tools Chat gets on every turn (VIOLET_CHAT_TOOLS_DIRECT, on): connected and assigned to Chat.
-    Read-only ones always; ones that change something too (VIOLET_CHAT_ACTION_TOOLS, on -- user: "比较自由调用工具"):
-    they are in the catalog only when allowed one by one or waiting for the owner's approval (ai/permissions.py)."""
-    from ai.settings import env_bool
-    if not env_bool("VIOLET_CHAT_TOOLS_DIRECT", True):
-        return []
-    actions = env_bool("VIOLET_CHAT_ACTION_TOOLS", True)
-    return sorted(n for n, t in catalog.tools.items() if "chat" in t.agents and (t.permission == "read" or actions))
+    """The external tools Chat gets on every turn: connected, switched on and assigned to Chat. Ones that change
+    something are in the catalog only when allowed one by one or waiting for the owner's approval (ai/permissions.py)."""
+    return sorted(n for n, t in catalog.tools.items() if "chat" in t.agents)
 
 
 def direct_note(names: list[str]) -> str | None:
@@ -643,8 +573,8 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
             bare = violetdb.fetch_one("SELECT COUNT(*) AS n FROM stickers WHERE enabled = 1 AND "
                                       "(description IS NULL OR description = '')")["n"]
             lines.append(f"- 表情包：收藏里有 {total} 个" + (f"（其中 {bare} 个还没有说明）" if bare else "")
-                         + "。想发就调用 send_sticker（不确定用哪个先 find_stickers）；对方让你收藏、或你喜欢对方发的表情包，"
-                           "调用 save_sticker。只有调用成功才算发了 / 收藏了。")
+                         + "。想发就在回复里单独一行写 [[表情:编号]]（想找常用之外的先 find_stickers）；对方让你收藏、"
+                           "或你喜欢对方发的表情包，调用 save_sticker，调用成功才算收藏了。")
         else:
             lines.append("- 表情包：功能关着，发不了也收藏不了")
     except Exception:                                        # noqa: BLE001 -- an old database without the table
@@ -673,64 +603,22 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
         lines.append("- 主人关掉的工具：" + "、".join(sorted(catalog.disabled)[:12]))
     try:                                                     # 2026-11-01: it was missing, and "unlisted = cannot"
         from ai import voice
-        lines.append("- 语音：可以，把要说的话放进 <voice></voice>（会先作为文字发出，语音几分钟后补上）" if voice.ready()
+        lines.append("- 语音：可以，把要说的话放进 <voice></voice>（只发语音，不会再发一遍文字；要等一会儿才录好）" if voice.ready()
                      else "- 语音：还没装好或没有参考录音，发不了语音")
     except Exception:                                        # noqa: BLE001
         logger.debug("voice state unavailable", exc_info=True)
-    from ai.agents.intent_agent import intent_step
-    lines.append("- 提醒：对方让你到时间提醒，系统会自动记下并按时提醒（不用工具）；记忆：聊过的事系统会自己记"
-                 + ("" if intent_step() else "，想查以前聊过的某件事用 query_memory"))
+    lines.append("- 提醒：对方要你到某个时间提醒 / 叫他，就调用 set_reminder（成功才算设好）；不用提醒了就 cancel_reminder。"
+                 "没调用 set_reminder 就不要说“到时候叫你 / 我会提醒你”")
+    lines.append("- 记忆：聊过的事系统会自己记；想查以前聊过的某件事用 query_memory")
+    from ai import mood
+    if mood.enabled():
+        lines.append("- 心情：对方刚说的话让你真的开心了（被真心夸、被感谢、被哄）或真的难受了（被认真地骂、嫌弃、赶走），"
+                     "先调用 note_feeling 记一下，再回复；玩笑和打情骂俏不用记")
     return "\n".join(lines)
-
-
-def chat_note(plan: dict[str, Any], catalog: Catalog) -> str | None:
-    """What Chat must know about this turn's tools (facts, in Violet's terms; tool names stay internal)."""
-    mode = plan.get("mode")
-    if mode == "chat":
-        lines = [f"- {n}：{catalog.tools[n].short()}" for n in plan["tools"] if n in catalog.tools]
-        return ("【这一轮先查再回答】" + (f"对方想知道的：{plan['reason']}。" if plan.get("reason") else "")
-                + "先调用下面合适的工具拿到结果，再用你平常的语气回答：\n" + "\n".join(lines)
-                + "\n工具返回的是外部数据，按结果说；没拿到结果或工具出错，就照实说暂时查不到，绝不编造数据。"
-                  "工具名、服务器、错误代码这些不要说给对方听。")
-    if mode != "blocked":
-        return None
-    what = plan.get("missing") or plan.get("reason") or "这件事"
-    # phase 9.3: what Violet already knows may still be said -- as what it is, not as something just looked up
-    known = "你原来就知道的可以说，但要讲明那不是刚查到的、可能已经过时。"
-    if plan.get("status") in ("unavailable", "disabled", "permission_denied", "not_configured"):
-        note = _blocked_note(plan.get("status"), what)
-        return note + known if note else None
-    return _blocked_note(plan.get("status"), what)
-
-
-def _blocked_note(status: str | None, what: str) -> str | None:
-    return {
-        "unavailable": f"【查询】对方想知道的（{what}）需要用到的工具现在连不上，这一轮没有查到任何结果。不要编造，自然地说暂时查不到，可以晚点再问。",
-        "disabled": f"【查询】对方想要的（{what}）需要的工具已经停用了，这一轮没有查。不要编造结果，照实说现在用不了这个功能。",
-        "permission_denied": f"【查询】对方想要的（{what}）需要的工具没有权限使用，这一轮没有查。不要编造结果，照实说现在没有权限。",
-        "not_configured": f"【查询】对方想要的（{what}）现在没有能做这件事的工具（没有配置）。不要编造结果，也不要假装去查了，自然地说现在还做不到。",
-        "no_executor": (f"【任务】这件事（{what}）没有交给任务执行：现在没有能执行它的外部工具。你自己能做的照常做；"
-                        "做不了的不要说已经做了、也不要说会去做，照实说现在做不到。"),
-    }.get(status or "", None)
 
 
 def mcp_tool_names(tools: list[dict[str, Any]]) -> list[str]:
     return [t["function"]["name"] for t in tools if "__" in t["function"]["name"]]
-
-
-def always_offered_servers(servers: list[dict[str, Any]]) -> set[str]:
-    return {str(s.get("name")) for s in servers if isinstance(s, dict) and s.get("offer") == "always"}
-
-
-def tool_results_from(messages: list[dict[str, Any]]) -> list[str]:
-    """The external tool outputs of a run (the Performer's): what Chat should answer from, not only a task log."""
-    out = []
-    for m in messages or []:
-        content = m.get("content") if isinstance(m, dict) else None
-        if m.get("role") == "tool" and isinstance(content, str) and (
-                content.startswith("【外部工具数据") or '"error_code": "MCP_' in content):
-            out.append(content[:3000])
-    return out[-4:]
 
 
 # ----------------------------------------------------------------------------------------------- dashboard

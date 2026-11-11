@@ -11,7 +11,7 @@
   const SHORT = { read: "直接用", write: "先问你", high_risk: "先问你", deny: "不给她用", unknown: "不给她用（还没分类）" };
   const STATUS = { connected: ["已连接", "ok"], unavailable: ["未连接", "bad"], disabled: ["已停用", ""], unknown: ["还没检查", "warn"] };
   const FIND = { ok: "ok", info: "", warn: "warn", error: "bad" };
-  const AGENTS = { chat: "Chat（聊天）", performer: "Performer（执行任务）", proactive: "Proactive（主动消息）" };
+  const AGENTS = { chat: "Chat（聊天）", proactive: "Proactive（主动消息）" };
   const enc = encodeURIComponent;
 
   async function call(method, url, body, done) {

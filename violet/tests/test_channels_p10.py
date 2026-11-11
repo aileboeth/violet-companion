@@ -72,7 +72,6 @@ def test_the_reply_comes_only_from_chat_content_never_from_messages_or_raw():
     assert public["schema"] == "violet.reply/1" and SYSTEM_PROMPT[:10] not in json.dumps(public, ensure_ascii=False)
     # a failed or silent turn has nothing to send, whatever the agent left behind
     assert not outbound.build_reply({"chat": {"content": "x", "failed": True}}).should_send
-    assert not outbound.build_reply({"chat": {"content": "x"}, "should_reply": False}).should_send
     assert not outbound.build_reply({"chat": {"content": {"text": "x"}}}).should_send
     assert outbound.build_reply({"chat": {"content": "[NO_REPLY]"}}).declined
 
@@ -80,7 +79,7 @@ def test_the_reply_comes_only_from_chat_content_never_from_messages_or_raw():
 @pytest.mark.parametrize("text, reason", [
     (SYSTEM_PROMPT[10:60], "instruction"),
     ("好呀\n" + SYSTEM_PROMPT, "instruction"),
-    ("【这一轮先查再回答】对方想知道的：天气", "internal_header"),
+    ("【工具怎么用】这一轮你可以自己决定调用工具", "internal_header"),
     ("【外部工具数据｜来源 violet-web/web_search】结果", "internal_header"),
     ('{"route": "chat", "user_intent": "撒娇", "should_reply": true}', "internal_json"),
     ('```json\n{"route": "chat"}\n```', "internal_json"),
@@ -104,7 +103,7 @@ def test_natural_replies_pass(guard, text):
 def test_every_internal_header_in_the_code_is_known_to_the_guard():
     headers = outbound.internal_headers()
     # a few headers from different modules: context engine, tool notes, channel note, web, chat agent
-    for expected in ("【这一轮先查再回答】", "【这次聊天的地方】", "【联网工具】", "【图片】"):
+    for expected in ("【工具怎么用】", "【这次聊天的地方】", "【联网工具】", "【图片】"):
         assert any(h.startswith(expected[:-1]) for h in headers), expected
     assert all(h.startswith("【") and len(h) >= 4 for h in headers)
 

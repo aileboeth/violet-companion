@@ -706,29 +706,14 @@ class MemoryAgent(BaseAgent):
                        "messages_changed": len(report["messages_changed"])})
 
     def _settled_before_reply(self) -> str | None:
-        """Phase 7 B.10.1: a "提醒我…" request is settled before the reply (ai.chat.settle_reminder_request) and
-        the reply told the user the result. This run then never adds a second reminder (the one saved for this
-        turn, or the same pending one it found) and never sets one the user was told could not be set (the
-        reasons come from the words alone, so they are recomputed here). A readable request with nothing saved
-        for this turn (the step before the reply did not run) falls through to the usual rules."""
-        from ai.memory_model import parse_reminder_request, reminder_before_reply_enabled
-        if not reminder_before_reply_enabled():
-            return None
-        parsed = parse_reminder_request(self._user_text())
-        if not parsed["requested"]:
-            return None
+        """2026-11-11: Chat sets reminders itself (set_reminder, ai/owner_tools.py) and told the owner the result.
+        This run, after the reply, never adds a second one for the same turn."""
         turn_id = self._turn_id()
         row = (violetdb.fetch_one("SELECT id, due_at FROM commitments WHERE source_turn_id = ? ORDER BY id LIMIT 1",
-                               (turn_id,)) if turn_id else None)
-        if row is None and parsed["ok"]:
-            row = violetdb.fetch_one("SELECT id, due_at FROM commitments WHERE status IN ('pending', 'sending') "
-                                  "AND content = ? AND due_at = ? ORDER BY id LIMIT 1", (parsed["content"], parsed["due_at"]))
+                                  (turn_id,)) if turn_id else None)
         if row:
             return _dumps({"ok": True, "action": "already_saved", "commitment_id": row["id"], "due_at": row["due_at"],
-                           "note": "这个提醒在回复前已经保存好了，不要再创建。"})
-        if not parsed["ok"]:
-            return _dumps({"ok": False, "action": "rejected", "reason": "settled_before_reply",
-                           "note": "这一轮的提醒在回复前已经处理过（没能设置，用户已被告知），不要再创建。"})
+                           "note": "这个提醒在回复时已经设好了，不要再创建。"})
         return None
 
     def _tool_create_commitment(self, args: dict) -> str:
