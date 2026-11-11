@@ -46,9 +46,9 @@ Por enquanto, a interface do painel está em chinês.
 
 **Painel web**
 
-- Início (o que ainda falta), Visão geral, Fluxo (quais prompts, ferramentas e modelos cada resposta usou, incluindo o conteúdo completo enviado ao modelo).
-- Serviços de modelos (um modelo diferente por agente e por plataforma de conversa), Canais de conversa, Ferramentas e celular, Imagens, Personas e vida, Grade de aulas, Configurações.
-- Histórico de conversas, Memória, Diagnóstico, Logs, Histórico de alterações, Segurança da conta.
+- Visão geral (com uma lista do que ainda falta), Canais de conversa, Personas e vida, Serviços de modelos (um modelo diferente por agente e por plataforma de conversa).
+- O que ela pode fazer (permissões, celular, busca na web, voz, outras ferramentas), Imagens e figurinhas, Histórico de conversas, Memória (com a grade de aulas).
+- Funcionamento (quais prompts, ferramentas e modelos cada resposta usou, incluindo o conteúdo completo enviado ao modelo; diagnóstico; logs), Sistema (atualizações, segurança da conta, histórico de alterações).
 
 **Vindo do Project Eve**
 
@@ -67,7 +67,7 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
   - O certificado é autoassinado. Quando o navegador disser que a página não é segura, escolha continuar.
   - Em um servidor na nuvem, abra também essa porta no grupo de segurança / firewall do provedor.
 - Depois de instalar:
-  1. Abra o painel e preencha o endereço e a chave do seu serviço de modelos na página Início.
+  1. Abra o painel e preencha o endereço e a chave do seu serviço de modelos na página Serviços de modelos.
   2. Conecte qualquer plataforma de conversa na página Canais de conversa e comece a conversar.
 - Esqueceu o endereço ou o usuário: `/opt/violet/violet info`. Esqueceu a senha: `/opt/violet/violet reset-password`.
 
@@ -90,15 +90,15 @@ Mais detalhes (modos de acesso, firewall, comandos de manutenção) em [violet/I
 ## Atualizações
 
 - Automáticas por padrão: quando sai uma versão nova, o servidor se atualiza sozinho. Antes faz um backup e volta para a versão anterior se a atualização falhar.
-- Você pode trocar para "só avisar" ou "verificar manualmente" em Configurações → Atualizações de versão.
-- Clicar em Atualizar agora na página Início mostra o progresso.
+- Você pode trocar para "só avisar" ou "verificar manualmente" em Sistema → Atualizações.
+- Clicar em Atualizar agora na página Sistema mostra o progresso.
 - Ou atualize manualmente no servidor:
 
 ```bash
 /opt/violet/violet update
 ```
 
-- Se o servidor não consegue acessar o GitHub (comum na China continental): em Configurações → Atualizações → Origem do download você escolhe de onde baixar. O padrão, Automático, tenta primeiro o GitHub e depois os espelhos do GitHub embutidos. Uma versão nova baixada por um espelho só é instalada se tiver a assinatura da versão. Detalhes em [violet/INSTALL.md](violet/INSTALL.md#updates).
+- Se o servidor não consegue acessar o GitHub (comum na China continental): em Sistema → Atualizações → Origem do download você escolhe de onde baixar. O padrão, Automático, tenta primeiro o GitHub e depois os espelhos do GitHub embutidos. Uma versão nova baixada por um espelho só é instalada se tiver a assinatura da versão. Detalhes em [violet/INSTALL.md](violet/INSTALL.md#updates).
 
 ## Desinstalação
 

@@ -113,7 +113,9 @@ def test_schedule_routes_need_login_and_same_origin(app, api, admin, violetdb, t
 
 def test_page_has_the_timetable_tab_and_never_parses_data_as_html(admin):
     page = admin.get("/control", headers={"Accept": "text/html"}).get_data(as_text=True)
-    assert 'data-tab="schedule"' in page and "/static/control_schedule.js" in page and 'id="sch-week-grid"' in page
+    # 2026-11-11 regroup: the timetable is a sub-tab of 记忆 (control.js SUBS), no menu entry of its own
+    assert 'id="tab-schedule"' in page and "/static/control_schedule.js" in page and 'id="sch-week-grid"' in page
+    assert '["schedule", "课表"]' in (Path(__file__).resolve().parent.parent / "wx_ilink_py" / "static" / "control.js").read_text(encoding="utf-8")
     static = Path(__file__).resolve().parent.parent / "wx_ilink_py" / "static"
     for name in ("control.js", "control_schedule.js"):
         code = (static / name).read_text(encoding="utf-8")

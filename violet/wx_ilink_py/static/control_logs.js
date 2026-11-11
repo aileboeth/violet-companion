@@ -26,6 +26,7 @@
     return h("div", { class: "log-entry lv-" + r.level.toLowerCase() }, head, msg, detail);
   }
 
+  window.violetLogEntry = entry;                   // 2026-11-11: 运行情况 → 最近每一轮 shows a round's log lines
   loaders.logs = async () => {
     try {
       const d = await api("GET", "/api/control/logs?" + query());
@@ -42,7 +43,7 @@
           ` · 最近 ${Math.round(d.window_bytes / 1024)} KB${d.older_not_shown ? "，更早的没有显示" : ""}` +
           ` · 更新于 ${new Date(d.modified * 1000).toLocaleString()}` }));
       const empty = $("#log-trace").checked && !d.trace_enabled
-        ? "排查日志没有开：在“设置 → 日志与排查”里打开“排查日志”，再聊一句，这里就会出现每一步的记录。"
+        ? "排查日志没有开：在这一页最下面打开“排查日志”，再聊一句，这里就会出现每一步的记录。"
         : "没有符合条件的记录";
       $("#log-list").replaceChildren(...(d.entries.length ? d.entries.map(entry) : [h("p", { class: "note", text: empty })]));
     } catch (e) { toast("日志读取失败：" + e.message, false); }

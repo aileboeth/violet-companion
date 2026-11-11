@@ -176,15 +176,15 @@ def _finding(area: str, kind: str, level: str, message: str, suggestion: str = "
 
 
 MODEL_WORDS = {
-    "auth": ("API Key 不对或已失效", "在“开始”页重新填写 API Key"),
+    "auth": ("API Key 不对或已失效", "在“模型服务”页重新填写 API Key"),
     "forbidden": ("这个 Key 没有权限使用该模型", "换一个有权限的模型，或检查服务商的账户权限"),
     "not_found": ("接口地址不对或模型名不存在", "核对 API 地址（一般以 /v1 结尾）和各 Agent 的模型名"),
     "bad_request": ("接口拒绝了请求（多半是模型名或参数）", "核对模型名；换一个模型试试"),
     "rate_limited": ("请求太频繁或额度用完", "检查服务商额度；稍后会自动恢复"),
-    "timeout": ("模型接口响应超时", "检查网络；可以在“设置”里调大超时"),
+    "timeout": ("模型接口响应超时", "检查网络；可以在“模型服务”页底部调大超时"),
     "connection": ("连不上模型接口", "检查网络和代理（下面的“外部网络”检查）"),
     "server": ("模型服务出错（5xx）", "服务商的问题，稍后重试"),
-    "not_configured": ("还没有填写模型服务", "在“开始”页填写 API 地址和 Key"),
+    "not_configured": ("还没有填写模型服务", "在“模型服务”页填写 API 地址和 Key"),
 }
 
 
@@ -336,7 +336,7 @@ def _mcp_findings() -> list[dict[str, Any]]:
             elif d.get("action") == "check":
                 fix = {"action": "check_mcp", "target": s["name"]}
             level = {"error": "error", "warn": "warn"}.get(d["level"], "info")
-            suggestion = "在“工具”页处理：" + {"tools_unclassified": "给每个工具选“直接用 / 先问你 / 不给她用”",
+            suggestion = "在“她能做的事”页处理：" + {"tools_unclassified": "给每个工具选“直接用 / 先问你 / 不给她用”",
                                              "tools_need_second_key": "需要时点“允许直接用”",
                                              "no_agent": "勾选要使用它的 Agent"}.get(d["code"], "按提示操作")
             out.append(_finding("mcp", kind, level, f"MCP {s['name']}：{d['message']}", suggestion, fix))
@@ -344,32 +344,17 @@ def _mcp_findings() -> list[dict[str, Any]]:
 
 
 def _plan_findings() -> list[dict[str, Any]]:
+    # 2026-11-11: the tool plan (Intent / Performer) is gone since 0.7.67 -- nothing records "tool_plan" any more, so
+    # only the check that does not need it is left
     out = []
-    plans = events("tool_plan")
-    unknown = [p for p in plans if p.get("unknown_tools")]
-    if unknown:
-        names = sorted({n for p in unknown for n in p["unknown_tools"]})
-        out.append(_finding("tools", "tool_not_planned", "warn",
-                            f"Intent 要用的工具名不存在：{'、'.join(names[:6])}（{len(unknown)} 轮）",
-                            "通常是工具改名或服务器换了名字；检查“工具”页的工具名", turns=[p.get("turn") for p in unknown]))
-    not_called = [p for p in plans if p.get("mode") == "chat" and not p.get("called")]
-    if not_called:
-        out.append(_finding("tools", "tool_not_planned", "warn",
-                            f"工具已经提供给 Chat，但模型没有调用（{len(not_called)} 轮）",
-                            "换一个工具调用能力更好的 Chat 模型，或检查工具说明是否清楚", turns=[p.get("turn") for p in not_called]))
-    blocked = [p for p in plans if p.get("mode") == "blocked" and p.get("status") in ("permission_denied", "disabled")]
-    if blocked:
-        out.append(_finding("tools", "tool_unauthorized", "warn",
-                            f"需要的工具没有权限或已停用，{len(blocked)} 轮没有查成：{'、'.join(sorted({n for p in blocked for n in p.get('tools') or []})[:6])}",
-                            "在“工具”页给工具分类 / 授权", turns=[p.get("turn") for p in blocked]))
     try:
         from ai.tool_manager import discover
         catalog = discover()
         orphans = [t.name for t in catalog.tools.values() if not ({"chat", "proactive"} & set(t.agents))]
         if orphans:
             out.append(_finding("tools", "tool_not_planned", "info",
-                                f"这些工具只授权给了主动消息，聊天时不会被规划：{'、'.join(orphans[:6])}",
-                                "需要在聊天中使用的话，在“工具”页勾选 Chat"))
+                                f"这些工具只授权给了主动消息，聊天时她用不了：{'、'.join(orphans[:6])}",
+                                "需要在聊天中使用的话，在“她能做的事”页勾选 Chat"))
     except Exception:
         pass
     return out
@@ -386,7 +371,7 @@ def _tool_call_findings() -> list[dict[str, Any]]:
     for name, items in by_tool.items():
         codes = sorted({i.get("code") or "?" for i in items})
         out.append(_finding("tools", "tool_failed", "warn", f"工具调用失败：{name}（{len(items)} 次，{'、'.join(codes)}）",
-                            "在“工具”页点“测试”看具体原因；连不上时先“检查连接”", turns=[i.get("turn") for i in items]))
+                            "在“她能做的事”页点“测试”看具体原因；连不上时先“检查连接”", turns=[i.get("turn") for i in items]))
     return out
 
 

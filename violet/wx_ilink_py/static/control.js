@@ -27,10 +27,9 @@ let PERSONA = "main";                             // per page load (the Control 
 // 0.7.54 (user: 看谁的记忆应该放在聊天记录里面，不要放到左边栏；点了别的页面它还不消失): the picker is ON the pages whose
 // content is a persona's own -- the chat history, the memories, and her look / persona changes / life on 人设与生活 --
 // and only those pages show the chosen persona; every other page is the main one's
-const PERSONA_TABS = new Set(["chat", "memories", "persona"]);
+const PERSONA_TABS = new Set(["chat", "memories", "persona", "life"]);
 function personaScope() {
-  const tab = document.querySelector("#tabs button.active");
-  return tab && PERSONA_TABS.has(tab.dataset.tab) ? PERSONA : "main";
+  return PERSONA_TABS.has(currentSection) ? PERSONA : "main";
 }
 async function loadPersonaPicker() {
   try {
@@ -55,9 +54,8 @@ async function loadPersonaPicker() {
       w.textContent = "用在：" + ((cur.channel_names || []).join("、") || "没有渠道在用");
     }
     for (const bar of document.querySelectorAll("[data-persona-pick]")) bar.hidden = list.length < 2;
-    const active = document.querySelector("#tabs button.active");
-    if (switched && active && PERSONA_TABS.has(active.dataset.tab) && loaders[active.dataset.tab]) {
-      loaders[active.dataset.tab]();               // the page already shows main's data: show the chosen one's
+    if (switched && PERSONA_TABS.has(currentSection) && loaders[currentSection]) {
+      loaders[currentSection]();                   // the page already shows main's data: show the chosen one's
     }
   } catch (_) { /* older server or not logged in */ }
 }
@@ -88,28 +86,67 @@ function confirmBox(text, opts = {}) {
 
 // ---------------------------------------------------------------- tabs
 const loaders = {};
-document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => {
-  document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
-  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + b.dataset.tab));
-  history.replaceState(null, "", "#" + b.dataset.tab);
-  document.title = b.textContent.trim() + " · Violet";
+// 2026-11-11 regroup: a page of the menu is one section, or a few sections behind sub-tabs (section id = "tab-" + name).
+// The address keeps the SECTION name (#logs, #account … as before the regroup).
+const SUBS = {
+  persona: [["persona", "人设"], ["talk", "聊天方式"], ["proactive", "主动联系"], ["life", "她的生活"]],
+  memories: [["memories", "记忆"], ["schedule", "课表"]],
+  run: [["flow", "流程"], ["diagnostics", "诊断"], ["logs", "日志"]],
+  system: [["system", "更新与系统"], ["account", "账号安全"], ["history", "修改记录"]],
+};
+const PAGE_OF = {};
+for (const [page, subs] of Object.entries(SUBS)) for (const [sec] of subs) PAGE_OF[sec] = page;
+const lastSub = {};
+let currentSection = "overview";
+function showSection(name) {
+  if (name === "setup") name = "overview";            // the old 开始 page is a card on the overview now
+  if (!document.getElementById("tab-" + name)) name = SUBS[name] ? (lastSub[name] || SUBS[name][0][0]) : "overview";
+  const page = PAGE_OF[name] || name;
+  const subs = SUBS[page] || null;
+  if (subs) lastSub[page] = name;
+  currentSection = name;
+  let title = "";
+  document.querySelectorAll("#tabs button").forEach((x) => {
+    const on = x.dataset.tab === page; x.classList.toggle("active", on); if (on) title = x.textContent.trim();
+  });
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.id === "tab-" + name));
+  const bar = $("#page-subs");
+  bar.hidden = !subs;
+  bar.replaceChildren(...(subs || []).map(([sec, label]) => h("button", { type: "button", text: label,
+    class: sec === name ? "active" : "", onclick: () => showSection(sec) })));
+  history.replaceState(null, "", "#" + name);
+  document.title = title + " · Violet";
   setMenu(false);                                   // narrow screens: the menu closes after choosing a page
   window.scrollTo({ top: 0 });
-  (loaders[b.dataset.tab] || (() => {}))();
-}));
+  (loaders[name] || (() => {}))();
+  if (!Object.keys(pending).length) slotsReady = loaders.settings();   // the settings shown on this page, fresh
+}
+document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => showSection(b.dataset.tab)));
 // Violet stage 3: go to a page and then to one place on it (the start page's checklist, the jump bars). Page
 // loaders fill their lists asynchronously, so the target is looked for a few times before giving up.
+// "settings" (the page that no longer exists) + an anchor: the section that holds that group now.
 function goTo(tab, anchor) {
-  const btn = document.querySelector(`#tabs button[data-tab="${CSS.escape(tab)}"]`);
-  if (btn && !btn.classList.contains("active")) btn.click();
-  if (anchor) scrollToAnchor(anchor);
+  if (tab === "settings") {
+    slotsReady.then(() => {
+      const el = anchor && document.getElementById(anchor);
+      const sec = el && el.closest("section.tab");
+      showSection(sec ? sec.id.slice(4) : "system");
+      if (anchor) scrollToAnchor(anchor);
+    });
+    return;
+  }
+  const target = document.getElementById("tab-" + tab) ? tab : (SUBS[tab] ? tab : "overview");
+  if (target !== currentSection && PAGE_OF[currentSection] !== target) showSection(target);
+  if (anchor) {
+    const el = document.getElementById(anchor), sec = el && el.closest("section.tab");
+    if (sec && sec.id.slice(4) !== currentSection) showSection(sec.id.slice(4));
+    scrollToAnchor(anchor);
+  }
 }
 function scrollToAnchor(id, tries = 25) {
   const el = document.getElementById(id);
-  const panel = el && el.closest(".set-panel[hidden]");          // 2026-11-02: a settings tab not shown yet
-  if (panel) showSettingsPanel(panel.id.slice("set-p-".length));
-  const group = el && el.closest("#set-p-general .set-group");   // 2026-11-09: one settings category at a time
-  if (group && group.hidden) showSettingsCategory(group.id);
+  const fold = el && el.parentElement && el.parentElement.closest("details:not([open])");
+  if (fold) fold.open = true;
   if (!el || !el.offsetParent) { if (tries > 0) setTimeout(() => scrollToAnchor(id, tries - 1), 120); return; }
   if (el.tagName === "DETAILS") el.open = true;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -632,12 +669,12 @@ function renderTools(servers) {
   $("#tools-list").replaceChildren(...(others.length ? others.map((s) => {
     const el = toolServerCard(s); el.id = "tool-srv-" + s.name; return el;
   }) : [h("p", { class: "note", text: "还没有添加其他 MCP 服务器。" })]));
-  jumpNav($("#tools-jump"), [["手机", "phone-mcp"], ["联网工具", "tools-web"], ["语音", "tools-voice"],
+  jumpNav($("#tools-jump"), [["她能自己做的事", "set-g-permissions"], ["手机", "phone-mcp"], ["联网", "tools-web"], ["语音", "tools-voice"],
     ["其他 MCP 服务器", "tools-mcp"], ["添加服务器", "mcp-add-box"]]);
 }
 function toolServerCard(s, title = s.name) {
   const facts = [`状态 ${TOOL_STATUS[s.status] || s.status}`, `传输 ${s.transport}`, s.url ? `地址 ${s.url}` : null, s.command,
-    `可用于 ${s.agents.join("、") || "—"}`, `提供方式 ${s.offer === "always" ? "每轮都给 Chat" : "需要时才给"}`,
+    `可用于 ${s.agents.join("、") || "—"}`,
     `调用 ${s.total_calls} 次 / 失败 ${s.total_failures} 次`];
   const tools = s.tools.map((t) => h("div", { class: "row" },
     h("span", { text: `${t.name}：${t.description || ""}` }), pill(PERMISSION[t.permission] || t.permission),
@@ -684,7 +721,7 @@ function renderWeb(web) {
   (async () => {
     let x; try { x = await api("GET", "/api/web/explorer"); } catch (_) { return; }
     x = x.mode !== undefined ? x : (x.data || {});
-    if (x.mode === "off") { explorer.replaceChildren(h("span", { class: "note", text: "自主探索：没有允许（设置 → 联网搜索 → 允许自主探索）" })); return; }
+    if (x.mode === "off") { explorer.replaceChildren(h("span", { class: "note", text: "自主探索：没有允许（在下面的设置里打开“允许自主探索”）" })); return; }
     const on = x.mode === "on";
     explorer.replaceChildren(h("span", { text: "自主探索" }), pill(on ? "进行中" : "已允许，没开始", on ? "ok" : ""),
       h("button", { type: "button", class: "ghost", text: on ? "停止探索" : "开始探索", onclick: async () => {
@@ -733,7 +770,7 @@ function renderWeb(web) {
         if (!value) return;
         try { await api("POST", "/api/control/tools/web/secret", { value, confirm: true }); toast("凭据已替换"); loaders.tools(); } catch (e) { toast("替换失败：" + e.message, false); }
       } })),
-    h("p", { class: "note", text: "搜索服务、SearXNG 地址和搜索语言在“设置 → 联网搜索”里改。" }),
+    h("p", { class: "note", text: "搜索服务、SearXNG 地址和搜索语言在下面的设置里改。" }),
     ...(failures.length ? [h("div", { class: "note", text: "今天的失败：" }), ...failures] : [])),
     h("details", {}, h("summary", { text: "工具开关和授权（搜索 / 读网页，给 Chat、主动消息…）" }),
       h("div", { id: "web-server-slot" }))));
@@ -782,7 +819,7 @@ async function loadSearxng(box) {
   if (running) {
     buttons.append(h("button", { type: "button", text: "正在执行…查看进度", onclick: () => watchSearxng("联网搜索", p.task === "searxng-install" ? "enable" : p.task === "searxng-uninstall" ? "disable" : null) }));
   } else if (!s.available) {
-    buttons.append(h("p", { class: "note", text: "这种安装方式不能在网页上安装。以 root 在服务器上运行：/opt/violet/violet searxng install，再在“设置 → 联网搜索”里打开联网搜索。" }));
+    buttons.append(h("p", { class: "note", text: "这种安装方式不能在网页上安装。以 root 在服务器上运行：/opt/violet/violet searxng install，再在下面的设置里打开联网搜索。" }));
   } else if (!s.installed) {
     buttons.append(h("button", { class: "ghost", type: "button", text: "一键安装 SearXNG", onclick: async () => {
       // switched to SearXNG afterwards only when nothing else is searching yet
@@ -869,7 +906,7 @@ function showWebTest(box, t, installed) {
       Object.entries(t.by_engine).map(([k, v]) => `${k} ${v} 条`).join("、") }) : null,
     t.dead_engines && t.dead_engines.length ? h("p", { class: "note", text: "没有响应的搜索引擎：" + t.dead_engines.join("、") }) : null,
     !s.ok && installed ? h("p", { class: "note", text: "搜不到东西时点“选择搜索引擎”：只勾国内能访问的；如果每个引擎都是“超时”，再勾上“只用 IPv4”。还不行就用上面的“必应直连”。" }) : null,
-    !s.ok && t.provider === "bing" ? h("p", { class: "note", text: "必应没有给结果：可以在“设置 → 联网搜索 → 必应地址”换成另一个地址再试；还不行，说明必应拒绝了这台服务器，可以改用博查等付费搜索（同一页的“搜索服务”）。" }) : null,
+    !s.ok && t.provider === "bing" ? h("p", { class: "note", text: "必应没有给结果：可以在下面的设置里把“必应地址”换成另一个再试；还不行，说明必应拒绝了这台服务器，可以改用博查等付费搜索（同一页的“搜索服务”）。" }) : null,
     h("div", { class: "row" }, pill(f.ok ? "网页阅读正常" : "网页阅读失败", f.ok ? "ok" : "bad"),
       h("span", { class: "note", text: f.ok ? `打开了 ${f.url}（${f.latency_ms} 毫秒）` : `打不开 ${f.url}：${f.error}` })),
   ];
@@ -890,7 +927,13 @@ $("#mem-next").addEventListener("click", () => { memOffset += MEM_PAGE; loadMemo
 
 // ---------------------------------------------------------------- settings
 const pending = {}; const SOURCE = { dashboard: "后台设置", env: ".env", default: "代码默认", file: "配置文件", unset: "未设置" };
-const SETTINGS_PAGE = { pending, changed: () => { $("#set-save").disabled = false; markCategoryChanged(); } };
+// 2026-11-11 regroup: one save bar for every page, shown while something is changed and not saved
+function showSavebar() {
+  const n = Object.keys(pending).length;
+  $("#savebar").hidden = !n;
+  $("#set-count").textContent = `${n} 项修改还没保存`;
+}
+const SETTINGS_PAGE = { pending, changed: showSavebar };
 // ctx: where the change is collected (the settings page, or another page with its own save button)
 function settingInput(s, ctx = SETTINGS_PAGE) {
   const pending = ctx.pending;
@@ -929,147 +972,75 @@ function settingInput(s, ctx = SETTINGS_PAGE) {
       running ? h("div", { class: "help", "data-running": s.key, text: running }) : null, reset, err));
   return row;
 }
-// the model page; 0.7.2: the images page; 2026-11-02: the timetable switches on the 课表 page
-const SETTINGS_ELSEWHERE = ["api", "models", "images", "schedule"];
-const SETTINGS_ORDER = ["behavior", "messages", "proactive", "life", "memory", "stickers", "web", "voice", "mcp", "images",
-  "guard", "prompts", "system", "logs", "updates", "social", "qq_stickers", "qzone"];
-// 2026-11-02: which chat platform types each channel tab of the settings page covers
-const SET_PLATFORMS = { wechat: { name: "微信", types: ["wechat_ilink"] }, qq: { name: "QQ", types: ["napcat", "qqbot", "onebot11"] },
-  telegram: { name: "Telegram", types: ["telegram"] } };
+// 2026-11-11 regroup: there is no settings page. Every group is shown on the page of its feature, in a
+// <div class="set-slot" data-groups="a,b"> of control.html (data-merge="title": the rows of those groups as ONE card).
+// The model page (api, models), the images page (images) and the 课表 page (schedule) draw their groups themselves.
+// TUNING: numbers nobody changes in normal use (timeouts, retries, caps). They keep working from .env / the saved
+// value; the pages show them only when 系统 → 调参项 is switched on (kept in this browser).
+const TUNING = new Set(["prompt.chat", "prompt.proactive",
+  "DEBOUNCE_EXTRA", "VIOLET_TYPING_MIN_DELAY_SECONDS", "VIOLET_TYPING_MAX_DELAY_SECONDS", "VIOLET_SEND_MAX_ATTEMPTS",
+  "VIOLET_SEND_RETRY_DELAY_SECONDS", "VIOLET_OWN_PERSONA_FRAME", "VIOLET_CONTEXT_HISTORY_TURNS", "VIOLET_PERSONA_CONTEXT",
+  "VIOLET_MOOD_HALF_LIFE_HOURS", "VIOLET_CHAT_MAX_TOOL_ROUNDS", "MCP_CONNECT_TIMEOUT_SECONDS", "MCP_CALL_TIMEOUT_SECONDS",
+  "MCP_CALL_RETRIES", "MCP_RESULT_MAX_CHARS", "VIOLET_SOCIAL_QUIET_SECONDS", "VIOLET_SOCIAL_BATCH_SECONDS",
+  "VIOLET_SOCIAL_CONTEXT_MESSAGES", "VIOLET_ASYNC_MEMORY", "VIOLET_MEMORY_WORD_RECALL", "VIOLET_MEMORY_STANDING_FACTS",
+  "VIOLET_MEMORY_STANDING_EVENTS", "VIOLET_EVENT_VALID_DAYS", "VIOLET_SEMANTIC_GUARD_MODEL",
+  "VIOLET_SEMANTIC_GUARD_MAX_CALLS_PER_DAY", "VIOLET_SEMANTIC_GUARD_MAX_TOKENS_PER_DAY"]);
+function showTuning() { return /(?:^|;\s*)violet_tuning=1(?:;|$)/.test(document.cookie); }   // a cookie, like the language
+function visibleSettings(d, g) {
+  const all = showTuning();
+  return d.settings.filter((s) => s.group === g && (all || !TUNING.has(s.key)));
+}
 function settingGroup(d, g) {
-  // 2026-11-01 (user: 高级设置很奇怪，不如全部融合在设置里): the common ones first, then "不常改的"
-  const rows = d.settings.filter((s) => s.group === g && s.common);
-  const more = d.settings.filter((s) => s.group === g && !s.common);
+  // 2026-11-01 (user: 高级设置很奇怪，不如全部融合在设置里): the common ones first, then "不常改的" -- folded since the
+  // regroup, so a page shows the few switches people use
+  const rows = visibleSettings(d, g).filter((s) => s.common);
+  const more = visibleSettings(d, g).filter((s) => !s.common);
   if (!rows.length && !more.length) return null;
+  const rest = more.map((s) => settingInput(s));
   return h("div", { class: "set-group", id: "set-g-" + g }, h("h3", { text: d.groups[g] }), ...rows.map((s) => settingInput(s)),
-    more.length && rows.length ? h("div", { class: "set-more", text: "不常改的" }) : null, ...more.map((s) => settingInput(s)));
+    ...(rows.length && more.length ? [h("details", { class: "set-fold" }, h("summary", { text: `不常改的（${more.length} 项）` }), ...rest)] : rest));
 }
-// 2026-11-09 UI pass (the general tab was ~10000 px of every category at once): a list of categories on the left and
-// ONE category on the right; a search box shows the matching settings of every category instead. Changes in a
-// category not shown are kept (the inputs stay in the page) and saved with the others; each category with unsaved
-// changes gets a dot.
-let setCategory = "set-g-permissions";
-function settingsCategories(items) {
-  const nav = $("#set-jump");
-  nav.className = "set-cats";
-  const search = h("input", { type: "search", class: "set-search", placeholder: "搜索设置…", "aria-label": "搜索设置" });
-  search.addEventListener("input", () => filterSettings(search.value));
-  nav.replaceChildren(search, ...items.map(([label, id]) =>
-    h("button", { type: "button", "data-cat": id, text: label, onclick: () => { search.value = ""; showSettingsCategory(id); } })));
-  if (!items.some(([, id]) => id === setCategory)) setCategory = items[0][1];
-  showSettingsCategory(setCategory);
-}
-function showSettingsCategory(id) {
-  setCategory = id;
-  document.querySelectorAll("#set-p-general .set-group").forEach((g) => { g.hidden = g.id !== id; });
-  document.querySelectorAll("#set-p-general .set-row, #set-p-general .set-more").forEach((r) => { r.hidden = false; });
-  document.querySelectorAll("#set-jump [data-cat]").forEach((b) => b.classList.toggle("active", b.dataset.cat === id));
-  const empty = $("#set-search-empty"); if (empty) empty.remove();
-}
-function filterSettings(text) {
-  const q = text.trim().toLowerCase();
-  if (!q) { showSettingsCategory(setCategory); return; }
-  let hits = 0;
-  document.querySelectorAll("#set-p-general .set-group").forEach((g) => {
-    if (g.id === "set-g-permissions" || g.id === "set-g-language") { g.hidden = !g.textContent.toLowerCase().includes(q); hits += g.hidden ? 0 : 1; return; }
-    let any = false;
-    g.querySelectorAll(".set-more").forEach((m) => { m.hidden = true; });
-    g.querySelectorAll(".set-row").forEach((r) => { const ok = r.textContent.toLowerCase().includes(q); r.hidden = !ok; any = any || ok; });
-    g.hidden = !any; if (any) hits++;
+const MERGED = { channel_models: "每个渠道用的聊天模型" };
+function fillSlots(d) {
+  document.querySelectorAll(".set-slot").forEach((slot) => {
+    const groups = slot.dataset.groups.split(",");
+    if (slot.dataset.merge) {
+      const rows = groups.flatMap((g) => visibleSettings(d, g));
+      slot.replaceChildren(...(rows.length ? [h("div", { class: "set-group", id: "set-g-" + groups[0] },
+        h("h3", { text: MERGED[slot.dataset.merge] }), ...rows.map((s) => settingInput(s)))] : []));
+    } else slot.replaceChildren(...groups.map((g) => settingGroup(d, g)).filter(Boolean));
   });
-  document.querySelectorAll("#set-jump [data-cat]").forEach((b) => b.classList.remove("active"));
-  const old = $("#set-search-empty"); if (old) old.remove();
-  if (!hits) $("#set-groups").append(h("p", { class: "note", id: "set-search-empty", text: `没有找到包含“${text.trim()}”的设置。` }));
-}
-function markCategoryChanged() {
-  document.querySelectorAll("#set-jump [data-cat]").forEach((b) => {
-    const g = document.getElementById(b.dataset.cat);
-    b.classList.toggle("dirty", !!(g && g.querySelector(".set-row.changed")));
-  });
-}
-function showSettingsPanel(name) {
-  document.querySelectorAll("#set-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.set === name));
-  document.querySelectorAll("#tab-settings .set-panel").forEach((p) => { p.hidden = p.id !== "set-p-" + name; });
-  $("#set-danger").hidden = name !== "general";
-}
-document.querySelectorAll("#set-tabs button").forEach((b) => b.addEventListener("click", () => showSettingsPanel(b.dataset.set)));
-// one channel tab: the accounts of that platform, the persona there, where proactive messages go, its own settings
-async function renderChannelSettings(d, key, groups) {
-  const p = SET_PLATFORMS[key];
-  const panel = $("#set-p-" + key);
-  const [chData, persona] = await Promise.all([api("GET", "/api/control/channels").catch(() => null),
-    api("GET", "/api/persona/templates").catch(() => null)]);
-  const channels = ((chData || {}).channels || []).filter((c) => p.types.includes(c.type));
-  const STATE_TEXT = { connected: ["已连接", "ok"], disabled: ["未使用", ""], starting: ["正在连接", "warn"], reconnecting: ["正在重连", "warn"],
-    needs_login: ["未登录", "warn"], error: ["出错", "bad"], stopped: ["未运行", ""] };
-  const personas = ((persona || {}).channels || []);
-  const proactive = (chData || {}).proactive_channel || "auto";
-  const cards = channels.map((c) => {
-    const [t, k] = STATE_TEXT[c.status.state] || [c.status.state, ""];
-    const pc = personas.find((x) => x.id === c.id);
-    const effect = pc && pc.in_effect;
-    return h("div", { class: "card stack" },
-      h("div", { class: "row" }, h("strong", { text: c.label }), pill(t, k)),
-      // whole sentences (not "a" + optional "b"), so the page's dictionary finds them
-      h("p", { class: "note", text: c.peers ? `收到 ${c.status.received || 0} · 发出 ${c.status.sent || 0} · 绑定的主人 ${c.peers.bound}`
-        : `收到 ${c.status.received || 0} · 发出 ${c.status.sent || 0}` }),
-      effect ? h("p", { class: "note", text: `这里的人设：${effect.persona} · 关系“${effect.label}” · ${effect.call ? `叫你“${effect.call}”` : "不特别称呼你"}` }) : null,
-      h("p", { class: "note", text: proactive === c.id ? "她主动找你时发到这里。" : (proactive === "auto" ? "主动联系发到你最近聊天的渠道。" : "主动联系发到别的渠道。") }),
-      h("div", { class: "row" },
-        h("button", { type: "button", class: "ghost", text: "连接和账号", onclick: () => goTo("channels", "ch-card-" + c.id) }),
-        h("button", { type: "button", class: "ghost", text: "这里用什么人设", onclick: () => goTo("persona", "pl-who") }),
-        proactive !== c.id ? h("button", { type: "button", class: "ghost", text: "主动联系发到这里", onclick: async () => {
-          try { await api("POST", "/api/control/channels/proactive", { channel: c.id }); toast("已保存"); loaders.settings(); } catch (e) { toast(e.message, false); }
-        } }) : null));
-  });
-  const own = groups.map((g) => settingGroup(d, g)).filter(Boolean);
-  if (key === "qq") {
-    const perms = h("div");
-    own.unshift(h("div", { class: "set-group", id: "set-g-qq-permissions" }, h("h3", { text: "她在 QQ 上能自己做的事" }), perms,
-      h("p", { class: "note", text: "要你批准的记录在“通用 → 她能自己做的事”下面。" })));
-    renderPermissions(perms, QQ_ABILITIES);
-  }
-  const qqNote = key === "qq" ? h("p", { class: "note", text: own.length
-    ? "下面这些只对“QQ”（用 QQ 号登录的那个）有效；每个群开不开、她认识的人，在“聊天渠道 → QQ”下面。官方 QQ 机器人只能私聊，用通用设置。" : "" }) : null;
-  panel.replaceChildren(...[
-    h("p", { class: "note", text: `${p.name}上的账号和它们自己的东西。打字间隔、主动联系、记忆这些对所有渠道都一样，在“通用”里。` }),
-    ...(cards.length ? [h("div", { class: "cards set-ch-cards" }, ...cards)] : [h("div", { class: "card" }, h("p", { class: "note", text: `还没有用${p.name}。` }),
-      h("button", { type: "button", class: "ghost", text: `去“聊天渠道”开启${p.name}`, onclick: () => goTo("channels") }))]),
-    qqNote, ...own].filter(Boolean));                // replaceChildren would print "null"
 }
 loaders.settings = async () => {
   try {
     const d = await api("GET", "/api/control/settings");
     for (const k of Object.keys(pending)) delete pending[k];
-    $("#set-save").disabled = true;
-    const box = $("#set-groups"); box.replaceChildren();
-    // Violet stage 3: API and models are on the model page; the rest in a useful order, with a jump bar on top
-    const order = SETTINGS_ORDER.filter((g) => g in d.groups).concat(Object.keys(d.groups).filter((g) => !SETTINGS_ORDER.includes(g)));
-    const channelOf = d.group_channel || {};
-    const shown = [];
-    for (const g of order) {
-      if (SETTINGS_ELSEWHERE.includes(g) || channelOf[g]) continue;
-      const group = settingGroup(d, g);
-      if (!group) continue;
-      box.append(group);
-      shown.push([d.groups[g], "set-g-" + g]);
-    }
-    settingsCategories([["她能自己做的事", "set-g-permissions"], ...shown, ["界面语言", "set-g-language"]]);
+    showSavebar();
+    fillSlots(d);
     renderPermissions();
-    await Promise.all(Object.keys(SET_PLATFORMS).map((key) =>
-      renderChannelSettings(d, key, order.filter((g) => channelOf[g] === key)).catch((e) => $("#set-p-" + key).replaceChildren(h("p", { class: "err", text: e.message })))));
+    renderPermissions($("#set-qq-permissions"), true);
     const rs = await api("GET", "/api/control/restart").catch(() => null);
     $("#set-restart").disabled = !(rs && rs.available);
     $("#set-restart-note").textContent = rs && !rs.available ? rs.reason : "";
   } catch (e) { toast("设置读取失败：" + e.message, false); }
 };
+let slotsReady = Promise.resolve();
+$("#set-tuning").value = showTuning() ? "1" : "0";
+$("#set-tuning").addEventListener("change", (e) => {
+  if (Object.keys(pending).length) { toast("先保存或放弃还没保存的修改", false); e.target.value = showTuning() ? "1" : "0"; return; }
+  document.cookie = `violet_tuning=${e.target.value}; path=/; max-age=31536000; SameSite=Strict` + (location.protocol === "https:" ? "; Secure" : "");
+  loaders.settings();
+});
+$("#set-discard").addEventListener("click", () => loaders.settings());
 // 2026-10-30: what she may do by herself (自己做 / 先问你 / 不允许) and the approvals waiting for you
-// 2026-11-02: the QQ-only abilities are shown on the settings page's QQ tab (only = those keys, no approval list there)
+// 2026-11-11 regroup: the QQ-only abilities are on the 聊天渠道 page with the other QQ things (qq = true: only those,
+// no approval list); the rest on 她能做的事; approvals waiting for you also show on the overview
 const QQ_ABILITIES = ["qzone_post", "friend_add"];
+const isQQAbility = (key) => QQ_ABILITIES.includes(key) || key.startsWith("qq_");
 async function renderPermissions(box = $("#set-permissions"), only = null) {
   let d;
   try { d = await api("GET", "/api/control/permissions"); } catch (e) { box.replaceChildren(h("p", { class: "err", text: e.message })); return; }
-  const rows = d.abilities.filter((a) => (only ? only.includes(a.key) : !QQ_ABILITIES.includes(a.key))).map((a) => {
+  const rows = d.abilities.filter((a) => (only ? isQQAbility(a.key) : !isQQAbility(a.key))).map((a) => {
     const sel = h("select", { "aria-label": a.label }, ...Object.entries(d.levels).filter(([v]) => !a.choices || a.choices.includes(v))
       .map(([v, label]) => h("option", { value: v, text: label })));
     sel.value = a.level;
@@ -1090,7 +1061,10 @@ async function renderPermissions(box = $("#set-permissions"), only = null) {
     x.status === "pending" ? h("div", { class: "row" }, h("button", { type: "button", text: "同意", onclick: decide(x.id, true) }),
       h("button", { class: "ghost", type: "button", text: "不同意", onclick: decide(x.id, false) })) : null))
     : [h("p", { class: "note", text: "还没有请你批准过什么。" })];
-  if (only) { box.replaceChildren(...rows); return; }
+  if (only) { box.replaceChildren(...rows); $("#set-g-qq-permissions").hidden = !rows.length; return; }
+  $("#ov-approvals").replaceChildren(...(d.pending.length ? [h("div", { class: "card attention" },
+    h("div", { class: "row" }, h("strong", { text: `她有 ${d.pending.length} 件事等你批准` }),
+      h("button", { type: "button", text: "去看看", onclick: () => goTo("tools", "set-g-permissions") })))] : []));
   box.replaceChildren(...rows, h("p", { class: "note", text: "“先问你”时，她会私聊你要做的事，你回“同意 编号”或“不同意 编号”就行，也可以在下面点。24 小时没回就作废。" }),
     h("details", { open: d.pending.length > 0 }, h("summary", { text: `批准记录（等你批准的 ${d.pending.length} 个）` }), ...list));
 }
@@ -1126,7 +1100,7 @@ function resetDialog() {
     h("label", { class: "check" }, mem, h("span", {}, h("strong", { text: " 清除所有记忆" }),
       h("span", { class: "note", text: "：她记得的关于你的事、你的资料、约定和提醒、她的生活经历和人设变化、对群友的印象。清除前会在服务器上存一份备份。" }))),
     h("label", { class: "check" }, cfg, h("span", {}, h("strong", { text: " 清除所有配置" }),
-      h("span", { class: "note", text: "：设置页和图片页改过的设置全部恢复默认，QQ 群全部回到“关闭”。模型服务（API 地址、Key、模型）保留，不然她就没法说话了；可以在“修改记录”里回滚。" }))),
+      h("span", { class: "note", text: "：后台各页改过的设置全部恢复默认，QQ 群全部回到“关闭”。模型服务（API 地址、Key、模型）保留，不然她就没法说话了；可以在“修改记录”里回滚。" }))),
     h("label", { class: "check" }, cut, h("span", {}, h("strong", { text: " 翻篇" }),
       h("span", { class: "note", text: "：从现在起她看不到以前的聊天（和你的、群里的都算），像重新开始聊。聊天记录不删，“聊天记录”页照样能看。只清记忆不翻篇的话，她还会从最近的聊天里看到以前的事。" }))),
     h("label", { class: "check" }, hist, h("span", {}, h("strong", { text: " 删除聊天记录" }),
@@ -1163,15 +1137,17 @@ $("#set-save").addEventListener("click", async () => {
     const r = await api("PUT", "/api/control/settings", { changes: pending, reason: $("#set-reason").value });
     const parts = [];
     if (r.applied_now.length) parts.push(`${r.applied_now.length} 项已生效`);
-    if (r.needs_restart.length) parts.push(`${r.needs_restart.length} 项需要重启 Violet 后生效（可以点“重启 Violet”）`);
+    if (r.needs_restart.length) parts.push(`${r.needs_restart.length} 项需要重启 Violet 后生效（“系统”页可以重启）`);
     toast("已保存（第 " + r.revision + " 次修改）：" + parts.join("，"));
     $("#set-reason").value = ""; loaders.settings();
   } catch (e) {
     const problems = (e.data && e.data.problems) || {};
     let first = null;
     for (const [k, v] of Object.entries(problems)) { const el = document.querySelector(`[data-err="${CSS.escape(k)}"]`); if (el) { el.textContent = v; first = first || el; } }
-    const group = first && first.closest(".set-group");          // a problem in a category not shown: show it
-    if (group && group.hidden) showSettingsCategory(group.id);
+    // a problem on another page / in a folded part: go there (pending is not empty, so the page keeps the inputs)
+    const sec = first && first.closest("section.tab");
+    if (sec && sec.id.slice(4) !== currentSection) showSection(sec.id.slice(4));
+    const fold = first && first.closest("details:not([open])"); if (fold) fold.open = true;
     if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
     toast(e.message, false);
   }
@@ -1261,16 +1237,15 @@ document.addEventListener("DOMContentLoaded", async () => {
       first = (await api("GET", "/api/control/setup")).complete ? "overview" : "setup";
     } catch (_) { first = "overview"; }
   }
-  const btn = document.querySelector(`#tabs button[data-tab="${CSS.escape(first)}"]`) || document.querySelector("#tabs button");
-  btn.click();
+  if (first === "settings") first = "system";
+  showSection(first || "overview");
 });
 
 // 2026-11-02: the persona picker (see personaScope); 0.7.54: one on each page it is for, all showing the same choice
 for (const sel of document.querySelectorAll(".persona-scope")) sel.addEventListener("change", (e) => {
   PERSONA = e.target.value;
   loadPersonaPicker();                            // the other pickers and the "用在：…" line
-  const active = document.querySelector("#tabs button.active");
-  if (active) (loaders[active.dataset.tab] || (() => {}))();
+  (loaders[currentSection] || (() => {}))();
   toast("现在看的是：" + e.target.selectedOptions[0].textContent);
 });
 loadPersonaPicker();

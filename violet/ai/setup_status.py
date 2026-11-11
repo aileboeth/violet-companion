@@ -218,8 +218,8 @@ def checklist(*, admin_store=None, agents=None, runtime=None, data_dir=None, vio
     # 7. proactive / life
     from ai.settings import env_bool
     items.append(_item("features", "主动消息与虚拟生活", "optional",
-                       ("生活引擎开" if env_bool("VIOLET_LIFE_ENGINE", False) else "生活引擎关") + "；主动消息在“设置”里调整",
-                       "settings", False, "set-g-proactive"))
+                       ("生活引擎开" if env_bool("VIOLET_LIFE_ENGINE", False) else "生活引擎关") + "；主动消息在“人设与生活 → 主动联系”里调整",
+                       "proactive", False, "set-g-proactive"))
     required = [i for i in items if i["required"]]
     complete = all(i["state"] == "ok" for i in required)
     return {"complete": complete, "items": items, "model_test": test or None,

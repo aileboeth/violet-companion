@@ -188,4 +188,6 @@ def test_the_language_can_be_changed_in_the_general_settings():
     assert 'id="set-g-language"' in html and 'id="set-lang-box"' in html
     js = (APP / "wx_ilink_py" / "static" / "control_i18n.js").read_text(encoding="utf-8")
     assert 'getElementById("set-lang-box")' in js
-    assert '"set-g-language"' in (APP / "wx_ilink_py" / "static" / "control.js").read_text(encoding="utf-8")
+    # 2026-11-11 regroup: no settings page any more -- the picker is on 系统, shown from the start
+    system = html[html.index('id="tab-system"'):html.index('id="tab-model"')]
+    assert 'id="set-g-language">' in system and 'id="set-lang-box"' in system

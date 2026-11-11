@@ -231,7 +231,7 @@ def server_diagnosis(described: dict[str, Any], server: dict[str, Any]) -> list[
     if waiting:
         findings.append({"level": "info", "code": "tools_need_second_key",
                          "message": ("这些工具会改动东西，她每次要用都会先问你（点“允许直接用”就不再问）：" if _risky_level() == "ask" else
-                                     "这些工具会改动东西，现在不给她用（“设置 → 她能自己做的事”改成“先问你”，或点“允许直接用”）：")
+                                     "这些工具会改动东西，现在不给她用（这一页最上面的“她能自己做的事”改成“先问你”，或点“允许直接用”）：")
                                     + "、".join(waiting[:8]),
                          "action": "allow_risky", "tools": waiting})
     agents = described.get("agents") or []

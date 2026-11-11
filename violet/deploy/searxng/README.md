@@ -2,7 +2,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> **You usually don't need this page.** If you installed Violet with the one-line command, click **Install web search** under **Tools & phone → Web tools** in the control panel (or run `/opt/violet/violet searxng install` on the server). That way needs no Docker, registers a system service `violet-searxng`, and listens only on 127.0.0.1. This page is only for people without systemd, or who prefer Docker.
+> **You usually don't need this page.** If you installed Violet with the one-line command, click **Install web search** in the web card on the **What she can do** page of the control panel (or run `/opt/violet/violet searxng install` on the server). That way needs no Docker, registers a system service `violet-searxng`, and listens only on 127.0.0.1. This page is only for people without systemd, or who prefer Docker.
 
 Violet's `web_search` uses a self-hosted, open-source SearXNG by default (`VIOLET_WEB_SEARCH_PROVIDER=searxng`) and does not rely on paid search APIs (the Bocha / Brave code is kept as an optional implementation, not the default source). This directory is a Docker Compose deployment of SearXNG. It pulls images and starts containers **only when you explicitly run `./searxng.sh up`**. Violet itself never runs it and never installs Docker.
 

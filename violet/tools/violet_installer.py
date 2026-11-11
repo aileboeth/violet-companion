@@ -1591,7 +1591,7 @@ def install(opts: Options) -> dict[str, Any]:
         log(f"  {service_note}")
         if service.register_updater():
             state["auto_update_agent"] = "systemd"
-            log("  自动更新：已注册（每 6 小时检查一次；可在后台“设置 → 版本更新”改成只提醒或手动）")
+            log("  自动更新：已注册（每 6 小时检查一次；可在后台“系统”页改成只提醒或手动）")
         service.start()
     if opts.update_feed:
         state["update_feed"] = feed_url_checked(opts.update_feed)
@@ -2494,7 +2494,7 @@ def render_relay(result: dict[str, Any], action: str) -> str:
                      ("，手机已连接" if result.get("device_connected") else "，手机未连接"))
     if result.get("device_url"):
         lines.append(f"手机入口：{result['device_url']}")
-    lines.append("设备密钥和证书指纹：在后台“工具”页的“手机 MCP”里查看和一键复制")
+    lines.append("设备密钥和证书指纹：在后台“她能做的事”页的手机卡片里查看和一键复制")
     lines += [f"  {n}" for n in result.get("notes") or []]
     return "\n".join(lines + [""])
 
@@ -2581,7 +2581,7 @@ def render_result(result: dict[str, Any]) -> str:
         lines.append("  " + result["firewall"])
     lines += ["", "核心服务：" + ("运行正常" if result.get("core_ok") else "未通过健康检查"),
               "公网访问：" + ("已验证可以访问" if result.get("public_ready") else "未配置或未验证（见上面的网络检查）"),
-              "", "下一步：登录后台，按“开始”页填写模型服务（API 地址和 Key）、在“聊天渠道”页连上微信、QQ 或 Telegram 中的任意一个。",
+              "", "下一步：登录后台，在“模型服务”页填写 API 地址和 Key、在“聊天渠道”页连上微信、QQ 或 Telegram 中的任意一个。",
               f"日常管理：{Path(result.get('root', '.')) / ('violet.cmd' if os.name == 'nt' else 'violet')} status | stop | "
               "start | backup | update（升级到 GitHub 上的最新版本）| info | reset-password | reset-entrance | "
               "set-port <端口> | uninstall", ""]

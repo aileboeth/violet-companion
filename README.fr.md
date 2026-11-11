@@ -46,9 +46,9 @@ L'interface du panneau est pour l'instant en chinois.
 
 **Panneau web**
 
-- Démarrage (ce qui manque encore), Vue d'ensemble, Flux (quels prompts, outils et modèles chaque réponse a utilisés, y compris le contenu complet envoyé au modèle).
-- Services de modèles (un modèle différent par agent et par plateforme de discussion), Canaux de discussion, Outils et téléphone, Images, Personas et vie, Emploi du temps, Paramètres.
-- Historique des discussions, Mémoire, Diagnostic, Journaux, Historique des modifications, Sécurité du compte.
+- Vue d'ensemble (avec la liste de ce qui manque encore), Canaux de discussion, Personas et vie, Services de modèles (un modèle différent par agent et par plateforme de discussion).
+- Ce qu'elle peut faire (autorisations, téléphone, recherche web, voix, autres outils), Images et stickers, Historique des discussions, Mémoire (avec l'emploi du temps).
+- Fonctionnement (quels prompts, outils et modèles chaque réponse a utilisés, y compris le contenu complet envoyé au modèle ; diagnostic ; journaux), Système (mises à jour, sécurité du compte, historique des modifications).
 
 **Venir de Project Eve**
 
@@ -67,7 +67,7 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
   - Le certificat est autosigné. Quand le navigateur indique que la page n'est pas sécurisée, choisissez de continuer.
   - Sur un serveur cloud, ouvrez aussi ce port dans le groupe de sécurité / pare-feu du fournisseur.
 - Après l'installation :
-  1. Ouvrez le panneau et saisissez l'adresse et la clé de votre service de modèles sur la page Démarrage.
+  1. Ouvrez le panneau et saisissez l'adresse et la clé de votre service de modèles sur la page Services de modèles.
   2. Connectez n'importe quelle plateforme de discussion sur la page Canaux de discussion et commencez à discuter.
 - Adresse ou nom d'utilisateur oublié : `/opt/violet/violet info`. Mot de passe oublié : `/opt/violet/violet reset-password`.
 
@@ -90,15 +90,15 @@ Plus de détails (modes d'accès, pare-feu, commandes de maintenance) dans [viol
 ## Mises à jour
 
 - Automatiques par défaut : quand une nouvelle version sort, le serveur se met à jour tout seul. Il fait d'abord une sauvegarde et revient à l'ancienne version si la mise à jour échoue.
-- Vous pouvez passer à « prévenir seulement » ou « vérifier manuellement » dans Paramètres → Mises à jour de version.
-- Cliquer sur Mettre à jour maintenant sur la page Démarrage affiche la progression.
+- Vous pouvez passer à « prévenir seulement » ou « vérifier manuellement » dans Système → Mises à jour.
+- Cliquer sur Mettre à jour maintenant sur la page Système affiche la progression.
 - Ou mettez à jour à la main sur le serveur :
 
 ```bash
 /opt/violet/violet update
 ```
 
-- Si le serveur n'arrive pas à joindre GitHub (fréquent en Chine continentale) : Réglages → Mises à jour → Source de téléchargement indique d'où télécharger. Par défaut, Automatique essaie d'abord GitHub, puis les miroirs GitHub intégrés. Une nouvelle version téléchargée via un miroir n'est installée que si elle porte la signature de publication. Détails dans [violet/INSTALL.md](violet/INSTALL.md#updates).
+- Si le serveur n'arrive pas à joindre GitHub (fréquent en Chine continentale) : Système → Mises à jour → Source de téléchargement indique d'où télécharger. Par défaut, Automatique essaie d'abord GitHub, puis les miroirs GitHub intégrés. Une nouvelle version téléchargée via un miroir n'est installée que si elle porte la signature de publication. Détails dans [violet/INSTALL.md](violet/INSTALL.md#updates).
 
 ## Désinstallation
 

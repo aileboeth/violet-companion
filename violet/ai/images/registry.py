@@ -68,7 +68,7 @@ def panel_providers() -> list[dict[str, Any]]:
              "api_key_env": "VIOLET_IMAGE_API_KEY" if env_str("VIOLET_IMAGE_API_KEY", "") else "LLM_API_KEY",
              "enabled": True, "timeout": 180,
              "retry_policy": {"max_attempts": 1, "circuit_failures": 3, "circuit_seconds": 600},
-             "models": [{"model_id": model, "enabled": True, "status_note": "后台“图片”页设置",
+             "models": [{"model_id": model, "enabled": True, "status_note": "后台“图片与表情包”页设置",
                          "capabilities": {"image_generation": "declared"},
                          "limits": {"max_outputs": 1, "max_concurrency": 1, "max_images_per_day": limit},
                          "pricing": {"confirmed": False, "unpriced_max_calls_per_day": limit}, "priority": 1}]}]

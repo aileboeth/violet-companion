@@ -91,7 +91,7 @@ def start(db, redraw: bool = False) -> dict[str, Any]:
     ValueError when it cannot start."""
     from ai.images.service import images_enabled
     if not images_enabled():
-        raise ValueError("图片功能没有打开（设置 → 图片）")
+        raise ValueError("图片功能没有打开（在“图片与表情包”页打开）")
     with _lock:
         if _state["running"]:
             raise ValueError("正在画，等这一套画完")

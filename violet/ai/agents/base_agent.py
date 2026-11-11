@@ -273,7 +273,7 @@ class BaseAgent:
             else:
                 if not cfg.api_key:
                     # phase 10: Violet runs before the model service is set up; say what is missing, not an SDK error
-                    raise LLMNotConfigured("还没有设置模型服务的 API Key（管理后台 → 初始化向导 / 设置 → 接口）")
+                    raise LLMNotConfigured("还没有设置模型服务的 API Key（管理后台 → 模型服务）")
                 # SDK retries are disabled: retrying happens once, in
                 # _create_completion_with_retry, under a total deadline.
                 extra = {}

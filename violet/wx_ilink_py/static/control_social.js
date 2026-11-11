@@ -109,7 +109,7 @@
     } });
     sendBtn.disabled = !d.qq_connected;
     box.replaceChildren(
-      h("p", { class: "note", text: (d.enabled ? `自己发动态：已打开（每天最多 ${d.daily || "不限"} 条）` : "自己发动态：没有打开（在“设置 → QQ 群聊、表情包与动态”里打开）")
+      h("p", { class: "note", text: (d.enabled ? `自己发动态：已打开（每天最多 ${d.daily || "不限"} 条）` : "自己发动态：没有打开（在这一页下面的“QQ 动态”里打开）")
         + (d.enabled && d.waiting ? ` · 现在不会发：${d.waiting}` : "") + (d.qq_connected ? "" : " · QQ 没有连接") }),
       draft, note, h("div", { class: "row" }, writeBtn, sendBtn),
       ...(d.posts.length ? d.posts.map((p) => {
@@ -135,7 +135,7 @@
       d.error ? h("p", { class: "note", text: d.error }) : null,
       ...(groups.length ? groups.map((g) => convCard(g, true)) : [h("p", { class: "note", text: "还没有群。把这个 QQ 号拉进群后点“刷新状态”。" })]),
       h("h3", { text: "别人私聊她" }),
-      h("p", { class: "note", text: `现在的设置：${PRIV[d.settings.private] || d.settings.private}（在“设置 → QQ”里改）。你自己的私聊不在这里，照常进你们的对话。` }),
+      h("p", { class: "note", text: `现在的设置：${PRIV[d.settings.private] || d.settings.private}（在这一页下面改）。你自己的私聊不在这里，照常进你们的对话。` }),
       ...(d.privates.length ? d.privates.map((c) => convCard(c, false)) : [h("p", { class: "note", text: "还没有别人私聊过她。" })]),
       h("h3", { text: "QQ 动态" }),
       qzone,

@@ -2,7 +2,7 @@
 
 [English](README.md) | **简体中文**
 
-> **一般不需要看这一页。** 用一行命令装的 Violet，在后台“工具与手机 → 联网工具”点“一键安装联网搜索”就行（或者在服务器上运行 `/opt/violet/violet searxng install`）。那种方式不需要 Docker，会注册成系统服务 `violet-searxng`，只在 127.0.0.1 监听。这一页只给没有 systemd、或者更想用 Docker 的人参考。
+> **一般不需要看这一页。** 用一行命令装的 Violet，在后台“她能做的事”页的联网卡片里点“一键安装联网搜索”就行（或者在服务器上运行 `/opt/violet/violet searxng install`）。那种方式不需要 Docker，会注册成系统服务 `violet-searxng`，只在 127.0.0.1 监听。这一页只给没有 systemd、或者更想用 Docker 的人参考。
 
 Violet 的 `web_search` 默认用自建的开源 SearXNG（`VIOLET_WEB_SEARCH_PROVIDER=searxng`），不依赖付费搜索 API（博查 / Brave 的代码保留为可选实现，不是默认来源）。这个目录是 SearXNG 的 Docker Compose 部署，**只在你明确执行 `./searxng.sh up` 时**才会拉镜像、启动容器。Violet 自己不会运行它，也不会安装 Docker。
 
@@ -30,7 +30,7 @@ Violet（start.sh，宿主机）──http://127.0.0.1:18089──> violet-searx
 - **不对外开放**：唯一发布的端口绑定在 `127.0.0.1`，公网和局域网都连不到；不加入 1Panel 的网络，不需要 OpenResty 反代。
 - **不冲突**：独立的项目名、容器名、网络名（`violet-searxng`），端口默认 18089（`.env` 可改；`check` 会检查是否被占用）。不用 PostgreSQL；不需要 Redis / Valkey（limiter 关闭），所以不会碰已有的 Redis。
 - **网络不能设为 internal**：SearXNG 要访问外部搜索引擎。
-- **Violet 这边的安全策略**（`ai/web`）：`VIOLET_WEB_SEARXNG_URL` 是唯一受信任的内部地址——只有搜索请求能去、不跟随跳转；`fetch_url` 永远不能访问它（本机、内网、Docker 地址照样全部拒绝，SSRF 防护不变）。明文 http 只允许本机 / 内网 IP / Docker 服务名，其他主机必须 https；地址里不能带用户名密码、参数。地址不可用时后台“工具”页的联网卡片会写明原因。
+- **Violet 这边的安全策略**（`ai/web`）：`VIOLET_WEB_SEARXNG_URL` 是唯一受信任的内部地址——只有搜索请求能去、不跟随跳转；`fetch_url` 永远不能访问它（本机、内网、Docker 地址照样全部拒绝，SSRF 防护不变）。明文 http 只允许本机 / 内网 IP / Docker 服务名，其他主机必须 https；地址里不能带用户名密码、参数。地址不可用时后台“她能做的事”页的联网卡片会写明原因。
 - **以后如果 Violet 也放进 Docker（现在不做）**：让 Violet 的容器加入外部网络 `violet-searxng`（compose 里 `networks: { violet-searxng: { external: true } }`），把 `VIOLET_WEB_SEARXNG_URL` 改成 `http://searxng:8080`（网络别名已经配好），就可以去掉 `127.0.0.1:18089` 的端口发布。
 
 ## 与官方镜像核对过的配置（2026-10-24，按 docs.searxng.org 和 searxng 仓库 container/ 目录）
@@ -67,7 +67,7 @@ VIOLET_WEB_SEARCH_PROVIDER=searxng
 VIOLET_WEB_SEARXNG_URL=http://127.0.0.1:18089
 ```
 
-重启 Violet（`start.sh`）。后台 `/control` 的“工具”页应显示“搜索服务 searxng · 搜索 可用”。
+重启 Violet（`start.sh`）。后台 `/control` 的“她能做的事”页应显示“搜索服务 searxng · 搜索 可用”。
 
 ## 日常
 

@@ -126,7 +126,7 @@ def due(db, now: datetime | None = None) -> str | None:
         return "测试模式中不自己发动态"
     from ai import permissions
     if permissions.level("qzone_post") == "forbid":
-        return "设置里不允许她自己发动态（设置 → 她能自己做的事）"
+        return "设置里不允许她自己发动态（聊天渠道 → 她在 QQ 上能自己做的事）"
     if permissions.level("qzone_post") == "ask" and db.fetch_one(
             "SELECT 1 FROM approvals WHERE ability = 'qzone_post' AND status = 'pending'"):
         return "上一条还在等你批准"

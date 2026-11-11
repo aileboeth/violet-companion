@@ -10,6 +10,8 @@
       ? "必需的设置都完成了，Violet 可以正常聊天。下面的可选项可以随时调整，点一项直接过去。"
       : data.next ? `还有必需的设置没有完成：${data.next.title}（${data.next.detail}）。点下面的卡片直接过去。`
         : "还有必需的设置没有完成。点下面的卡片直接过去。";
+    // 2026-11-11 regroup: the checklist is a card on the overview, open while something required is missing
+    if (!$("#ov-setup").dataset.seen) { $("#ov-setup").open = !data.complete; $("#ov-setup").dataset.seen = "1"; }
     $("#setup-list").replaceChildren(...data.items.map((item) => {
       const [text, kind] = STATE[item.state] || [item.state, ""];
       const go = () => goTo(item.tab, item.anchor);
@@ -29,7 +31,7 @@
       const data = await api("GET", "/api/control/setup");
       renderChecklist(data);
       if (data.items.some((i) => i.connecting) && tries++ < 40) {
-        pending = setTimeout(() => { if ($("#tab-setup").classList.contains("active") && !document.hidden) loaders.setup(true); }, 3000);
+        pending = setTimeout(() => { if ($("#tab-overview").classList.contains("active") && !document.hidden) loaders.setup(true); }, 3000);
       } else tries = 0;
     } catch (e) { toast(e.message, false); }
     if (again !== true) loadUpdate(false);
@@ -45,7 +47,7 @@
     let pillArgs, text;
     // 0.7.59: where the answer came from (GitHub or a mirror; a mirror's release is always signature-checked)
     const via = u.latest && u.source ? ` 查询来源：${u.source}${u.signed ? "（发布签名已核对）" : ""}。` : "";
-    if (u.error) { pillArgs = ["无法检查", "warn"]; text = `当前版本 ${u.current}。${u.error}。服务器连不上 GitHub 时，可以在“设置 → 版本更新 → 下载来源”换成加速站。`; }
+    if (u.error) { pillArgs = ["无法检查", "warn"]; text = `当前版本 ${u.current}。${u.error}。服务器连不上 GitHub 时，可以在下面的“版本更新 → 下载来源”换成加速站。`; }
     else if (!u.latest && !u.enabled) { pillArgs = ["未检查", ""]; text = `当前版本 ${u.current}。手动检查模式：点“检查更新”查询。`; }
     else if (u.newer) { pillArgs = ["有新版本", "ok"]; text = `当前版本 ${u.current}，最新版本 ${u.latest}${when}。${via}`; }
     else { pillArgs = ["已是最新", ""]; text = `当前版本 ${u.current}，最新发布 ${u.latest || "无"}${when}。${via}`; }
@@ -54,7 +56,7 @@
     // replaceChildren(null) would insert the text "null": only real nodes
     $("#update-text").replaceChildren(...[h("span", { text }),
       u.newer && u.url ? h("a", { href: u.url, target: "_blank", rel: "noopener", text: " 查看更新说明" }) : null].filter(Boolean));
-    const mode = `更新方式：${MODES[u.mode] || u.mode}（设置 → 版本更新）。`;
+    const mode = `更新方式：${MODES[u.mode] || u.mode}（在下面改）。`;
     const last = auto.last_result ? ` 上次自动更新：${when_(auto.last_run_at)} ${RESULTS[auto.last_result] || auto.last_result}` +
       (auto.last_message ? `（${auto.last_message}）` : "") + "。" : "";
     $("#update-auto").textContent = auto.available ? mode + last : mode + " " + (auto.reason || "");
@@ -88,6 +90,10 @@
     catch (e) { $("#update-text").textContent = e.message; }
   }
 
+  // 2026-11-11 regroup: the checklist loads with the overview, the update card with 系统
+  const overview = loaders.overview;
+  loaders.overview = async () => { loaders.setup(true); return overview(); };
+  loaders.system = () => loadUpdate(false);
   $("#update-refresh").addEventListener("click", () => loadUpdate(true));
   $("#update-copy").addEventListener("click", () => copyText($("#update-command").textContent));
 })();

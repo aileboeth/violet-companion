@@ -409,9 +409,10 @@
         h("span", { class: "note", text: `版本 ${p.version || "—"}` })));
   }
 
+  loaders.life = () => loaders.persona();           // 2026-11-11 regroup: her life is a sub-tab of the same page
   loaders.persona = async () => {
     jumpNav($("#pl-jump"), [["谁在和你聊", "pl-who"], ["人设库", "pl-sec-templates"], ["测试模式", "pl-test"],
-      ["她的样子", "pl-look-box"], ["人设详情", "pl-core-box"], ["她的生活", "pl-life"]]);
+      ["她的样子", "pl-look-box"], ["人设详情", "pl-core-box"]]);
     renderTemplates();
     renderLook();
     try {

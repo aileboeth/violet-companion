@@ -169,7 +169,7 @@
       ],
       foot: [
         h("button", { class: "ghost", type: "button", text: "测试连接", onclick: () => testChannel(ch) }),
-        h("button", { class: "ghost", type: "button", text: ch.enabled ? "关闭" : "开启", onclick: () => setEnabled(ch, !ch.enabled) }),
+        h("button", { class: "ghost", type: "button", text: ch.enabled ? "停用" : "启用", onclick: () => setEnabled(ch, !ch.enabled) }),
         h("button", { class: "ghost", type: "button", text: editing.has(ch.id) ? "收起配置" : "修改配置", onclick: toggleEdit }),
       ],
     };
@@ -280,7 +280,7 @@
       body.replaceChildren(statusLine(ch), h("p", { class: "note", text: `已登录的微信：${w.account}` }));
       foot.replaceChildren(
         h("button", { class: "ghost", type: "button", text: "测试连接", onclick: () => testChannel(ch) }),
-        h("button", { class: "ghost", type: "button", text: ch.enabled ? "关闭" : "开启", onclick: () => setEnabled(ch, !ch.enabled) }),
+        h("button", { class: "ghost", type: "button", text: ch.enabled ? "停用" : "启用", onclick: () => setEnabled(ch, !ch.enabled) }),
         h("button", { class: "ghost", type: "button", text: "退出登录", onclick: async () => {
           if (!(await confirmBox("退出微信登录？Violet 会停止收发微信消息，之后要重新扫码。"))) return;
           try { await api("POST", "/api/control/wechat/logout", { confirm: true }); toast("已退出微信登录"); loaders.channels(); }

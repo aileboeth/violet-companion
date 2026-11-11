@@ -102,8 +102,48 @@
       h("span", { class: "note", text: clock(run.started_at) + (run.finished_at ? ` · 用时 ${secs(run.started_at, run.finished_at)}` : "") +
         (run.turn_id ? ` · 对话编号 ${run.turn_id}` : "") }));
     keepView(box, () => box.replaceChildren(...[head, h("p", { class: "flow-trigger", text: (run.title ? run.title + " · " : "") + (run.trigger || "") }),
-      run.error ? h("p", { class: "err", text: run.error }) : null, steps, nodeDetail(run, state.node)].filter(Boolean)));  // replaceChildren prints "null"
+      run.error ? h("p", { class: "err", text: run.error }) : null, steps, nodeDetail(run, state.node), turnLogs(run)].filter(Boolean)));  // replaceChildren prints "null"
   }
+
+  // 2026-11-11 regroup (flow + diagnosis + log were three pages): the log lines of this round, read when opened
+  function turnLogs(run) {
+    if (!run.turn_id) return null;
+    const list = h("div", { class: "log-list" });
+    const d = h("details", { class: "card flow-logs" }, h("summary", { text: "这一轮的日志" }), list);
+    d.dataset.key = "logs:" + run.turn_id;
+    const load = async () => {
+      if (!d.open) return;
+      try {
+        const r = await api("GET", "/api/control/logs?" + new URLSearchParams({ level: "DEBUG", limit: "300", turn: run.turn_id }));
+        list.replaceChildren(...(r.available && r.entries.length ? r.entries.map(window.violetLogEntry)
+          : [h("p", { class: "note", text: r.available ? "日志里没有这一轮的记录（可能已经被新的日志挤掉了）。" : r.reason })]));
+      } catch (e) { list.replaceChildren(h("p", { class: "err", text: e.message })); }
+    };
+    d.addEventListener("toggle", load);
+    return d;
+  }
+
+  // the line on top: what the checks found, with a way there
+  async function health() {
+    let data;
+    try { data = await api("GET", "/api/control/diagnostics"); } catch (_) { return; }
+    $("#flow-health").replaceChildren(...(data.problems ? [h("div", { class: "card attention" }, h("div", { class: "row" },
+      h("strong", { text: `检查发现 ${data.problems} 个需要处理的问题` }),
+      h("button", { type: "button", class: "ghost", text: "去看看", onclick: () => goTo("diagnostics") })))] : []));
+  }
+
+  // from a finding or anywhere else: show the round with this id here; a round no longer kept -> its log lines
+  window.violetShowTurn = async (turn) => {
+    let runs = [];
+    try { runs = (await api("GET", "/api/control/flow")).runs || []; } catch (_) { /* the log page then */ }
+    const run = runs.find((r) => r.turn_id === turn);
+    if (run) {
+      state.runs = runs; state.selected = run.id; state.node = null; state.listSig = "";
+      if (currentSection === "flow") refresh(); else goTo("flow");
+      return;
+    }
+    $("#log-turn").value = turn; goTo("logs");
+  };
 
   // what one step got and gave: the model conversation as blocks, everything else as readable JSON
   function nodeDetail(run, name) {
@@ -162,6 +202,6 @@
     }, 2000);
   }
 
-  loaders.flow = async () => { await refresh(); watch(); };
+  loaders.flow = async () => { health(); await refresh(); watch(); };
   $("#flow-refresh").addEventListener("click", refresh);
 })();

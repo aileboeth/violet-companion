@@ -46,9 +46,9 @@ Por ahora, la interfaz del panel está en chino.
 
 **Panel web**
 
-- Inicio (qué falta todavía), Resumen, Flujo (qué prompts, herramientas y modelos usó cada respuesta, incluido el contenido completo enviado al modelo).
-- Servicios de modelos (un modelo distinto por agente y por plataforma de chat), Canales de chat, Herramientas y móvil, Imágenes, Personas y vida, Horario, Ajustes.
-- Historial de chat, Memoria, Diagnóstico, Registros, Historial de cambios, Seguridad de la cuenta.
+- Resumen (con una lista de lo que falta todavía), Canales de chat, Personas y vida, Servicios de modelos (un modelo distinto por agente y por plataforma de chat).
+- Lo que puede hacer (permisos, móvil, búsqueda web, voz, otras herramientas), Imágenes y stickers, Historial de chat, Memoria (con el horario).
+- Funcionamiento (qué prompts, herramientas y modelos usó cada respuesta, incluido el contenido completo enviado al modelo; diagnóstico; registros), Sistema (actualizaciones, seguridad de la cuenta, historial de cambios).
 
 **Migrar desde Project Eve**
 
@@ -67,7 +67,7 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
   - El certificado es autofirmado. Cuando el navegador diga que la página no es segura, elige continuar.
   - En un servidor en la nube, abre también este puerto en el grupo de seguridad / cortafuegos del proveedor.
 - Después de instalar:
-  1. Abre el panel e introduce la dirección y la clave de tu servicio de modelos en la página Inicio.
+  1. Abre el panel e introduce la dirección y la clave de tu servicio de modelos en la página Servicios de modelos.
   2. Conecta cualquier plataforma de chat en la página Canales de chat y empieza a hablar.
 - Si olvidas la dirección o el usuario: `/opt/violet/violet info`. Si olvidas la contraseña: `/opt/violet/violet reset-password`.
 
@@ -90,15 +90,15 @@ Más detalles (modos de acceso, cortafuegos, comandos de mantenimiento) en [viol
 ## Actualizaciones
 
 - Automáticas por defecto: cuando sale una versión nueva, el servidor se actualiza solo. Primero hace una copia de seguridad y vuelve a la versión anterior si la actualización falla.
-- Puedes cambiar a "solo avisar" o "comprobar manualmente" en Ajustes → Actualizaciones de versión.
-- Al pulsar Actualizar ahora en la página Inicio se muestra el progreso.
+- Puedes cambiar a "solo avisar" o "comprobar manualmente" en Sistema → Actualizaciones.
+- Al pulsar Actualizar ahora en la página Sistema se muestra el progreso.
 - O actualiza a mano en el servidor:
 
 ```bash
 /opt/violet/violet update
 ```
 
-- Si el servidor no puede conectarse a GitHub (habitual en China continental): en Ajustes → Actualizaciones → Origen de descarga eliges de dónde se descarga. La opción predeterminada, Automático, prueba primero GitHub y después los espejos de GitHub integrados. Una versión nueva descargada desde un espejo solo se instala si lleva la firma de la versión. Detalles en [violet/INSTALL.md](violet/INSTALL.md#updates).
+- Si el servidor no puede conectarse a GitHub (habitual en China continental): en Sistema → Actualizaciones → Origen de descarga eliges de dónde se descarga. La opción predeterminada, Automático, prueba primero GitHub y después los espejos de GitHub integrados. Una versión nueva descargada desde un espejo solo se instala si lleva la firma de la versión. Detalles en [violet/INSTALL.md](violet/INSTALL.md#updates).
 
 ## Desinstalación
 

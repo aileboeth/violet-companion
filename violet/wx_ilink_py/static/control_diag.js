@@ -27,7 +27,9 @@
     return h("div", { class: "card" },
       h("div", { class: "row" }, pill(text, kind), pill(AREA[f.area] || f.area), h("span", { text: f.message }), button),
       f.suggestion ? h("p", { class: "note", text: "建议：" + f.suggestion }) : null,
-      f.turns && f.turns.length ? h("p", { class: "note", text: "相关轮次：" + f.turns.join("、") }) : null);
+      f.turns && f.turns.filter(Boolean).length ? h("p", { class: "note" }, h("span", { text: "相关轮次：" }),
+        ...[...new Set(f.turns.filter(Boolean))].slice(0, 12).map((t) => h("button", { type: "button", class: "ghost turn-link", text: t,
+          title: "看这一轮", onclick: () => window.violetShowTurn(t) }))) : null);
   }
 
   // 2026-11-02: things that were going out when Violet stopped (a crash, a restart mid-send) -- whether they arrived is

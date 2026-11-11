@@ -97,7 +97,7 @@ SETTINGS: list[Setting] = [
                      ("other", "其他"))),
     # 2026-11-02 (user: 支持不同渠道用不同的模型): the Chat model on one platform (its settings tab); empty = the Chat model
     Setting("VIOLET_MODEL_WECHAT", "微信上用的聊天模型", "wechat_model", "model", "now",
-            "留空 = 用“模型服务”页的 Chat 模型。在微信上回复你、主动找你时用这个模型（意图、记忆这些后台步骤不变）",
+            "留空 = 用“模型服务”页的 Chat 模型。在微信上回复你、主动找你时用这个模型（记忆这些后台步骤不变）",
             optional=True),
     Setting("VIOLET_MODEL_QQ", "QQ 上用的聊天模型", "qq_model", "model", "now",
             "留空 = 用 Chat 模型。在 QQ 上回复你、主动找你，以及群聊和别人的私聊（没有单独设群聊模型时）都用这个模型",
@@ -168,14 +168,14 @@ SETTINGS: list[Setting] = [
             "搜索结果只有标题和一句摘要时（必应直连就是这样），自动打开排在前面的几个网页，把正文一起交给她，"
             "她就能按网页内容回答（比如天气的具体温度）；每打开一个算一次网页读取。0 = 只搜索不打开", 2, 0, 3),
     Setting("VIOLET_SCHEDULE_ENABLED", "课表查询（violet-schedule）", "schedule", "bool", "now",
-            "Violet 可以查你在“课表”页录入的课表", False),
+            "Violet 可以查你在“记忆 → 课表”里录入的课表", False),
     Setting("VIOLET_SCHEDULE_CONTEXT", "聊天时考虑课表", "schedule", "bool", "now", "聊天时知道你现在是不是在上课", False),
     Setting("VIOLET_SCHEDULE_PROACTIVE", "主动联系避开上课", "schedule", "bool", "now",
             "上课、考试时不主动找你（按课表计算）", False),
     # Violet stage 3: everything a user may want to change without editing .env. Left out on purpose: what the
     # installer owns (paths, port, HTTPS, data directory, admin token), stdio MCP commands, test switches.
     Setting("VIOLET_WEB_SEARCH_PROVIDER", "搜索服务", "web", "choice", "now",
-            "必应直连不用安装、国内服务器也能用；SearXNG 是自建的开源搜索；博查 / Brave 是付费搜索 API（Key 在“工具”页的联网工具里替换）",
+            "必应直连不用安装、国内服务器也能用；SearXNG 是自建的开源搜索；博查 / Brave 是付费搜索 API（Key 在上面的联网卡片里替换）",
             "searxng",
             choices=(("bing", "必应直连（不用安装）"), ("searxng", "SearXNG（自建）"), ("bocha", "博查（付费 API）"),
                      ("brave", "Brave Search（付费 API）"), ("none", "不搜索"))),
@@ -224,7 +224,7 @@ SETTINGS: list[Setting] = [
             "和你聊天时，她知道自己最近在群里说过什么（反过来，你私聊的内容永远不会带到群里）", True),
     # 0.7.9 (user: "他不会发表情包，也不能收藏表情包，也不可以发动态"): ai/stickers.py, ai/social/qzone.py
     Setting("VIOLET_STICKERS", "表情包", "stickers", "bool", "now",
-            "她可以从自己收藏的表情包里挑一个发（和你聊天、在群里都可以）；收藏在“图片”页管理", True),
+            "她可以从自己收藏的表情包里挑一个发（和你聊天、在群里都可以）；收藏在这一页上面管理", True),
     Setting("VIOLET_STICKER_AUTO_COLLECT", "收藏你发的表情包", "qq_stickers", "bool", "now",
             "你在 QQ 上发给她的表情包自动存进她的收藏（用识图结果当说明）", True),
     Setting("VIOLET_STICKER_QQ_SYNC", "用 QQ 号收藏的表情", "qq_stickers", "bool", "now",
@@ -254,7 +254,7 @@ SETTINGS: list[Setting] = [
             "medium", choices=(("low", "低（最快）"), ("medium", "中"), ("high", "高（最慢）"), ("auto", "不指定"))),
     # 2026-11-01 (user: 没让她发语音但每句都发；先发文字会让人以为她话说完了): no automatic voice line; voice only
     Setting("VIOLET_VOICE", "她的语音", "voice", "bool", "now",
-            "装好语音（工具页 → 语音）并上传参考录音后，她偶尔会发语音条（你让她说话、念东西，或者她想撒娇、道晚安时）："
+            "装好语音并上传参考录音后，她偶尔会发语音条（你让她说话、念东西，或者她想撒娇、道晚安时）："
             "只发语音，几分钟后到，生成失败就改发文字；关掉就只打字", True),
     Setting("VIOLET_VOICE_MAX_CHARS", "一次念多少字", "voice", "int", "now",
             "让她念歌词、故事时最多念几个字，按句子拆成每条约 30 字的语音一条条发（每条在 CPU 上约几分钟）", 300, 5, 1000),
@@ -271,7 +271,7 @@ SETTINGS: list[Setting] = [
             "识图结果、生成图片的提示词保留多久", 30.0, 1, 3650),
     # 0.7.2: drawing configured in the Control Center's "图片" page (ai/images/registry.py: the "panel" provider)
     Setting("VIOLET_IMAGE_GEN_MODEL", "画图模型", "images", "model", "now",
-            "留空 = 不画图。改了以后要在“图片”页重新测试一次才会用", optional=True),
+            "留空 = 不画图。改了以后要重新测试一次才会用", optional=True),
     Setting("VIOLET_IMAGE_GEN_PROTOCOL", "画图接口方式", "images", "choice", "now",
             "gpt-image-1、dall-e-3 等画图模型用图片接口；gpt-5.x（Codex）这类对话模型用 Responses 画图工具；"
             "有些模型通过对话接口返回图片", "openai_images",
@@ -357,8 +357,8 @@ SETTINGS: list[Setting] = [
             "提醒、静默时段、课表和每天 03:00 的记忆整理都按这个时区（IANA 名称，例如 Asia/Shanghai）", "Asia/Shanghai"),
     # 0.7.5 (user: "做一个日志的功能放在设置里面，默认关闭，尽量写清楚一点，方便我们后续排查问题"): ai/trace.py
     Setting("VIOLET_TRACE", "排查日志", "logs", "bool", "now",
-            "开启后，每一轮对话的处理过程都会写进日志：收到了什么、意图判断、有哪些工具可用、给了 Chat 哪些工具、"
-            "调用了什么模型和工具、结果和耗时、联网搜索、回复和发送。在“日志”页勾“只看排查日志”查看，点对话编号只看这一轮。"
+            "开启后，每一轮对话的处理过程都会写进日志：收到了什么、有哪些工具可用、"
+            "调用了什么模型和工具、结果和耗时、联网搜索、回复和发送。在“运行情况 → 日志”里勾“只看排查日志”查看，点对话编号只看这一轮。"
             "默认关闭；排查完建议关掉（日志会变大）", False),
     Setting("VIOLET_TRACE_CONTENT", "排查日志里的聊天内容", "logs", "choice", "now",
             "日志只有管理员能看，显示和下载时会去掉 API Key 等密钥", "short",

@@ -163,14 +163,14 @@ def step_lines(steps: list[tuple[str, dict[str, Any]]], limit: int = 14) -> list
         line = f"- {name}：" + ("；".join(parts) if parts else "—")
         lines.append(line if len(line) <= 220 else line[:220] + "…")
     if len(lines) > limit:
-        lines = lines[:limit - 1] + [f"- ……还有 {len(lines) - limit + 1} 步（完整的在“日志”页的排查日志里）"]
+        lines = lines[:limit - 1] + [f"- ……还有 {len(lines) - limit + 1} 步（完整的在“运行情况 → 日志”的排查日志里）"]
     return lines
 
 
 def sticker_line(db) -> str:
     from ai import stickers
     if not stickers.enabled():
-        return "- 表情包：功能关着（设置 → 表情包）"
+        return "- 表情包：功能关着（图片与表情包 → 表情包）"
     row = db.fetch_one("SELECT COUNT(*) AS n, SUM(CASE WHEN enabled = 1 AND description IS NOT NULL AND description != '' "
                        "THEN 1 ELSE 0 END) AS usable, SUM(CASE WHEN enabled = 0 THEN 1 ELSE 0 END) AS off FROM stickers")
     total, usable, off = int(row["n"] or 0), int(row["usable"] or 0), int(row["off"] or 0)

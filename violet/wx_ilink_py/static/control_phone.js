@@ -24,7 +24,11 @@
   }
 
   function statusPill(d) {
-    if (!d.installed) return pill("还没有中继", "warn");
+    // 2026-11-11: no relay on THIS server but the phone's tools answer (another address, .env): not "nothing yet"
+    if (!d.installed) {
+      if ((window.phoneToolServer || {}).status === "connected") return pill("已连接", "ok");
+      const p = pill("还没有中继", "warn"); p.dataset.norelay = "1"; return p;
+    }
     if (d.health.checked && !d.health.reachable) return pill("中继没有响应", "bad");
     if (d.health.device_connected) return pill("手机已连接", "ok");
     return pill("中继运行中 · 手机未连接", "warn");
@@ -136,6 +140,9 @@
     const box = document.getElementById("phone-tools");
     if (!box) return;
     const s = window.phoneToolServer;
+    // the tool list arrives after the card is drawn: a pill that said "no relay" while the phone's tools answer
+    const stale = document.querySelector("#phone-mcp .phone-head .pill");
+    if (stale && s && s.status === "connected" && stale.dataset.norelay) stale.replaceWith(pill("已连接", "ok"));
     box.replaceChildren(...(s ? [toolServerCard(s, "手机提供的工具")] : []));
   };
 

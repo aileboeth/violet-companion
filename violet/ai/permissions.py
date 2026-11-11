@@ -49,7 +49,7 @@ ABILITIES = {
     # 2026-11-09 (user asked whether "写入" lets her change his phone): the phone app has no such tools -- this is
     # about MCP servers added by hand. "自己做" was offered but behaved like "不允许" (only ask turns a tool on), so
     # the choice is now 先问你 / 不允许; per tool, "允许直接用" on the tools page is the way to skip asking.
-    "risky_tools": ("会改动东西的工具", "你自己加的 MCP 服务器里会改动东西的工具（工具页选了“先问你”的那些；手机 App 的工具都只能查看，不在此列）。"
+    "risky_tools": ("会改动东西的工具", "你自己加的 MCP 服务器里会改动东西的工具（下面选了“先问你”的那些；手机 App 的工具都只能查看，不在此列）。"
                     "先问你：她能用，但每次都要你同意；不允许：不给她用。点了“允许直接用”的工具不受这里影响，照常直接用。", "ask"),
     # 2026-10-30 (user: 让她有同意加好友的能力，不过默认是要经我同意); only the owner answers, not an admin
     "friend_add": ("同意 QQ 加好友", "有人加她的 QQ 好友时。先问你：她私聊你是谁、验证消息是什么，你回复“同意 N”才加；"

@@ -82,7 +82,7 @@
     const on = d.stickers.filter((s) => s.enabled).length;
     root.replaceChildren(
       h("div", { class: "row" }, h("h3", { text: "表情包" }), h("span", { class: "note", text: `${d.stickers.length} 个，${on} 个在用` })),
-      h("p", { class: "note", text: (d.enabled ? "她聊天和在群里时会偶尔从这里挑一个发；挑的时候只看说明，所以说明要写清楚。" : "表情包功能关着（在“设置 → QQ 群聊、表情包与动态”里打开）。")
+      h("p", { class: "note", text: (d.enabled ? "她聊天和在群里时会偶尔从这里挑一个发；挑的时候只看说明，所以说明要写清楚。" : "表情包功能关着（在下面的“表情包”里打开）。")
         // whole sentences, so the page's dictionary finds each one
         + (d.auto_collect ? "你在 QQ 上发给她的表情包会自动收进来；群里别人发的，她觉得好玩会自己收藏。" : "群里别人发的，她觉得好玩会自己收藏。") }),
       h("div", { class: "row" }, h("button", { type: "button", text: "上传表情包", onclick: upload }), importBtn, packButton(pack),

@@ -11,34 +11,30 @@
   <div class="brand"><span class="logo" aria-hidden="true"></span><span>Violet<small>Control Center</small></span></div>
   <button class="menu" id="menu-toggle" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="tabs"></button>
   <nav class="tabs" id="tabs">
-    <button data-tab="setup">开始</button>
+    <!-- 2026-11-11 regroup (user: 太多按钮了，很杂；为了一个功能而单开页面): 16 pages -> 10; a page may have sub-tabs
+         (control.js SUBS), each sub-tab is one <section id="tab-…">; every setting lives on the page of its feature
+         (the set-slot divs), there is no settings page any more -->
     <button data-tab="overview" class="active">概览</button>
-    <button data-tab="flow">流程</button>
-    <div class="nav-label">配置</div>
-    <button data-tab="model">模型服务</button>
+    <div class="nav-label">她</div>
     <button data-tab="channels">聊天渠道</button>
-    <button data-tab="tools">工具与手机</button>
-    <button data-tab="images">图片</button>
     <button data-tab="persona">人设与生活</button>
-    <button data-tab="schedule">课表</button>
-    <button data-tab="settings">设置</button>
+    <button data-tab="model">模型服务</button>
+    <button data-tab="tools">她能做的事</button>
+    <button data-tab="images">图片与表情包</button>
     <div class="nav-label">数据</div>
     <button data-tab="chat">聊天记录</button>
     <button data-tab="memories">记忆</button>
     <div class="nav-label">维护</div>
-    <button data-tab="diagnostics">诊断</button>
-    <button data-tab="logs">日志</button>
-    <button data-tab="history">修改记录</button>
-    <button data-tab="account">账号安全</button>
+    <button data-tab="run">运行情况</button>
+    <button data-tab="system">系统</button>
   </nav>
 </aside>
 <main>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <nav class="subtabs" id="page-subs" aria-label="分页" hidden></nav>
 
-  <section id="tab-setup" class="tab">
-    <h2>开始</h2>
-    <p class="note" id="setup-summary"></p>
-    <div id="setup-list" class="cards list"></div>
+  <section id="tab-system" class="tab">
+    <h2>系统</h2>
     <div class="card" id="setup-update">
       <div class="row"><strong>版本与更新</strong><span id="update-pill"></span>
         <button class="ghost" id="update-refresh" type="button">检查更新</button></div>
@@ -48,6 +44,22 @@
       <div class="row" id="update-command-row" hidden><code id="update-command"></code>
         <button class="ghost" id="update-copy" type="button">复制命令</button></div>
       <p class="note">升级前会先备份配置和数据；新版本起不来会自动退回旧版本。</p>
+    </div>
+    <div class="set-slot" data-groups="updates,system"></div>
+    <div class="set-group" id="set-g-language"><h3>界面语言</h3>
+      <div class="set-row"><div><div>界面语言</div></div>
+        <div><span id="set-lang-box"></span><div class="help">后台页面显示用的语言，只影响这个浏览器，选了马上生效；她聊天用什么语言不受这里影响。</div></div></div></div>
+    <div class="set-group" id="set-g-tuning"><h3>调参项</h3>
+      <div class="set-row"><div><div>在各页面显示调参项</div></div>
+        <div><select id="set-tuning"><option value="0">不显示</option><option value="1">显示</option></select>
+          <div class="help">超时、重试、条数上限这类平时不用动的数值。不显示时它们仍然生效，只是页面上看不到；只影响这个浏览器。</div></div></div></div>
+    <div id="set-danger">
+      <h3>重启和清除</h3>
+      <div class="card danger-zone">
+        <div class="row"><button class="ghost" id="set-restart" type="button">重启 Violet</button><span class="note" id="set-restart-note"></span></div>
+        <p class="note">清除她的全部记忆、把全部配置恢复默认、翻篇（她看不到以前的聊天，像重新开始）、删除聊天记录，可以任选。</p>
+        <button class="danger" id="set-reset" type="button">清除记忆 / 配置 / 翻篇…</button>
+      </div>
     </div>
   </section>
 
@@ -86,11 +98,14 @@
     <p class="note" id="diag-summary"></p>
     <div id="diag-list" class="cards list"></div>
     <div id="diag-reconcile" class="cards list"></div>
-    <p class="note">每条问题写明原因和建议；带按钮的是可以安全自动修复的。“轮次”是关联 ID：日志里同一轮的每一行都带着它（[turn …]）。最近一小时的模型 / 工具记录在内存里，重启后重新开始。</p>
+    <p class="note">每条问题写明原因和建议；带按钮的是可以安全自动修复的。点“相关轮次”里的编号直接看那一轮。</p>
   </section>
 
   <section id="tab-overview" class="tab active">
     <div class="row"><h2>运行状态</h2><button class="ghost" id="ov-refresh">刷新</button></div>
+    <div id="ov-approvals"></div>
+    <details class="card fold-card" id="ov-setup"><summary>配置清单 <span class="note" id="setup-summary"></span></summary>
+      <div id="setup-list" class="cards list"></div></details>
     <div id="ov-cards" class="cards"></div>
     <h3>今天的 token 用量</h3>
     <div id="ov-usage"></div>
@@ -106,7 +121,8 @@
   <section id="tab-flow" class="tab">
     <div class="row"><h2>流程</h2><button class="ghost" id="flow-refresh" type="button">刷新</button>
       <label class="check"><input type="checkbox" id="flow-live" checked> 实时更新</label></div>
-    <p class="note">她处理每一轮消息时走过的步骤：你的消息、主动联系、QQ 群聊和别人的私聊都算。点一步看它收到了什么、给出了什么（包括发给模型的完整内容）。只保留最近 20 轮，存在内存里，重启后清空。</p>
+    <p class="note">最近 20 轮：你的消息、主动联系、QQ 群聊和别人的私聊。点一轮看每一步收到了什么、给出了什么，还有这一轮的日志。重启后清空。</p>
+    <div id="flow-health"></div>
     <div class="flow">
       <aside class="flow-side"><div id="flow-list" class="flow-list"></div></aside>
       <div class="flow-main" id="flow-run"></div>
@@ -137,7 +153,7 @@
     <details class="export"><summary>导出聊天记录（JSON，只含文字和时间）</summary>
       <div class="filters"><label>从 <input id="exp-from" type="date"></label><label>到 <input id="exp-to" type="date"></label>
         <button id="exp-go">导出</button></div>
-      <p class="note">导出文件里有完整的聊天内容，请妥善保存。聊天记录在后台只能查看，不能修改或删除。</p>
+      <p class="note">导出文件里有完整的聊天内容，请妥善保存。</p>
     </details>
     <!-- 2026-11-02 (user: 导入不要单开一个栏目，不是所有导入都来自 Eve): importing lives with the chat history -->
     <details class="export" id="chat-import"><summary>导入聊天记录和记忆</summary>
@@ -173,67 +189,43 @@
     <p class="note" id="mem-total"></p>
     <div id="mem-list" class="cards list"></div>
     <div class="pager"><button class="ghost" id="mem-prev">上一页</button><button class="ghost" id="mem-next">下一页</button></div>
-  </section>
-
-  <section id="tab-settings" class="tab">
-    <h2>设置</h2>
-    <!-- 2026-11-02 (user: 聊天渠道是分开的，设置里却全归为一类): 通用 / 微信 / QQ / Telegram -->
-    <nav class="subtabs" id="set-tabs" aria-label="设置分页">
-      <button type="button" data-set="general" class="active">通用</button><button type="button" data-set="wechat">微信</button>
-      <button type="button" data-set="qq">QQ</button><button type="button" data-set="telegram">Telegram</button>
-    </nav>
-    <div class="set-panel set-layout" id="set-p-general">
-      <nav class="set-cats" id="set-jump" aria-label="设置分类"></nav>
-      <div class="set-main">
-      <p class="note">对所有聊天渠道都生效的设置。模型和 API 在“模型服务”页，图片在“图片”页，课表的开关在“课表”页。“立即生效”保存后马上用于新的请求；“重启后生效”需要重启 Violet。保存前会整体检查，有任何一项不合格就一项也不改。</p>
-      <div class="set-group" id="set-g-permissions"><h3>她能自己做的事</h3><div id="set-permissions"></div></div>
-      <div class="set-group" id="set-g-language" hidden><h3>界面语言</h3>
-        <div class="set-row"><div><div>界面语言</div></div>
-          <div><span id="set-lang-box"></span><div class="help">后台页面显示用的语言，只影响这个浏览器，选了马上生效；她聊天用什么语言不受这里影响。</div></div></div></div>
-      <div id="set-groups"></div>
-      </div>
-    </div>
-    <div class="set-panel" id="set-p-wechat" hidden></div>
-    <div class="set-panel" id="set-p-qq" hidden></div>
-    <div class="set-panel" id="set-p-telegram" hidden></div>
-    <div class="savebar"><input id="set-reason" maxlength="200" placeholder="修改原因（可选，会记在修改记录里）">
-      <button id="set-save" disabled>保存修改</button>
-      <button class="ghost" id="set-restart" type="button">重启 Violet</button></div>
-    <p class="note" id="set-restart-note"></p>
-    <div id="set-danger">
-      <h3>清除数据 / 翻篇</h3>
-      <div class="card danger-zone">
-        <p class="note">清除她的全部记忆、把全部配置恢复默认、翻篇（她看不到以前的聊天，像重新开始），可以任选。聊天记录不会删除。</p>
-        <button class="danger" id="set-reset" type="button">清除记忆 / 配置 / 翻篇…</button>
-      </div>
-    </div>
+    <div class="set-slot" data-groups="memory"></div>
   </section>
 
   <section id="tab-images" class="tab">
-    <div class="row"><h2>图片</h2><button class="ghost" id="img-refresh" type="button">刷新</button></div>
-    <p class="note">看图：Violet 看懂你发来的图片。画图：Violet 在聊天里按你的要求画图、偶尔分享自己的“照片”（明确是 AI 画的）。两者都用“模型服务”里的接口，也可以给画图单独设置。</p>
+    <div class="row"><h2>图片与表情包</h2><button class="ghost" id="img-refresh" type="button">刷新</button></div>
+    <p class="note">看图：Violet 看懂你发来的图片。画图：Violet 在聊天里按你的要求画图、偶尔分享自己的“照片”（明确是 AI 画的）。</p>
     <div id="img-root" class="stack-wide"></div>
-    <div id="stk-root" class="set-group"></div>
+    <div class="joined"><div id="stk-root" class="set-group"></div>
+      <div class="set-slot" data-groups="stickers,qq_stickers"></div></div>
   </section>
 
   <section id="tab-channels" class="tab">
     <div class="row"><h2>聊天渠道</h2><button class="ghost" id="ch-refresh">刷新状态</button></div>
-    <p class="note">选一个或几个平台和 Violet 聊天，用同一个人设的渠道是同一个她（同一份记忆）；在“人设与生活”里给某个渠道换了别的人设，那个渠道就是另一个人，有自己的记忆。私聊里只有你自己的账号发来的消息才进入你们的对话；新的“QQ”还能进群、和别人聊天（在 QQ 卡片里设置）。</p>
+    <p class="note">选一个或几个平台和 Violet 聊天。用同一个人设的渠道是同一个她（同一份记忆）；私聊里只有你自己的账号发来的消息才进入你们的对话。</p>
     <label class="inline">主动联系你时发到 <select id="ch-proactive"></select></label>
     <div id="ch-list" class="platforms"></div>
     <div id="ch-extra" class="platforms"></div>
+    <div class="set-slot" data-groups="wechat_model,qq_model,telegram_model" data-merge="channel_models"></div>
+    <h3 id="ch-qq-head">QQ 上的群聊、别人私聊和动态</h3>
     <div id="ch-social"></div>
+    <div class="set-group" id="set-g-qq-permissions"><h3>她在 QQ 上能自己做的事</h3><div id="set-qq-permissions"></div></div>
+    <div class="set-slot" data-groups="social,qzone"></div>
   </section>
 
   <section id="tab-tools" class="tab">
-    <div class="row"><h2>工具与手机</h2>
+    <div class="row"><h2>她能做的事</h2>
       <span class="page-actions"><span class="note" id="tools-updated"></span><button class="ghost" id="tools-refresh">检查全部连接</button></span></div>
-    <p class="note">Violet 能用的工具：看手机、上网查东西、发语音，以及你自己加的 MCP 服务器。只有连接成功、已启用、已分类并授权的工具才会告诉 Violet；修改立即生效。</p>
+    <p class="note">她能自己做哪些事、能用哪些工具：看手机、上网查东西、发语音，以及你自己加的 MCP 服务器。修改立即生效。</p>
     <nav class="jump" id="tools-jump" aria-label="工具"></nav>
+    <div class="set-group" id="set-g-permissions"><h3>她能自己做的事</h3><div id="set-permissions"></div></div>
     <div class="card" id="phone-mcp"></div>
-    <div id="tools-web" class="cards list"></div>
-    <div id="tools-voice" class="cards list"></div>
-    <div class="card" id="tools-mcp"><h3>其他 MCP 服务器</h3>
+    <!-- .joined: a feature card and its settings drawn as one card -->
+    <div class="joined"><div id="tools-web" class="cards list"></div>
+      <div class="set-slot" data-groups="web"></div></div>
+    <div class="joined"><div id="tools-voice" class="cards list"></div>
+      <div class="set-slot" data-groups="voice"></div></div>
+    <div class="joined"><div class="card" id="tools-mcp"><h3>其他 MCP 服务器</h3>
     <p class="note">每个服务器下面写明了现在的问题和处理办法。凭据只能替换，不能查看。运行本地命令的（stdio）服务器只能在 .env 里配置。</p>
     <div id="tools-list" class="cards list"></div>
     <details id="mcp-add-box" class="sub-box"><summary>添加 MCP 服务器</summary>
@@ -254,6 +246,7 @@
       <p class="err" id="mcp-add-error"></p>
       <div class="row"><button type="submit">添加并检查</button></div>
     </form></details></div>
+      <div class="set-slot" data-groups="mcp"></div></div>
   </section>
 
   <section id="tab-schedule" class="tab">
@@ -385,7 +378,7 @@
 
   <section id="tab-persona" class="tab">
     <div class="row"><h2>人设与生活</h2><button class="ghost" id="pl-refresh" type="button">刷新</button></div>
-    <p class="note">Violet 的核心人设、会慢慢变化的部分，以及她的虚拟生活。这里的生活经历都是虚构的；改动会记下原因，可以看历史。</p>
+    <p class="note">每个渠道上她是谁、和你是什么关系。改动会记下原因，可以看历史。</p>
     <nav class="jump" id="pl-jump" aria-label="人设与生活"></nav>
     <!-- 2026-11-09 (user: 人设与生活的UI也要改一下): who talks to you where -- the main setting and every channel in one
          table (persona / relationship / what she calls you); then the persona library as small cards; test mode
@@ -401,10 +394,27 @@
       <div id="pl-look"></div></details>
     <details class="card fold-card" id="pl-core-box"><summary>人设详情 <span class="note">（性格、说话习惯、兴趣、价值观、缺点）</span></summary>
       <div id="pl-core"></div></details>
+  </section>
+
+  <section id="tab-talk" class="tab">
+    <h2>聊天方式</h2>
+    <p class="note">她怎么回你：等多久再回、心情、要不要追问。对所有渠道都一样。</p>
+    <div class="set-slot" data-groups="behavior,messages,guard,prompts"></div>
+  </section>
+
+  <section id="tab-proactive" class="tab">
+    <h2>主动联系</h2>
+    <p class="note">她什么时候可以自己来找你。发到哪个渠道，在“聊天渠道”页最上面选。</p>
+    <div class="set-slot" data-groups="proactive"></div>
+  </section>
+
+  <section id="tab-life" class="tab">
+    <div class="persona-bar" data-persona-pick hidden>
+      <label>看谁的生活 <select class="persona-scope" aria-label="看哪个人设的生活"></select></label><span class="note persona-where"></span></div>
     <div class="card" id="pl-life">
       <div class="row"><h3>她的生活 <span id="pl-engine" class="pill"></span></h3>
         <span class="page-actions"><button class="ghost" id="pl-pause" type="button">暂停</button><button class="ghost" id="pl-resume" type="button">恢复</button></span></div>
-      <p class="note">她的虚拟生活（都是虚构的）。暂停只停止虚拟生活往前推进，不影响聊天和主动消息；彻底关闭在“设置 → 生活引擎”。</p>
+      <p class="note">暂停只停止虚拟生活往前推进，不影响聊天和主动消息；彻底关闭用下面的“生活引擎”开关。</p>
       <div class="life-grid">
         <div><h4>人设动态 <span class="note">（缓慢变化，需要你批准）</span></h4><div id="pl-dynamics" class="cards list"></div></div>
         <div><h4>一致性标记 <span class="note">（回复里和人设、生活记录对不上的地方）</span></h4><div id="pl-flags" class="cards list"></div></div>
@@ -414,6 +424,7 @@
       <details class="sub-box" id="pl-events-box"><summary>生活事件 <span class="note">（最近 60 件）</span></summary>
         <div id="pl-events" class="cards list"></div></details>
     </div>
+    <div class="set-slot" data-groups="life"></div>
   </section>
 
   <section id="tab-logs" class="tab">
@@ -431,7 +442,13 @@
     </div>
     <div class="row" id="log-summary"></div>
     <div id="log-list" class="log-list"></div>
+    <div class="set-slot" data-groups="logs"></div>
   </section>
+
+  <div class="savebar" id="savebar" hidden><span id="set-count"></span>
+    <input id="set-reason" maxlength="200" placeholder="修改原因（可选，会记在修改记录里）">
+    <button id="set-save" type="button">保存修改</button>
+    <button class="ghost" id="set-discard" type="button">放弃</button></div>
 </main>
 
 <dialog id="confirm"><form method="dialog" class="stack">

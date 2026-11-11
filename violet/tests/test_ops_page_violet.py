@@ -206,8 +206,10 @@ def test_the_control_page_carries_its_stylesheet_inline(made):
 
 def test_the_page_has_the_new_tabs_and_scripts_build_no_html():
     html = (ROOT / "wx_ilink_py" / "templates" / "control.html").read_text(encoding="utf-8")
-    for tab in ("persona", "logs"):
-        assert f'data-tab="{tab}"' in html and f'id="tab-{tab}"' in html
+    # 2026-11-11 regroup: the log is a sub-tab of 运行情况 (control.js SUBS)
+    assert 'data-tab="persona"' in html and 'id="tab-persona"' in html
+    assert 'data-tab="run"' in html and 'id="tab-logs"' in html
+    assert '["logs", "日志"]' in (ROOT / "wx_ilink_py" / "static" / "control.js").read_text(encoding="utf-8")
     assert '<script src="/static/control_persona.js"></script>' in html and "/static/control_logs.js" in html
     assert 'href="/persona"' not in html
     for name in ("control_persona.js", "control_logs.js", "control_channels.js"):

@@ -46,9 +46,9 @@ Die Oberfläche des Panels ist derzeit auf Chinesisch.
 
 **Web-Panel**
 
-- Start (was noch fehlt), Übersicht, Ablauf (welche Prompts, Werkzeuge und Modelle jede Antwort verwendet hat, einschließlich des vollständigen Inhalts, der an das Modell ging).
-- Modelldienste (ein anderes Modell pro Agent und pro Chat-Plattform), Chat-Kanäle, Werkzeuge & Handy, Bilder, Personas & Leben, Stundenplan, Einstellungen.
-- Chatverlauf, Gedächtnis, Diagnose, Protokolle, Änderungsverlauf, Kontosicherheit.
+- Übersicht (mit einer Checkliste, was noch fehlt), Chat-Kanäle, Personas & Leben, Modelldienste (ein anderes Modell pro Agent und pro Chat-Plattform).
+- Was sie kann (Berechtigungen, Handy, Websuche, Stimme, weitere Werkzeuge), Bilder & Sticker, Chatverlauf, Gedächtnis (mit dem Stundenplan).
+- Betrieb (welche Prompts, Werkzeuge und Modelle jede Antwort verwendet hat, einschließlich des vollständigen Inhalts, der an das Modell ging; Diagnose; Logs), System (Updates, Kontosicherheit, Änderungsverlauf).
 
 **Umzug von Project Eve**
 
@@ -67,7 +67,7 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
   - Das Zertifikat ist selbstsigniert. Wenn der Browser meldet, die Seite sei nicht sicher, wähle Fortfahren.
   - Auf einem Cloud-Server muss dieser Port zusätzlich in der Sicherheitsgruppe / Firewall des Anbieters geöffnet werden.
 - Nach der Installation:
-  1. Öffne das Panel und trage auf der Startseite die Adresse und den Schlüssel deines Modelldienstes ein.
+  1. Öffne das Panel und trage auf der Seite Modelldienste die Adresse und den Schlüssel deines Modelldienstes ein.
   2. Verbinde auf der Seite Chat-Kanäle eine beliebige Chat-Plattform und fang an zu chatten.
 - Adresse oder Benutzername vergessen: `/opt/violet/violet info`. Passwort vergessen: `/opt/violet/violet reset-password`.
 
@@ -90,15 +90,15 @@ Mehr Details (Zugriffsmodi, Firewall, Wartungsbefehle) in [violet/INSTALL.md](vi
 ## Updates
 
 - Standardmäßig automatisch: Wenn eine neue Version erscheint, aktualisiert sich der Server selbst. Vorher wird ein Backup angelegt, und schlägt das Update fehl, wird automatisch zur alten Version zurückgekehrt.
-- Unter Einstellungen → Versionsupdates kannst du auf „nur benachrichtigen" oder „manuell prüfen" umstellen.
-- Ein Klick auf Jetzt aktualisieren auf der Startseite zeigt den Fortschritt.
+- Unter System → Updates kannst du auf „nur benachrichtigen" oder „manuell prüfen" umstellen.
+- Ein Klick auf Jetzt aktualisieren auf der Seite System zeigt den Fortschritt.
 - Oder aktualisiere von Hand auf dem Server:
 
 ```bash
 /opt/violet/violet update
 ```
 
-- Wenn der Server GitHub nicht erreicht (in Festlandchina häufig): Unter Einstellungen → Versionsupdates → Downloadquelle legst du fest, woher heruntergeladen wird. Die Voreinstellung „Automatisch“ versucht zuerst GitHub und dann nacheinander die eingebauten GitHub-Mirrors. Eine über einen Mirror geladene neue Version wird nur installiert, wenn sie die Release-Signatur trägt. Details in [violet/INSTALL.md](violet/INSTALL.md#updates).
+- Wenn der Server GitHub nicht erreicht (in Festlandchina häufig): Unter System → Updates → Downloadquelle legst du fest, woher heruntergeladen wird. Die Voreinstellung „Automatisch“ versucht zuerst GitHub und dann nacheinander die eingebauten GitHub-Mirrors. Eine über einen Mirror geladene neue Version wird nur installiert, wenn sie die Release-Signatur trägt. Details in [violet/INSTALL.md](violet/INSTALL.md#updates).
 
 ## Deinstallation
 

@@ -81,8 +81,8 @@
     const o = S.overview, sel = $("#sch-term");
     const banner = [];
     if (!o.enabled) banner.push("Violet 现在不会查课表（上面的“课表查询”没有打开）；这里仍然可以录入和整理。");
-    if (o.server_disabled) banner.push("工具页里停用了 violet-schedule，Violet 现在不会查课表。");
-    if (o.tools_disabled && o.tools_disabled.length) banner.push("工具页里停用了：" + o.tools_disabled.join("、") + "。");
+    if (o.server_disabled) banner.push("“她能做的事”页里停用了 violet-schedule，Violet 现在不会查课表。");
+    if (o.tools_disabled && o.tools_disabled.length) banner.push("“她能做的事”页里停用了：" + o.tools_disabled.join("、") + "。");
     $("#sch-guide").open = !o.terms.length;
     if (!o.terms.length) banner.push("还没有课表：按下面“四步录好课表”来，先新建一个学期。");
     else if (!o.terms.some((t) => t.state === "active")) banner.push("今天不在任何进行中的学期里（Violet 会说课表还没开始或已经结束）。如果新学期开始了，请录入新学期。");

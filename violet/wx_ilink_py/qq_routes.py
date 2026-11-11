@@ -332,7 +332,7 @@ def register_qq_routes(app: Flask, violetdb, runtime) -> None:
         if body.get("describe") is True:
             text = stickers.describe(stickers.path_of(stickers.get(violetdb, sticker_id)))
             if not text:
-                return bad("识图没有成功：看看“图片”页的识图测试")
+                return bad("识图没有成功：看看“图片与表情包”页的识图测试")
             body["description"] = text
         row = stickers.update(violetdb, sticker_id, description=body.get("description"),
                               enabled_flag=body.get("enabled") if "enabled" in body else None)

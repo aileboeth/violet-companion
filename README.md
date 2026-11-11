@@ -46,9 +46,9 @@ The control panel's interface is currently in Chinese.
 
 **Web control panel**
 
-- Start (what is still missing), Overview, Flow (which prompts, tools and models each reply used, including the full content sent to the model).
-- Model services (a different model per agent and per chat platform), Chat channels, Tools & phone, Images, Personas & life, Timetable, Settings.
-- Chat history, Memory, Diagnostics, Logs, Change history, Account security.
+- Overview (with a checklist of what is still missing), Chat channels, Personas & life, Model services (a different model per agent and per chat platform).
+- What she can do (permissions, phone, web search, voice, other tools), Images & stickers, Chat history, Memory (with the timetable).
+- Activity (which prompts, tools and models each reply used, including the full content sent to the model; diagnostics; logs), System (updates, account security, change history).
 
 **Moving over from Project Eve**
 
@@ -67,7 +67,7 @@ curl -fsSL https://github.com/aileboeth/violet-companion/releases/latest/downloa
   - The certificate is self-signed. When the browser says the page is not secure, choose to continue.
   - On a cloud server, also open this port in the provider's security group / firewall.
 - After installing:
-  1. Open the panel and fill in your model service address and key on the Start page.
+  1. Open the panel and fill in your model service address and key on the Model services page.
   2. Connect any chat platform on the Chat channels page and start chatting.
 - Forgot the address or username: `/opt/violet/violet info`. Forgot the password: `/opt/violet/violet reset-password`.
 
@@ -90,15 +90,15 @@ More details (access modes, firewall, maintenance commands) are in [violet/INSTA
 ## Updates
 
 - Automatic by default: when a new version is out, the server upgrades itself. It makes a backup first and rolls back to the old version if the upgrade fails.
-- You can switch to "notify only" or "check manually" under Settings → Version updates.
-- Clicking Update now on the Start page shows the progress.
+- You can switch to "notify only" or "check manually" under System → Updates.
+- Clicking Update now on the System page shows the progress.
 - Or upgrade by hand on the server:
 
 ```bash
 /opt/violet/violet update
 ```
 
-- If the server cannot reach GitHub (common in mainland China): Settings → Version updates → Download source picks where downloads come from. The default, Automatic, tries GitHub first and then the built-in GitHub mirrors. A new version downloaded through a mirror is installed only if it carries the release signature. See [violet/INSTALL.md](violet/INSTALL.md#updates).
+- If the server cannot reach GitHub (common in mainland China): System → Updates → Download source picks where downloads come from. The default, Automatic, tries GitHub first and then the built-in GitHub mirrors. A new version downloaded through a mirror is installed only if it carries the release signature. See [violet/INSTALL.md](violet/INSTALL.md#updates).
 
 ## Uninstall
 

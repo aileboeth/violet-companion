@@ -399,17 +399,22 @@ def test_start_page_items_link_to_the_exact_place(made):
 
 def test_pages_are_reorganised_and_build_no_html():
     html = (ROOT / "wx_ilink_py" / "templates" / "control.html").read_text(encoding="utf-8")
-    for needle in ('data-tab="model"', 'id="tab-model"', 'id="model-fetch"', 'id="set-jump"', 'id="ch-list"',
+    for needle in ('data-tab="model"', 'id="tab-model"', 'id="model-fetch"', 'id="savebar"', 'id="ch-list"',
                    'id="tools-jump"', 'id="phone-mcp"', 'id="ch-proactive"', 'id="ch-social"', 'id="mcp-add-box"',
                    '<script src="/static/control_model.js"></script>', '<script src="/static/control_phone.js"></script>'):
         assert needle in html, needle
     assert 'id="setup-api"' not in html and "初始化向导" not in html                 # moved to the model page
     assert 'id="ch-more"' not in html and 'id="ch-add-box"' not in html        # 2026-10-29: "更多设置" removed (user)
-    assert html.index('data-tab="model"') < html.index('data-tab="settings"')
+    # 2026-11-11 regroup: no settings page; every settings group has a slot on the page of its feature
+    assert 'data-tab="settings"' not in html and 'id="tab-settings"' not in html
+    import re
+    slotted = {g for groups in re.findall(r'class="set-slot" data-groups="([^"]+)"', html) for g in groups.split(",")}
+    from ai.control_config import GROUPS
+    assert slotted == set(GROUPS) - {"api", "models", "images", "schedule"}, sorted(set(GROUPS) ^ slotted)
     for name in ("control_model.js", "control_phone.js", "control_setup.js", "control.js", "control_channels.js"):
         js = (ROOT / "wx_ilink_py" / "static" / name).read_text(encoding="utf-8")
         for sink in ("innerHTML", "outerHTML", "insertAdjacentHTML", "document.write", "eval(", "new Function",
                      "localStorage", "sessionStorage"):
             assert sink not in js, (name, sink)
     js = (ROOT / "wx_ilink_py" / "static" / "control.js").read_text(encoding="utf-8")
-    assert 'SETTINGS_ELSEWHERE = ["api", "models", "images", "schedule"]' in js     # 2026-11-02: 课表 page
+    assert "function fillSlots(d)" in js and "showSavebar" in js

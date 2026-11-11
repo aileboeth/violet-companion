@@ -141,7 +141,7 @@
         v.can_install ? null : h("span", { class: "note", text: `这种安装方式不能在网页上安装，请在服务器上运行：${v.command}` })),
       v.installed ? referenceBox(v) : null,
       v.installed ? testBox(v) : null,
-      v.installed && !v.enabled ? h("p", { class: "note", text: "“设置 → 她的语音”关着：她现在不会发语音。" }) : null));
+      v.installed && !v.enabled ? h("p", { class: "note", text: "下面的“她的语音”关着：她现在不会发语音。" }) : null));
   }
 
   const previous = loaders.tools;

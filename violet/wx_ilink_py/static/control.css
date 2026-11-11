@@ -245,6 +245,26 @@ code{background:var(--panel-hover);border:1px solid var(--line);border-radius:7p
 .savebar{position:sticky;bottom:12px;display:flex;gap:10px;padding:10px;margin-top:8px;border-radius:var(--radius);
   background:color-mix(in srgb,var(--panel-solid) 88%,transparent);backdrop-filter:blur(12px);border:1px solid var(--line-strong);
   box-shadow:var(--shadow);z-index:4}
+.savebar{align-items:center}.savebar #set-count{white-space:nowrap;font-weight:600;padding:0 6px}.savebar input{flex:1;min-width:0}
+/* 2026-11-11 regroup: sub-tabs of a page, the folded "不常改的" of a settings card */
+#page-subs{margin-top:0}
+.set-fold{border-top:1px dashed var(--line);margin:0 0 6px}
+.set-fold>summary{color:var(--muted);font-size:12.5px;padding:12px 0 8px;cursor:pointer}
+.set-fold[open]>summary{border-bottom:1px solid var(--line)}
+.set-slot:empty{display:none}
+/* a feature card with its settings right under it, drawn as one card */
+.joined{margin-bottom:16px}
+.joined>.cards,.joined>.card,.joined>.set-group{margin-bottom:0}
+.joined>.cards>.card:last-child,.joined>.card,.joined>.set-group:not(:last-child){margin-bottom:0}
+.joined:has(.set-slot>.set-group)>.cards>.card:last-child,.joined:has(.set-slot>.set-group)>.card,
+.joined:has(.set-slot>.set-group)>.set-group{border-bottom-left-radius:0;border-bottom-right-radius:0}
+.joined>.set-slot>.set-group{border-top:0;border-top-left-radius:0;border-top-right-radius:0;margin-bottom:0;animation:none;box-shadow:none}
+.joined>.set-slot>.set-group+.set-group{border-top:1px solid var(--line)}
+.joined>.set-slot>.set-group:not(:last-child){border-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}
+.joined>.set-slot>.set-group>h3{font-size:13px;color:var(--muted);margin:12px 0 2px}
+.joined>.set-slot>.set-group>h3::before{display:none}
+.flow-logs{margin-top:12px}.flow-logs>summary{cursor:pointer;font-weight:600}
+.turn-link{padding:1px 8px;font-size:12px;margin:0 2px}
 .stack{display:flex;flex-direction:column;gap:12px;max-width:460px}
 .stack label{display:flex;flex-direction:column;gap:5px;font-size:13px}
 
