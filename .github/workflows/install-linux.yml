@@ -25,6 +25,8 @@ jobs:
       - name: a normal user with sudo runs the same one-line command (through a pipe)
         run: |
           set -o pipefail
+          exec > >(tee e2e.log) 2>&1          # 0.7.68: a failure of this step was reported with no output
+          python3 --version
           python3 violet/tools/make_release.py --base http://127.0.0.1:18766 --out /tmp/rel --worktree >/dev/null
           (cd /tmp/rel && nohup python3 -m http.server 18766 --bind 127.0.0.1 >/dev/null 2>&1 &)
           # 0.7.68: "sleep 1" was sometimes too short (the step failed with no output on one runner)
