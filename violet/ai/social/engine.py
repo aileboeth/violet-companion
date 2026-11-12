@@ -806,11 +806,13 @@ def _persona_text(db, channel: str | None = None) -> str:
     """The persona of the channel (2026-10-30: a channel may have its own) and the relationship to the owner."""
     try:
         from ai.persona import PersonaCore
-        from ai.persona_templates import RELATIONSHIPS, relationship
-        text = PersonaCore.load(channel=channel).render()
-        rel = relationship(channel)
-        call = f"你称呼主人“{rel['call']}”。" if rel["call"] else ""
-        return text + f"\n【你和你的主人的关系：{rel['label']}】" + RELATIONSHIPS[rel["kind"]][1].replace("对方", "主人") + call
+        from ai.persona_templates import relationship_text
+        core = PersonaCore.load(channel=channel)
+        text = core.render()
+        if core.has_backstory:                        # 2026-11-12: her past is with the owner, not with whoever talks here
+            text = text.replace("对方", "主人")
+        rel, about = relationship_text(channel, db)
+        return text + f"\n【你和你的主人的关系：{rel['label']}】" + about.replace("对方", "主人")
     except Exception:                                 # noqa: BLE001
         logger.exception("persona could not be loaded for the social prompt")
         return "【你自己】一个普通、友善的人。"

@@ -25,8 +25,9 @@ Por ahora, la interfaz del panel está en chino.
 
 **Personas y relaciones**
 
-- Personas incluidas: Violet (por defecto), compañía tierna, compañera de clase alegre, tranquila y de fiar, una que sabe que es una IA, Big Fat Fish, la persona original de Eve y una en blanco. También puedes escribir la tuya.
-- Tipos de relación: cercana, amistad, pareja, hija, desarrollador.
+- Personas incluidas: Violet (por defecto), cuatro de estilo anime que traen su propia relación contigo (hermanastra, amiga de la infancia, kohai del club, compañera de clase silenciosamente obsesiva; la relación avanza por etapas al chatear), una que sabe que es una IA, Big Fat Fish, la persona original de Eve y una en blanco. También puedes escribir la tuya.
+- Tipos de relación para las demás personas: cercana, amistad, pareja, hija, desarrollador.
+- Un formulario “Sobre ti” (nombre, género, cumpleaños, estudios o trabajo, aficiones; todo opcional): te conoce desde el primer mensaje en vez de empezar con “¿cómo te llamas?”.
 - Cada canal de chat puede usar una persona distinta. Cada persona tiene su propio historial, memoria, vida y estado de ánimo, así que al cambiar de una a otra no se pierde nada ni se mezcla.
 - Tiene una vida cotidiana virtual y estados de ánimo propios: sus días transcurren con calma, y pueden pasar varios días sin que ocurra nada; si la tratas con dureza se enfada un poco. Nunca se inventa experiencias que no estén en su registro de vida.
 

@@ -137,6 +137,9 @@
         h("p", { class: "note", text: t.summary }),
         h("p", { class: "note", text: "主人设是没有单独设人设的渠道用的（下面“不同聊天渠道用不同人设”里单独设过的渠道不变）。" }),
         t.blank ? h("label", {}, "给她起个名字（可选） ", name) : null,
+        // 2026-11-12: the anime-style personas come with a name, which can be changed here
+        t.relation ? h("label", {}, "她的名字 ", (name.placeholder = `不填就叫 ${t.name}`, name)) : null,
+        t.relation ? h("p", { class: "note", text: `这个人设自带关系（${t.relation}），换上后“关系”不用再选；关系会随着聊天分阶段慢慢推进。` }) : null,
         h("label", { class: "check" }, keep, own
           ? ` 用她自己的记录：她已经有自己的聊天记录和记忆（${own} 条聊天），换上后接着用她的；现在这个人设的记录也原样保留，换回来还在`
           : " 保留记忆：她接着用现在这个人设的记忆和聊天记录，只是性格和说话方式换了"),
@@ -198,7 +201,8 @@
   // 2026-11-09 (user: 预览人设的很丑而且不好用): the hover pop-up that covered the cards below is gone. A click on a
   // card (or "查看") opens the whole persona in a dialog: what she is like in two columns, ‹ › (or the arrow keys)
   // to go through the personas one by one and compare, and "设为主人设" right there.
-  const BLOCKS = [["personality", "性格"], ["habits", "说话习惯"], ["interests", "兴趣"], ["values", "看重"], ["flaws", "小缺点"]];
+  const BLOCKS = [["personality", "性格"], ["habits", "说话习惯"], ["interests", "兴趣"], ["values", "看重"], ["flaws", "小缺点"],
+    ["backstory", "你们的过去"], ["stages", "关系的阶段（随聊天慢慢推进）"]];
   function personaDialog(entries, start) {
     let i = start;
     const body = h("div", { class: "pv-body" });
@@ -215,6 +219,7 @@
           h("button", { type: "button", class: "ghost pv-close", "aria-label": "关闭", text: "✕", onclick: () => d.close() })),
         h("p", { class: "pv-lead", text: e.summary || t.summary || "" }),
         t.self_description ? h("blockquote", { class: "pv-quote", text: t.self_description }) : null,
+        t.relation ? h("p", { class: "pv-relation" }, pill("自带关系"), h("strong", { text: " " + t.relation }), h("span", { text: "　" + (t.relation_text || "") })) : null,
         t.blank ? h("p", { class: "note", text: "没有名字、性格和经历，什么都从和你聊天开始慢慢长出来。" }) : null,
         blocks.length ? h("div", { class: "pv-grid" }, ...blocks) : (t.blank ? null : h("p", { class: "note", text: "这个人设没有写细节。" })),
         e.users.length ? h("p", { class: "note used-by", text: "在用：" + e.users.join("、") }) : null,
@@ -252,7 +257,16 @@
     return sel;
   }
   // 2026-11-01 (user: 设置了称呼，切换人设之后也不显示，不知道还有没有生效): what is really used now, after merging
-  const effectText = (x) => `现在：${x.persona} · ${x.label} · ${x.call ? `叫你“${x.call}”` : "不特别称呼你"}`;
+  const effectText = (x) => `现在：${x.persona} · ${x.label} · ${x.call ? `叫你“${x.call}”` : "不特别称呼你"}` + (x.stage ? " · " + stageText(x.stage) : "");
+  // 2026-11-12: a persona with its own relationship moves through stages by the days you have talked
+  const stageText = (s) => `阶段 ${s.index + 1}/${s.labels.length}“${s.label}”` + (s.auto
+    ? (s.next_days === null ? `（自动，聊过 ${s.days} 天）` : `（自动，聊过 ${s.days} 天，到第 ${s.next_days} 天进入下一阶段）`) : "（你固定的）");
+  function stageSelect(labels, stage) {
+    const sel = h("select", { "aria-label": "关系阶段" }, h("option", { value: "", text: "阶段：自动推进" }),
+      ...(labels || []).map((label, i) => h("option", { value: String(i), text: `固定在 ${i + 1}. ${label}` })));
+    sel.value = stage && !stage.auto ? String(stage.index) : "";
+    return sel;
+  }
   // 2026-11-09 (user: 人设与生活的UI也要改一下): the relationship and the per-channel personas were two cards of
   // stacked full-width fields. Now one table: the main setting first, then every channel -- persona / relationship /
   // what she calls you / save, and under each row what is really in effect.
@@ -260,10 +274,14 @@
     const mainTpl = d.current.template === "custom" ? "自定义人设"
       : ((d.templates.find((t) => t.key === d.current.template) || {}).title || d.current.template || "—");
     const rel = d.relationship || { kind: "close" };
-    const mainRel = relationshipSelect(d, rel.kind, false);
+    const mainT = d.templates.find((t) => t.key === d.current.template) || {};
+    const builtIn = rel.kind === "persona";            // the persona brings its relationship: a stage instead of a choice
+    const mainRel = builtIn ? stageSelect(mainT.stages, (d.in_effect || {}).stage) : relationshipSelect(d, rel.kind, false);
     const mainCall = h("input", { maxlength: 12, placeholder: "可空，例如 爸爸", "aria-label": "称呼" }); mainCall.value = rel.call || "";
+    if (rel.kind === "persona") mainCall.placeholder = "空 = 按人设来";
     const relText = h("span", { class: "who-sub" });
-    const showRel = () => { const r = d.relationships.find((x) => x.key === mainRel.value); relText.textContent = (r ? r.text + "　" : "") + (d.in_effect ? effectText(d.in_effect) : ""); };
+    const showRel = () => { const r = builtIn ? null : d.relationships.find((x) => x.key === mainRel.value);
+      relText.textContent = (r ? r.text + "　" : builtIn ? `人设自带关系：${rel.label}。　` : "") + (d.in_effect ? effectText(d.in_effect) : ""); };
     mainRel.addEventListener("change", showRel); showRel();
     const head = h("div", { class: "who-row who-head" }, h("span", { text: "" }), h("span", { text: "人设（她是谁）" }),
       h("span", { text: "关系（你们是什么关系）" }), h("span", { text: "她怎么叫你" }), h("span", { text: "" }));
@@ -273,7 +291,11 @@
         h("button", { type: "button", class: "ghost small", text: "换", onclick: () => scrollToAnchor("pl-sec-templates") })),
       mainRel, mainCall,
       h("button", { type: "button", text: "保存", onclick: async () => {
-        try { await api("POST", "/api/persona/relationship", { kind: mainRel.value, call: mainCall.value }); toast("已保存，下一条消息起生效"); loaders.persona(); }
+        try {
+          await api("POST", "/api/persona/relationship", { kind: builtIn ? "persona" : mainRel.value, call: mainCall.value });
+          if (builtIn) await api("POST", "/api/persona/stage", { channel: null, stage: mainRel.value === "" ? null : Number(mainRel.value) });
+          toast("已保存，下一条消息起生效"); loaders.persona();
+        }
         catch (e) { toast(e.message, false); }
       } }), relText);
     const options = [h("option", { value: "", text: "和主设定一样" }),
@@ -281,13 +303,32 @@
     const rows = (d.channels || []).map((c) => {
       const tpl = h("select", { "aria-label": `${c.label} 的人设` }, ...options.map((o) => o.cloneNode(true))); tpl.value = c.template || "";
       const crel = relationshipSelect(d, (c.relationship || {}).kind, true);
+      // 2026-11-12: with a persona that has its own relationship the choice is replaced -- by the stage when the
+      // persona is this channel's own, by a note when the channel follows the main one
+      const cstage = stageSelect([], null), follows = h("span", { class: "note", text: `按主设定（${rel.label}）` });
+      const relBox = h("div", { class: "who-rel" }, crel, cstage, follows);
+      const pickRel = () => {
+        const t = tpl.value ? d.templates.find((x) => x.key === tpl.value) : null;
+        const own = !!(t && t.relation), main = !tpl.value && builtIn;
+        crel.hidden = own || main; cstage.hidden = !own; follows.hidden = !main;
+        call.placeholder = own ? "空 = 按人设来" : (rel.call ? `空 = 和主设定一样（${rel.call}）` : "空 = 和主设定一样");
+        if (own) {
+          const same = c.template === tpl.value ? (c.in_effect || {}).stage : null;
+          cstage.replaceChildren(...stageSelect(t.stages, same).children); cstage.value = same && !same.auto ? String(same.index) : "";
+        }
+      };
       const call = h("input", { maxlength: 12, "aria-label": `${c.label} 的称呼`, placeholder: rel.call ? `空 = 和主设定一样（${rel.call}）` : "空 = 和主设定一样" });
       call.value = (c.relationship || {}).call || "";
+      tpl.addEventListener("change", pickRel); pickRel();
       return h("div", { class: "who-row" + (c.template ? " own" : "") },
         h("div", {}, h("strong", { text: c.label }), c.template ? h("div", { class: "note", text: "单独的人设 · 自己的记忆" }) : null),
-        tpl, crel, call,
+        tpl, relBox, call,
         h("button", { class: "ghost", type: "button", text: "保存", onclick: async () => {
-          try { await api("POST", "/api/persona/channel", { channel: c.id, template: tpl.value || null, kind: crel.value || null, call: call.value }); toast(`${c.label} 已保存`); loaders.persona(); loadPersonaPicker(); }
+          try {
+            await api("POST", "/api/persona/channel", { channel: c.id, template: tpl.value || null, kind: crel.hidden ? null : (crel.value || null), call: call.value });
+            if (!cstage.hidden) await api("POST", "/api/persona/stage", { channel: c.id, stage: cstage.value === "" ? null : Number(cstage.value) });
+            toast(`${c.label} 已保存`); loaders.persona(); loadPersonaPicker();
+          }
           catch (e) { toast(e.message, false); }
         } }),
         c.in_effect ? h("span", { class: "who-sub", text: effectText(c.in_effect) }) : null);
@@ -298,6 +339,36 @@
       rows.length ? null : h("p", { class: "note", text: "还没有聊天渠道。" }),
       h("details", {}, h("summary", { text: "渠道用不同的人设会怎样？" }),
         h("p", { class: "note", text: "比如：微信上是“Violet + 恋人”，QQ 上是“AI + 开发者”。人设不同就是不同的人：聊天记录、记忆、提醒、生活和心情各是各的（聊天记录、记忆页上方和本页下面可以选看谁的）；课表共用。第一次给一个渠道选自己的人设时，这个渠道以前的聊天会跟着过去。QQ 群里也按 QQ 这一行的设定。导入 Eve 时选的人设也显示在这里。" }))].filter(Boolean));
+  }
+
+  // 2026-11-12 (user: 开局要先收集一些用户的基本信息…这样就不会一来就问你叫什么): the owner's own form. Every
+  // field is optional; she is shown it on every turn of your own chat (never in groups).
+  function renderAbout(about) {
+    if (!about) return;
+    const v = about.fields || {};
+    const text = (key, max, ph) => { const el = h("input", { maxlength: max, placeholder: ph || "" }); el.value = v[key] || ""; return el; };
+    const pick = (key, options) => { const el = h("select", {}, h("option", { value: "", text: "不说" }),
+      ...Object.entries(options).map(([k, label]) => h("option", { value: k, text: label }))); el.value = v[key] || ""; return el; };
+    const f = { name: text("name", 20, "她怎么叫你"), gender: pick("gender", about.genders), birthday: text("birthday", 10, "2005-03-05 或 03-05"),
+      status: pick("status", about.statuses), school: text("school", 40), grade: text("grade", 20, "例如 大二"), major: text("major", 40),
+      job: text("job", 40), hobbies: text("hobbies", 120, "几个词就行，例如 游戏、摄影"), city: text("city", 30), note: text("note", 200, "还想让她一开始就知道的事") };
+    const study = h("span", { class: "about-part" }, h("label", {}, "学校 ", f.school), h("label", {}, "年级 ", f.grade), h("label", {}, "专业 ", f.major));
+    const work = h("span", { class: "about-part" }, h("label", {}, "职业 ", f.job));
+    const toggle = () => { study.hidden = f.status.value === "working"; work.hidden = f.status.value === "student"; };
+    f.status.addEventListener("change", toggle); toggle();
+    const err = h("p", { class: "err" });
+    $("#pl-about").replaceChildren(
+      h("h3", { id: "pl-sec-about", text: "关于你" }),
+      h("p", { class: "note", text: "都可以不填。填了的她一开始就知道，不会再问；只在你自己的聊天里用，群里不会提。以后在聊天里告诉她的不一样时，以聊天里说的为准。" }),
+      h("div", { class: "filters about-form" }, h("label", {}, "名字 ", f.name), h("label", {}, "性别 ", f.gender), h("label", {}, "生日 ", f.birthday),
+        h("label", {}, "身份 ", f.status), study, work, h("label", { class: "grow" }, "爱好 ", f.hobbies), h("label", {}, "所在城市 ", f.city),
+        h("label", { class: "grow" }, "其他 ", f.note)),
+      err,
+      h("div", { class: "row" }, h("button", { type: "button", text: "保存", onclick: async () => {
+        err.textContent = "";
+        try { await api("PUT", "/api/persona/about", Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value]))); toast("已保存，下一条消息起生效"); loaders.persona(); }
+        catch (e) { err.textContent = e.message; }
+      } })));
   }
 
   // test mode: its own bar (it is not a persona -- it runs on top of the one in use and switches itself off)
@@ -324,6 +395,7 @@
   async function renderTemplates() {
     let d;
     try { d = await api("GET", "/api/persona/templates"); } catch (e) { $("#pl-templates").replaceChildren(h("p", { class: "err", text: e.message })); return; }
+    renderAbout(d.about);
     renderWho(d);
     renderTest(d);
     const ownUsers = (d.used_by || {}).custom || [];
@@ -345,7 +417,8 @@
       const isMain = d.current.template === t.key;
       const users = (d.used_by || {})[t.key] || [];
       return { t, isMain, users, title: t.title, summary: t.summary,
-        pills: [isMain ? pill("主人设", "ok") : users.length ? pill("正在使用", "ok") : null].filter(Boolean),
+        pills: [isMain ? pill("主人设", "ok") : users.length ? pill("正在使用", "ok") : null,
+          t.relation ? pill(t.relation) : null, t.retired ? pill("旧模板", "warn") : null].filter(Boolean),
         mainNote: isMain ? (d.current.switched_at ? `主人设 · ${when(d.current.switched_at)} 换上` : "主人设（默认）") : "",
         action: isMain ? null : { label: "设为主人设", run: switchTo(t) } };
     });
@@ -411,7 +484,7 @@
 
   loaders.life = () => loaders.persona();           // 2026-11-11 regroup: her life is a sub-tab of the same page
   loaders.persona = async () => {
-    jumpNav($("#pl-jump"), [["谁在和你聊", "pl-who"], ["人设库", "pl-sec-templates"], ["测试模式", "pl-test"],
+    jumpNav($("#pl-jump"), [["关于你", "pl-about"], ["谁在和你聊", "pl-who"], ["人设库", "pl-sec-templates"], ["测试模式", "pl-test"],
       ["她的样子", "pl-look-box"], ["人设详情", "pl-core-box"]]);
     renderTemplates();
     renderLook();

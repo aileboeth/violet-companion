@@ -307,7 +307,7 @@ class ConsistencyGuard:
             kin = re.sub(r"^我(们家|们|的|和|跟|家)?", "", match.group(0)) if match else ""
             if match and not (call and kin and kin in call and call in text):
                 found.append(Violation("forbidden_backstory", f"matches {pattern.pattern}"))
-        if not found:
+        if not found and not self.core.has_school:         # 2026-11-12: a persona that goes to school has classmates
             claim = owned_role_claim(text)                 # phase 9.4 real run: "我们英语老师要是也这样就好了"
             if claim:
                 found.append(Violation("forbidden_backstory", f"owns a school / work role: {claim}"))

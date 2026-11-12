@@ -25,8 +25,9 @@ Por enquanto, a interface do painel está em chinês.
 
 **Personas e relacionamentos**
 
-- Personas incluídas: Violet (padrão), companhia carinhosa, colega animada, calma e confiável, uma que sabe que é uma IA, Big Fat Fish, a persona original da Eve e uma em branco. Você também pode escrever a sua.
-- Tipos de relacionamento: próximos, amizade, namoro, filha, desenvolvedor.
+- Personas incluídas: Violet (padrão), quatro no estilo anime que trazem a própria relação com você (meia-irmã, amiga de infância, caloura do clube, colega silenciosamente obsessiva; a relação avança por etapas conforme vocês conversam), uma que sabe que é uma IA, Big Fat Fish, a persona original da Eve e uma em branco. Você também pode escrever a sua.
+- Tipos de relacionamento para as demais personas: próximos, amizade, namoro, filha, desenvolvedor.
+- Um formulário “Sobre você” (nome, gênero, aniversário, estudo ou trabalho, hobbies; tudo opcional): ela conhece você desde a primeira mensagem em vez de começar com “qual é o seu nome?”.
 - Cada canal de conversa pode usar uma persona diferente. Cada persona tem seu próprio histórico, memória, vida e humor, então trocar de uma para outra não perde nada e não mistura nada.
 - Ela tem um dia a dia virtual e humores próprios: os dias passam com calma, e podem passar vários dias sem nada acontecer; se você for grosso com ela, ela fica um pouco chateada. Ela nunca inventa experiências que não estejam no registro de vida dela.
 

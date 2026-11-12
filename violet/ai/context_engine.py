@@ -548,16 +548,27 @@ class ContextEngine:
         """2026-10-30: how she relates to the owner (persona_templates.RELATIONSHIPS), per channel."""
         try:
             from ai.channels.context import current
-            from ai.persona_templates import RELATIONSHIPS, relationship
-            rel = relationship(current().channel)
+            from ai.persona_templates import relationship_text
+            rel, text = relationship_text(current().channel, self.db)      # 2026-11-12: or the persona's own + its stage
         except Exception:                                   # noqa: BLE001
             logger.exception("relationship unavailable")
             return _Section("relationship_role", 1, "", [])
         if rel["kind"] == "close" and not rel["call"]:
             return _Section("relationship_role", 1, "", [])        # the default adds nothing (as before 2026-10-30)
-        call = f"你称呼对方“{rel['call']}”（偶尔叫，不要句句带）。" if rel["call"] else ""
-        return _Section("relationship_role", 1, f"【你们的关系：{rel['label']}】", [RELATIONSHIPS[rel['kind']][1] + call],
+        return _Section("relationship_role", 1, f"【你们的关系：{rel['label']}】", text.split("\n"),
                         trim_from_end=False)
+
+    def _about_owner_section(self) -> _Section:
+        """2026-11-12: what the owner filled in about themselves (ai/about_owner.py), on every owner turn."""
+        try:
+            from ai import about_owner
+            from ai.settings import now_local
+            lines = about_owner.lines(now_local().date())
+        except Exception:                                   # noqa: BLE001 -- never break a reply over this
+            logger.exception("about-owner form unavailable")
+            lines = []
+        from ai.about_owner import HEADER
+        return _Section("about_owner", 1, HEADER, lines, trim_from_end=False)
 
     def _ai_experience_section(self) -> _Section:
         """What really happened lately, from Violet's own records (the AI persona's "life")."""
@@ -915,6 +926,8 @@ class ContextEngine:
         self._turn_message = user_message or ""          # the user's own words (text also holds recalled memories)
         self._relationship = None
         self._is_ai = False                              # set by _persona_sections
+        if mode in ("chat", "proactive", "decision"):
+            sections.append(self._about_owner_section())
         profile_section, facts = self._profile_section(mode)
         sections.append(profile_section)
         situation_section, situations = self._situation_section()

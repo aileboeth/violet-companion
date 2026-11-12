@@ -89,6 +89,11 @@ class OnboardingPlanner:
 
     def next_key(self) -> Any | None:
         known = self.profile.known_keys() | self._implied_known()
+        try:                                            # 2026-11-12: what the owner filled in on the persona page
+            from ai import about_owner
+            known |= about_owner.known_keys()
+        except Exception:                               # noqa: BLE001
+            pass
         declined = self.profile.declined_keys()
         reask_after = timedelta(days=env_float("VIOLET_ONBOARDING_REASK_DAYS", 14))
         now = parse_time(self.db.now())

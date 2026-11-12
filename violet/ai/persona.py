@@ -136,9 +136,37 @@ class PersonaCore:
         interests = "、".join(i["label"] for i in d.get("long_term_interests", []))
         if interests:
             lines.append(f"- 长期兴趣：{interests}")
-        lines.append("- 规则：只能把『已发生的生活事件』当成自己的过去经历；没有记录的事不要说自己做过，可以说想法和打算；"
-                     "不要编造家人、工作、学校、恋爱等背景；对方的经历不是你的经历。")
-        return "\n".join(lines)
+        if not self.has_backstory:
+            lines.append("- 规则：只能把『已发生的生活事件』当成自己的过去经历；没有记录的事不要说自己做过，可以说想法和打算；"
+                         "不要编造家人、工作、学校、恋爱等背景；对方的经历不是你的经历。")
+            return "\n".join(lines)
+        # 2026-11-12 (user's anime-style templates: 继妹 / 青梅竹马 / 后辈 …): a persona with a past shared with the owner
+        for title, key in (("你和对方的过去（是往事，聊到相关的再提，不要一次全说）", "backstory"),
+                           ("口吻示例（只是语气参考，不要照抄，也不要反复用）", "examples"),
+                           ("不要这样", "avoid")):
+            items = d.get(key) or []
+            if items:
+                lines.append(f"- {title}：" + "；".join(items))
+        lines.append("- 规则：你的背景就是上面写的这些，加上『已发生的生活事件』；上面没写的大事（恋爱史、工作、大病、搬家）"
+                     "不要编，没有记录的事不要说自己做过。对方的真实情况以“对方的基本情况”为准：人设里的学校、年级这些设定"
+                     "和它对不上时，顺着对方的实际情况说。对方的经历不是你的经历。")
+        from ai.persona_templates import _fill
+        try:
+            from ai.channels.context import current
+            from ai.persona_templates import relationship
+            call = relationship(current().channel).get("call") or None
+        except Exception:                                   # noqa: BLE001
+            call = None
+        return _fill("\n".join(lines), d, call)
+
+    @property
+    def has_backstory(self) -> bool:
+        """A persona with its own relationship and past (family, school): those are hers, not invented."""
+        return isinstance(self.data.get("relation"), dict) and bool(self.data["relation"].get("text"))
+
+    @property
+    def has_school(self) -> bool:
+        return bool(self.data.get("has_school"))
 
     @staticmethod
     def _render_ai(d: dict[str, Any], ident: dict[str, Any]) -> str:

@@ -1,4 +1,7 @@
 {
+"- 你们现在的阶段（{0}/{1}，{2}）：{3}阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。": [
+"ai/persona_templates.py"
+],
 ".env 里的提示词（不是版本文件中的任何一个）": [
 "control.js"
 ],
@@ -22,6 +25,9 @@
 ],
 "2. 每个 Agent 用哪个模型": [
 "control.html"
+],
+"2005-03-05 或 03-05": [
+"control_persona.js"
 ],
 "@她": [
 "control.js"
@@ -592,7 +598,7 @@
 "。请给每个工具选“直接用 / 先问你 / 不给她用”": [
 "ai/mcp_admin.py"
 ],
-"【你们的关系：{0}】{1}{2}": [
+"【你们的关系：{0}】{1}": [
 "ai/persona_templates.py"
 ],
 "【新】": [
@@ -829,6 +835,9 @@
 "不在白名单（隐藏）": [
 "control.js"
 ],
+"不填就叫 {0}": [
+"control_persona.js"
+],
 "不导入的 {0} 项（看原因）": [
 "control_eve_import.js"
 ],
@@ -927,9 +936,15 @@
 "不许看这个网站": [
 "control.js"
 ],
+"不说": [
+"control_persona.js"
+],
 "不限": [
 "ai/control_config.py",
 "control_social.js"
+],
+"专业": [
+"control_persona.js"
 ],
 "两分钟内没有等到 Violet 重新启动，请到服务器上查看": [
 "control.js"
@@ -1077,6 +1092,7 @@
 ],
 "人设": [
 "ai/persona_templates.py",
+"ai/setup_status.py",
 "control.js"
 ],
 "人设与生活": [
@@ -1084,9 +1100,6 @@
 ],
 "人设与生活读取失败：": [
 "control_persona.js"
-],
-"人设与用户档案": [
-"ai/setup_status.py"
 ],
 "人设动态": [
 "control.html"
@@ -1103,6 +1116,9 @@
 ],
 "人设没有改好：": [
 "wx_ilink_py/control_routes.py"
+],
+"人设自带关系：{0}。": [
+"control_persona.js"
 ],
 "人设详情": [
 "control.html",
@@ -1178,6 +1194,9 @@
 "从哪里导入": [
 "control.html"
 ],
+"从小一起长大：太熟了，熟到你忘了她是女生": [
+"persona/templates/childhood.json"
+],
 "从现在用的人设开始改。": [
 "control_persona.js"
 ],
@@ -1243,6 +1262,9 @@
 ],
 "你们的关系": [
 "control_eve_import.js"
+],
+"你们的过去": [
+"control_persona.js"
 ],
 "你发的": [
 "ai/stickers.py"
@@ -1330,6 +1352,9 @@
 ],
 "例如 国庆": [
 "control_schedule.js"
+],
+"例如 大二": [
+"control_persona.js"
 ],
 "例如国庆调休周六上周三的课，就填被调走的那个周三": [
 "control_schedule.js"
@@ -1618,6 +1643,10 @@
 "control.js",
 "control_eve_import.js"
 ],
+"关于你": [
+"ai/setup_status.py",
+"control_persona.js"
+],
 "关于你的档案（喜好、称呼、学校……）": [
 "control.html"
 ],
@@ -1625,6 +1654,12 @@
 "ai/control_config.py"
 ],
 "关系": [
+"control_persona.js"
+],
+"关系的阶段（随聊天慢慢推进）": [
+"control_persona.js"
+],
+"关系阶段": [
 "control_persona.js"
 ],
 "关系阶段描述": [
@@ -1674,6 +1709,7 @@
 "其他": [
 "ai/control_config.py",
 "ai/schedule/importer.py",
+"control_persona.js",
 "control_schedule.js"
 ],
 "其他 MCP 服务器": [
@@ -1739,6 +1775,9 @@
 ],
 "冷静可靠": [
 "persona/templates/calm.json"
+],
+"几个词就行，例如 游戏、摄影": [
+"control_persona.js"
 ],
 "凭据 {0}": [
 "control.js"
@@ -2281,6 +2320,12 @@
 "同意过": [
 "ai/permissions.py"
 ],
+"同班同学": [
+"persona/templates/quiet.json"
+],
+"同社团低一级的后辈：想站在你旁边，不是一直站在你后面": [
+"persona/templates/junior.json"
+],
 "名字": [
 "control.html",
 "control_persona.js"
@@ -2327,6 +2372,9 @@
 ],
 "后台页面显示用的语言，只影响这个浏览器，选了马上生效；她聊天用什么语言不受这里影响。": [
 "control.html"
+],
+"后辈": [
+"persona/templates/junior.json"
 ],
 "否": [
 "control.js"
@@ -2445,6 +2493,9 @@
 "回滚需要确认（confirm: true）": [
 "wx_ilink_py/control_routes.py"
 ],
+"固定在 {0}. {1}": [
+"control_persona.js"
+],
 "国内能访问": [
 "control.js"
 ],
@@ -2498,6 +2549,9 @@
 ],
 "在 Telegram 里打开 @BotFather": [
 "control_channels.js"
+],
+"在“人设与生活”页选她是谁；不选就是默认的 Violet": [
+"ai/setup_status.py"
 ],
 "在“她能做的事”页处理：": [
 "ai/diagnostics.py"
@@ -2574,6 +2628,9 @@
 "基础工具": [
 "tools/violet_voice.py"
 ],
+"填上名字、性别、身份和爱好，她一开始就认识你，不用从“你叫什么”问起": [
+"ai/setup_status.py"
+],
 "填了就自动算出“第一周的星期一”；不知道开学日期时，下面两个日期也可以留空（按 20 周算）": [
 "control_schedule.js"
 ],
@@ -2615,6 +2672,9 @@
 ],
 "复核用的模型": [
 "ai/control_config.py"
+],
+"夏栀（学妹）": [
+"persona/templates/junior.json"
 ],
 "外部网络": [
 "control_diag.js"
@@ -2821,6 +2881,9 @@
 "学期时区": [
 "control_schedule.js"
 ],
+"学校": [
+"control_persona.js"
+],
 "它正在用来搜索，卸载后联网搜索会关闭（可以改用必应直连）。": [
 "control.js"
 ],
@@ -2860,6 +2923,9 @@
 "安装语音": [
 "control_voice.js"
 ],
+"安静、黏人、记得你所有的事：很怕被你丢下": [
+"persona/templates/quiet.json"
+],
 "安静体贴、很会倾听，像一个温柔的姐姐": [
 "persona/templates/gentle.json"
 ],
@@ -2896,6 +2962,7 @@
 "control_schedule.js"
 ],
 "对方": [
+"ai/persona_templates.py",
 "control.html",
 "control.js"
 ],
@@ -3099,9 +3166,6 @@
 "已不在这个群": [
 "control_social.js"
 ],
-"已使用默认人设；可以在“人设与生活”页查看，用户档案会在聊天中逐步建立": [
-"ai/setup_status.py"
-],
 "已保存": [
 "control.js",
 "control_channels.js",
@@ -3207,6 +3271,9 @@
 ],
 "已回滚（第": [
 "control.js"
+],
+"已填 {0} 项": [
+"ai/setup_status.py"
 ],
 "已填写，还没有测试过对话（选好模型后点“保存模型并测试对话”）": [
 "ai/setup_status.py"
@@ -3461,6 +3528,9 @@
 "平常回复也看手机": [
 "ai/control_config.py"
 ],
+"年级": [
+"control_persona.js"
+],
 "座位": [
 "control_schedule.js"
 ],
@@ -3696,6 +3766,9 @@
 "必需的设置都完成了，Violet 可以正常聊天。下面的可选项可以随时调整，点一项直接过去。": [
 "control_setup.js"
 ],
+"性别": [
+"control_persona.js"
+],
 "性格": [
 "control_persona.js"
 ],
@@ -3755,6 +3828,9 @@
 ],
 "或：新开始节次": [
 "control_schedule.js"
+],
+"所在城市": [
+"control_persona.js"
 ],
 "所有学期都会删除，修改历史里的旧副本一并清除，不能恢复。": [
 "control_schedule.js"
@@ -3890,6 +3966,9 @@
 ],
 "按 {0} 的课表": [
 "control_schedule.js"
+],
+"按主设定（{0}）": [
+"control_persona.js"
 ],
 "按关键词带出旧记忆": [
 "ai/control_config.py"
@@ -4318,6 +4397,9 @@
 "日记": [
 "ai/persona_templates.py"
 ],
+"旧模板": [
+"control_persona.js"
+],
 "旧的签名密钥会立即失效，需要把新密钥填到 OneBot 实现里。继续？": [
 "control_channels.js"
 ],
@@ -4560,6 +4642,9 @@
 ],
 "服务返回的模型列表里没有“{0}”": [
 "control_model.js"
+],
+"朝雾唯（病娇）": [
+"persona/templates/quiet.json"
 ],
 "期中": [
 "ai/schedule/importer.py",
@@ -5004,6 +5089,12 @@
 "比如：微信上是“Violet + 恋人”，QQ 上是“AI + 开发者”。人设不同就是不同的人：聊天记录、记忆、提醒、生活和心情各是各的（聊天记录、记忆页上方和本页下面可以选看谁的）；课表共用。第一次给一个渠道选自己的人设时，这个渠道以前的聊天会跟着过去。QQ 群里也按 QQ 这一行的设定。导入 Eve 时选的人设也显示在这里。": [
 "control_persona.js"
 ],
+"沈念初（妹妹）": [
+"persona/templates/stepsister.json"
+],
+"沈知夏（青梅）": [
+"persona/templates/childhood.json"
+],
 "沉稳理性、话不多但很靠谱": [
 "persona/templates/calm.json"
 ],
@@ -5119,6 +5210,9 @@
 "没有考试": [
 "control_schedule.js"
 ],
+"没有血缘的继妹：把你的好当了真，不想只当妹妹": [
+"persona/templates/stepsister.json"
+],
 "没有要保存的修改": [
 "wx_ilink_py/channel_routes.py",
 "wx_ilink_py/control_routes.py",
@@ -5195,6 +5289,9 @@
 ],
 "没有这个选项": [
 "ai/control_config.py"
+],
+"没有这个阶段": [
+"ai/persona_templates.py"
 ],
 "没有这种关系": [
 "ai/persona_templates.py"
@@ -5447,6 +5544,9 @@
 "control.html",
 "control_schedule.js"
 ],
+"爱好": [
+"control_persona.js"
+],
 "爸爸": [
 "ai/persona_templates.py"
 ],
@@ -5530,6 +5630,9 @@
 "生效日期": [
 "ai/schedule/importer.py",
 "control_schedule.js"
+],
+"生日": [
+"control_persona.js"
 ],
 "生活事件": [
 "control.html",
@@ -5861,6 +5964,9 @@
 "空 = 和主设定一样（{0}）": [
 "control_persona.js"
 ],
+"空 = 按人设来": [
+"control_persona.js"
+],
 "空白人设": [
 "control_persona.js",
 "persona/templates/blank.json"
@@ -6034,6 +6140,9 @@
 ],
 "给每个工具选“直接用 / 先问你 / 不给她用”": [
 "ai/diagnostics.py"
+],
+"继妹": [
+"persona/templates/stepsister.json"
 ],
 "维护": [
 "control.html"
@@ -6209,6 +6318,9 @@
 "聊天记录读取失败：": [
 "control.js"
 ],
+"职业": [
+"control_persona.js"
+],
 "联系人（主人 {0} · 待批准 {1} · 已屏蔽 {2}）": [
 "control_channels.js"
 ],
@@ -6324,6 +6436,9 @@
 ],
 "自己逛到的": [
 "control.js"
+],
+"自带关系": [
+"control_persona.js"
 ],
 "自建 SearXNG": [
 "control.js"
@@ -6869,6 +6984,9 @@
 "跳过的周": [
 "control_schedule.js"
 ],
+"身份": [
+"control_persona.js"
+],
 "身形和特征": [
 "control_persona.js"
 ],
@@ -6932,6 +7050,9 @@
 ],
 "还在用代码里的默认模型，建议换成服务上真实存在的模型": [
 "control_model.js"
+],
+"还想让她一开始就知道的事": [
+"control_persona.js"
 ],
 "还是照这样保存？": [
 "control_voice.js"
@@ -7086,6 +7207,9 @@
 "ai/setup_status.py"
 ],
 "这个人设没有写细节。": [
+"control_persona.js"
+],
+"这个人设自带关系（{0}），换上后“关系”不用再选；关系会随着聊天分阶段慢慢推进。": [
 "control_persona.js"
 ],
 "这个修复已经不适用（服务器的工具或模板变了），请刷新诊断": [
@@ -7332,6 +7456,9 @@
 "遗忘需要确认（confirm: true）": [
 "wx_ilink_py/control_routes.py"
 ],
+"都可以不填。填了的她一开始就知道，不会再问；只在你自己的聊天里用，群里不会提。以后在聊天里告诉她的不一样时，以聊天里说的为准。": [
+"control_persona.js"
+],
 "都归人设“{0}”。": [
 "control_eve_import.js"
 ],
@@ -7419,6 +7546,12 @@
 "control_mcp.js",
 "control_schedule.js"
 ],
+"阶段 {0}/{1}“{2}”": [
+"control_persona.js"
+],
+"阶段：自动推进": [
+"control_persona.js"
+],
 "随便写一句（120 字以内），点试听，她就用上面录音的声音把这句说出来。和录音原文无关，不用一样。": [
 "control_voice.js"
 ],
@@ -7456,6 +7589,9 @@
 ],
 "需要确认（confirm: true）：旧的签名密钥会立即失效": [
 "wx_ilink_py/channel_routes.py"
+],
+"青梅竹马": [
+"persona/templates/childhood.json"
 ],
 "静默时段开始": [
 "ai/control_config.py"
@@ -7505,6 +7641,9 @@
 ],
 "（上面手动优先的记录保持不变）。": [
 "control_schedule.js"
+],
+"（你固定的）": [
+"control_persona.js"
 ],
 "（几秒后自动刷新）": [
 "ai/setup_status.py"
@@ -7560,6 +7699,12 @@
 ],
 "（缓慢变化，需要你批准）": [
 "control.html"
+],
+"（自动，聊过 {0} 天）": [
+"control_persona.js"
+],
+"（自动，聊过 {0} 天，到第 {1} 天进入下一阶段）": [
+"control_persona.js"
 ],
 "（节次时间没设置）": [
 "control_schedule.js"

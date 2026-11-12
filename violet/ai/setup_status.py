@@ -205,8 +205,17 @@ def checklist(*, admin_store=None, agents=None, runtime=None, data_dir=None, vio
             detail = ("扫码登录：" + "、".join(needs)) if needs else "还没有可用的聊天渠道（微信、QQ、Telegram 连上任意一个就行）"
             items.append(_item("channels", "聊天渠道", "todo", detail, "channels", True, "ch-list"))
     # 5. persona and profile (the shipped persona works as is)
-    items.append(_item("persona", "人设与用户档案", "optional",
-                       "已使用默认人设；可以在“人设与生活”页查看，用户档案会在聊天中逐步建立", "persona", False))
+    # 2026-11-12: the owner's own form first -- with it she does not start by asking who you are
+    try:
+        from ai import about_owner
+        filled = about_owner.filled()
+    except Exception:                                   # noqa: BLE001
+        filled = 0
+    items.append(_item("about", "关于你", "ok" if filled else "optional",
+                       f"已填 {filled} 项" if filled else "填上名字、性别、身份和爱好，她一开始就认识你，不用从“你叫什么”问起",
+                       "persona", False, "pl-about"))
+    items.append(_item("persona", "人设", "optional", "在“人设与生活”页选她是谁；不选就是默认的 Violet", "persona", False,
+                       "pl-sec-templates"))
     # 6. tools
     try:
         from ai.chat import get_mcp_servers

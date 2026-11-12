@@ -263,6 +263,10 @@ code{background:var(--panel-hover);border:1px solid var(--line);border-radius:7p
 .joined>.set-slot>.set-group:not(:last-child){border-bottom:0;border-bottom-left-radius:0;border-bottom-right-radius:0}
 .joined>.set-slot>.set-group>h3{font-size:13px;color:var(--muted);margin:12px 0 2px}
 .joined>.set-slot>.set-group>h3::before{display:none}
+/* 2026-11-12: the owner's form on the persona page; the stage / relationship cell of the who-table */
+.about-form{align-items:flex-end}.about-part{display:contents}.about-part[hidden]{display:none!important}
+.who-rel{display:flex;flex-direction:column;gap:4px;min-width:0}.who-rel select{width:100%}
+.pv-relation{margin:8px 0;line-height:1.6}
 .flow-logs{margin-top:12px}.flow-logs>summary{cursor:pointer;font-weight:600}
 .turn-link{padding:1px 8px;font-size:12px;margin:0 2px}
 .stack{display:flex;flex-direction:column;gap:12px;max-width:460px}

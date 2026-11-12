@@ -42,14 +42,20 @@ def active_path() -> Path | None:
     return path if path.is_file() else None
 
 
-def templates() -> list[dict[str, Any]]:
+def templates(include_retired: bool = False) -> list[dict[str, Any]]:
+    """2026-11-12 (user: 温柔陪伴、元气同学、冷静可靠这些模板都去掉): a template marked "_retired" is no longer offered,
+    but its file stays -- a channel or the main persona that uses it goes on as before, and it is listed while in use."""
+    used = {current()["template"]} | {str((v or {}).get("template") or "") for v in channel_map().values()}
     out = []
     for path in sorted(TEMPLATE_DIR.glob("*.json")):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        out.append({"key": path.stem, **preview(data), "order": data.get("_order", 50)})
+        if data.get("_retired") and not include_retired and path.stem not in used:
+            continue
+        out.append({"key": path.stem, **preview(data), "order": data.get("_order", 50),
+                    "retired": bool(data.get("_retired"))})
     return sorted(out, key=lambda t: (t["order"], t["key"]))
 
 
@@ -65,7 +71,30 @@ def preview(data: dict[str, Any]) -> dict[str, Any]:
             "self_description": ident.get("self_description") or "",
             "personality": _labels(data.get("personality")), "habits": _labels(data.get("communication_habits")),
             "interests": _labels(data.get("long_term_interests")), "values": _labels(data.get("values")),
-            "flaws": _labels(data.get("flaws"))}
+            "flaws": _labels(data.get("flaws")),
+            # 2026-11-12: a persona that brings its own relationship and its stages (placeholders as written)
+            "relation": str((data.get("relation") or {}).get("label") or ""),
+            "relation_text": _fill(str((data.get("relation") or {}).get("text") or ""), data),
+            "backstory": [_fill(x, data) for x in _labels(data.get("backstory"))],
+            "stages": [str(s.get("label") or "") for s in data.get("stages") or [] if isinstance(s, dict)]}
+
+
+def owner_call(data: dict[str, Any]) -> str:
+    """How a persona with its own relationship addresses the owner by default (by the owner's gender; "" = by name)."""
+    calls = (data.get("relation") or {}).get("call") or {}
+    if not isinstance(calls, dict) or not calls:
+        return ""
+    try:
+        from ai import about_owner
+        gender = about_owner.load()["gender"]
+    except Exception:                                   # noqa: BLE001
+        gender = ""
+    return str(calls.get(gender) or calls.get("male") or next(iter(calls.values()), ""))
+
+
+def _fill(text: str, data: dict[str, Any], call: str | None = None) -> str:
+    """{call} in a template's texts -> how she addresses the owner."""
+    return text.replace("{call}", call or owner_call(data) or "对方")
 
 
 def custom_saved() -> dict[str, Any] | None:
@@ -327,16 +356,45 @@ CHANNEL_FILE = "channel-personas.json"
 CUSTOM_COPY = "persona_custom.json"            # the admin's own persona, kept for channels that use it
 
 
+PERSONA_KIND = "persona"          # 2026-11-12: the relationship comes with the persona (its "relation")
+
+
+def persona_data(channel: str | None = None) -> dict[str, Any]:
+    """The persona file of this channel as a dict ({} when unreadable)."""
+    path = core_path(channel) or TEMPLATE_DIR / "violet.json"
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def own_relation(data: dict[str, Any]) -> dict[str, Any] | None:
+    """A persona's own relationship (继妹, 青梅竹马 …): {"label", "text", "call"} or None."""
+    rel = data.get("relation")
+    return rel if isinstance(rel, dict) and rel.get("label") and rel.get("text") else None
+
+
 def relationship(channel: str | None = None) -> dict[str, Any]:
     """{"kind", "label", "call"} for this channel: its own relationship and / or its own call (2026-11-01: a call
-    alone is kept too -- it was dropped when the relationship stayed "和主设定一样"), else the main one's."""
+    alone is kept too -- it was dropped when the relationship stayed "和主设定一样"), else the main one's.
+    2026-11-12 (user: 像这种自带关系的就不要再供关系的选择了): a persona with its own relationship has kind "persona";
+    only how she addresses the owner can still be set."""
     try:
         main = json.loads((control_dir() / "persona.json").read_text(encoding="utf-8")).get("relationship")
     except (OSError, ValueError):
         main = None
-    main = main if isinstance(main, dict) and main.get("kind") in RELATIONSHIPS else {"kind": "close"}
+    main = main if isinstance(main, dict) else {}
     own = (channel_map().get(channel) or {}).get("relationship") if channel else None
     own = own if isinstance(own, dict) else {}
+    data = persona_data(channel)
+    built_in = own_relation(data)
+    if built_in:
+        own_template = bool(channel and (channel_map().get(channel) or {}).get("template"))
+        # the main call belongs to the main persona: a channel with another persona does not inherit it
+        call = own.get("call") or ("" if own_template else main.get("call")) or owner_call(data)
+        return {"kind": PERSONA_KIND, "label": str(built_in["label"])[:12], "call": str(call)[:12]}
+    main = main if main.get("kind") in RELATIONSHIPS else {**main, "kind": "close"}
     kind = own.get("kind") if own.get("kind") in RELATIONSHIPS else main["kind"]
     if own.get("call"):
         call = own["call"]
@@ -348,30 +406,107 @@ def relationship(channel: str | None = None) -> dict[str, Any]:
 
 
 def _clean_relationship(kind: str | None, call: str | None) -> dict[str, Any]:
-    """kind None: only a call (a channel keeping the main relationship)."""
+    """kind None (or "persona"): only a call (a channel keeping the main relationship, a persona with its own)."""
+    if kind == PERSONA_KIND:
+        kind = None
     if kind is not None and kind not in RELATIONSHIPS:
         raise ValueError("没有这种关系")
     call = " ".join(str(call or "").split())[:12]
     return {**({"kind": kind} if kind else {}), **({"call": call} if call else {})}
 
 
-def set_relationship(kind: str, call: str | None = None) -> dict[str, Any]:
+def set_relationship(kind: str | None, call: str | None = None) -> dict[str, Any]:
     """The main relationship (every channel without its own)."""
     path = control_dir() / "persona.json"
     try:
         info = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         info = {}
-    info["relationship"] = _clean_relationship(kind, call)
+    rel = _clean_relationship(kind, call)
+    data = persona_data()
+    if own_relation(data) and rel.get("call") == owner_call(data):
+        rel.pop("call")                                  # the persona's own default: not fixed, it follows the owner's form
+    info["relationship"] = rel
     _write(path, info)
     return relationship()
 
 
-def relationship_section(channel: str | None = None) -> str:
+# ---- stages of a persona's own relationship (2026-11-12, user: 关系阶段自动推进，可以手动调)
+def _chat_days(db) -> int:
+    """On how many days the owner talked to this persona (since 翻篇)."""
+    try:
+        from ai import context_cut
+        row = db.fetch_one("SELECT COUNT(DISTINCT substr(created_at, 1, 10)) AS days FROM messages "
+                           "WHERE role = 'user' AND created_at >= ?", (context_cut.owner_floor(),))
+        return int(row["days"] or 0) if row else 0
+    except Exception:                                   # noqa: BLE001
+        return 0
+
+
+def _stage_choice(channel: str | None) -> int | None:
+    """The stage the admin fixed (0-based), None = automatic."""
+    entry = channel_map().get(channel) if channel else None
+    value = entry.get("stage") if isinstance(entry, dict) and entry.get("template") else _info().get("stage")
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def stage(channel: str | None = None, db=None) -> dict[str, Any] | None:
+    """Where the persona's relationship stands: {"index", "label", "text", "auto", "days", "labels"}; None for a
+    persona without stages. Automatic: the last stage whose "days" the chat has reached."""
+    data = persona_data(channel)
+    stages = [s for s in data.get("stages") or [] if isinstance(s, dict) and s.get("label")]
+    if not own_relation(data) or not stages:
+        return None
+    days = _chat_days(db) if db is not None else 0
+    chosen = _stage_choice(channel)
+    if chosen is not None:
+        index = min(chosen, len(stages) - 1)
+    else:
+        index = max([i for i, s in enumerate(stages) if days >= int(s.get("days") or 0)] or [0])
+    return {"index": index, "label": str(stages[index]["label"]), "text": str(stages[index].get("text") or ""),
+            "auto": chosen is None, "days": days, "labels": [str(s["label"]) for s in stages],
+            "next_days": next((int(s.get("days") or 0) for s in stages[index + 1:]), None)}
+
+
+def set_stage(channel: str | None, value: int | None) -> None:
+    """Fix the stage (0-based) or None = automatic; for the main persona (channel None / without its own template)
+    or a channel with its own."""
+    if value is not None and (isinstance(value, bool) or not isinstance(value, int) or not 0 <= value < 20):
+        raise ValueError("没有这个阶段")
+    data = channel_map()
+    entry = data.get(channel) if channel else None
+    if isinstance(entry, dict) and entry.get("template"):
+        entry.pop("stage", None)
+        if value is not None:
+            entry["stage"] = value
+        _write(control_dir() / CHANNEL_FILE, data)
+        return
+    info = _info()
+    info.pop("stage", None)
+    if value is not None:
+        info["stage"] = value
+    _write(control_dir() / "persona.json", info)
+
+
+def relationship_text(channel: str | None = None, db=None) -> tuple[dict[str, Any], str]:
+    """(relationship, the text for the prompt): the chosen relationship, or the persona's own with its stage."""
     rel = relationship(channel)
-    text = RELATIONSHIPS[rel["kind"]][1]
     call = f"你称呼对方“{rel['call']}”（偶尔叫，不要句句带）。" if rel["call"] else ""
-    return f"【你们的关系：{rel['label']}】{text}{call}"
+    if rel["kind"] != PERSONA_KIND:
+        return rel, RELATIONSHIPS[rel["kind"]][1] + call
+    data = persona_data(channel)
+    text = _fill(str(own_relation(data)["text"]), data, rel["call"]) + call
+    now = stage(channel, db)
+    if now:
+        text += (f"\n- 你们现在的阶段（{now['index'] + 1}/{len(now['labels'])}，{now['label']}）："
+                 f"{_fill(now['text'], data, rel['call'])}"
+                 "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
+    return rel, text
+
+
+def relationship_section(channel: str | None = None, db=None) -> str:
+    rel, text = relationship_text(channel, db)
+    return f"【你们的关系：{rel['label']}】{text}"
 
 
 def channel_map() -> dict[str, Any]:
@@ -417,7 +552,7 @@ def core_path(channel: str | None) -> Path | None:
     return active_path()
 
 
-def in_effect(channel: str | None = None) -> dict[str, Any]:
+def in_effect(channel: str | None = None, db=None) -> dict[str, Any]:
     """What a channel really uses now (2026-11-01, user: 切换过人设之后也不显示，我也不知道还有没有生效): the
     persona's name, the relationship and the call, after the channel's own choices and the main ones are merged."""
     path = core_path(channel) or TEMPLATE_DIR / "violet.json"
@@ -429,6 +564,9 @@ def in_effect(channel: str | None = None) -> dict[str, Any]:
     title = data.get("_title") or ident.get("name") or "人设"
     name = ident.get("name") or ""
     rel = relationship(channel)
+    now = stage(channel, db) if db is not None else None     # db: the database of this persona's own records
+    if now:
+        rel = {**rel, "stage": now}
     return {"persona": title + (f"（{name}）" if name and name not in title else ""), **rel}
 
 
@@ -442,13 +580,18 @@ def switch(db, key: str, memory: str, name: str | None = None) -> dict[str, Any]
     data = json.loads(path.read_text(encoding="utf-8"))
     if name:
         name = name.strip()[:20]
+        default = str((data.get("identity") or {}).get("name") or "")
+        if default and default != name:                 # her name is written inside her texts too
+            data = json.loads(json.dumps(data, ensure_ascii=False).replace(default, name))
         data.setdefault("identity", {})["name"] = name
     rec = _records_for_switch(db, key, memory)
     if key == "violet" and not name:
         (control_dir() / "persona_core.json").unlink(missing_ok=True)      # back to the shipped (updated) Violet
     else:
         _write(control_dir() / "persona_core.json", data)
+    # 2026-11-12: a persona with its own relationship does not keep the one chosen before (nor its call)
+    kept = {} if own_relation(data) else _kept_relationship()
     info = {"template": key, "switched_at": db.now(), "memory": memory, "archive": rec["archive"],
-            "store": rec["store"], **_kept_relationship()}
+            "store": rec["store"], **kept}
     _write(control_dir() / "persona.json", info)
     return {**info, "removed": rec["removed"], "records": rec["records"], "took_over": rec["took_over"]}

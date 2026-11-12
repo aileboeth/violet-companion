@@ -25,8 +25,9 @@ The control panel's interface is currently in Chinese.
 
 **Personas and relationships**
 
-- Built-in personas: Violet (default), gentle companion, cheerful classmate, calm and reliable, one who knows she is an AI, Big Fat Fish, the original Eve persona, and a blank one. You can also write your own.
-- Relationship options: close, friend, partner, daughter, developer.
+- Built-in personas: Violet (default), four anime-style ones that bring their own relationship with you (stepsister, childhood friend, club junior, quietly obsessive classmate; the relationship moves on in stages as you chat), one who knows she is an AI, Big Fat Fish, the original Eve persona, and a blank one. You can also write your own.
+- Relationship options for the other personas: close, friend, partner, daughter, developer.
+- An "About you" form (name, gender, birthday, school or job, hobbies, all optional): she knows you from the first message instead of opening with "what's your name".
 - Each chat channel can use a different persona. Every persona has its own chat history, memory, life and mood, so switching back and forth loses nothing and nothing gets mixed up.
 - She has a virtual daily life and moods of her own: her days move on quietly, and several days may pass with nothing happening; if you are harsh with her she gets a little upset. She never makes up experiences that are not in her life record.
 

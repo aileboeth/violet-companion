@@ -49,7 +49,7 @@ PY_PARTS = {
     "ai/tool_manager.py": {"names": {"problem"}},                         # the web tools' status on the tools page
 }
 # shown on the persona page: each template's title and summary
-JSON_FIELDS = {"persona/templates/*.json": ("_title", "_summary")}
+JSON_FIELDS = {"persona/templates/*.json": ("_title", "_summary", "relation.label")}   # 2026-11-12: a persona's own relationship
 PY_SKIP_CALLS = {"debug", "info", "warning", "error", "exception", "critical", "log"}
 # not words on the page: template / HTML source, regular expressions, shell commands
 NOT_TEXT = re.compile(r"\{\{|\{%|</?[a-z][a-z0-9]*[\s>/]|^\^|\\[sdwbS]|2>/dev/null|\$\(|; then |<!doctype", re.I)
@@ -341,8 +341,11 @@ def collect() -> dict[str, list[str]]:
         for path in sorted(APP.glob(pattern)):
             data = json.loads(path.read_text(encoding="utf-8"))
             for f in fields:
-                if isinstance(data.get(f), str):
-                    add(data[f], path.relative_to(APP).as_posix())
+                value = data
+                for part in f.split("."):
+                    value = value.get(part) if isinstance(value, dict) else None
+                if isinstance(value, str):
+                    add(value, path.relative_to(APP).as_posix())
     # the login page (server-rendered): its t("...") calls
     login = (WEB / "auth.py").read_text(encoding="utf-8")
     for m in re.finditer(r"""\bt\((["'])(.+?)\1\)""", login):

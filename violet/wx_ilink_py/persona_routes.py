@@ -60,7 +60,8 @@ def register_persona_routes(app: Flask, violetdb) -> None:
         return ok({"templates": pt.templates(), "current": pt.current(), "custom": pt.custom_preview(),
                    "test_mode": test_mode.status(),
                    # 2026-10-30: the second layer, and per channel
-                   "relationship": pt.relationship(), "in_effect": pt.in_effect(),
+                   "relationship": pt.relationship(), "in_effect": _in_effect(pt, None),
+                   "about": _about(),                # 2026-11-12: the owner's own form
                    "relationships": [{"key": k, "label": v[0], "text": v[1]} for k, v in pt.RELATIONSHIPS.items()],
                    "channels": (rows := _channel_rows(pt)), "used_by": _used_by(pt, rows),
                    "records": _records(pt)})
@@ -96,8 +97,42 @@ def register_persona_routes(app: Flask, violetdb) -> None:
             if cid not in names:
                 names[cid] = f"{KINDS.get(cid, cid)}（还没添加）"
         return [{"id": cid, "label": label, "template": (own.get(cid) or {}).get("template"),
-                 "relationship": (own.get(cid) or {}).get("relationship"), "in_effect": pt.in_effect(cid)}
+                 "relationship": (own.get(cid) or {}).get("relationship"), "in_effect": _in_effect(pt, cid)}
                 for cid, label in names.items()]
+
+    def _in_effect(pt, channel) -> dict:
+        """What a channel uses now; a persona with stages: where it stands, counted in that persona's own records."""
+        from ai import memory_scope
+        with memory_scope.use(memory_scope.for_channel(channel) if channel else memory_scope.MAIN):
+            return pt.in_effect(channel, violetdb)
+
+    def _about() -> dict:
+        from ai import about_owner
+        return {"fields": about_owner.load(), "genders": about_owner.GENDERS, "statuses": about_owner.STATUSES}
+
+    @app.get("/api/persona/about")
+    def persona_about():
+        return ok(_about())
+
+    @app.put("/api/persona/about")
+    def persona_about_save():
+        from ai import about_owner
+        try:
+            about_owner.save(body())
+        except ValueError as exc:
+            return bad(str(exc))
+        return ok(_about())
+
+    @app.post("/api/persona/stage")
+    def persona_stage():
+        """{channel: id | null (the main persona), stage: 0-based number | null (automatic)}"""
+        from ai import persona_templates as pt
+        data = body()
+        try:
+            pt.set_stage(str(data.get("channel") or "") or None, data.get("stage"))
+        except ValueError as exc:
+            return bad(str(exc))
+        return ok({"in_effect": _in_effect(pt, str(data.get("channel") or "") or None)})
 
     def _used_by(pt, rows: list[dict]) -> dict[str, list[str]]:
         """template key -> the channels talking as that persona (their own choice, else the main persona)."""
@@ -112,6 +147,7 @@ def register_persona_routes(app: Flask, violetdb) -> None:
         from ai import persona_templates as pt
         data = body()
         try:
+            # 2026-11-12: "persona" = the persona's own relationship, only the call is kept
             return ok(pt.set_relationship(str(data.get("kind") or ""), data.get("call")))
         except ValueError as exc:
             return bad(str(exc))

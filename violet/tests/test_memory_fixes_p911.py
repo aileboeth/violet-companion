@@ -219,20 +219,21 @@ def test_a_text_that_contradicts_the_stored_time_is_refused(violetdb):
 
 
 def test_a_day_without_a_clock_stays_a_day_and_passes_at_its_end(violetdb, monkeypatch):
+    # 2026-11-12: the day was 2026-11-11, written as a future date -- the test failed once that day had passed
     from ai.agents import MemoryAgent
     from ai.chat import format_recalled_memories
     from ai.memory_model import event_deadline
     with turn("下周三有个答辩", "r1", 1):
-        saved = save(MemoryAgent(), summary="用户2026-11-11有一场答辩", kind="event", progress="planned",
-                     event_date="2026-11-11")
+        saved = save(MemoryAgent(), summary="用户2031-11-12有一场答辩", kind="event", progress="planned",
+                     event_date="2031-11-12")
     memory = violetdb.get_event_memory(saved["memory_id"])
-    assert memory["event_time"] == "2026-11-11"
-    assert "时间 2026-11-11（具体时刻不知道）" in format_recalled_memories([memory])
-    assert event_deadline("2026-11-11").isoformat() == "2026-11-11T23:59:59+08:00"
-    monkeypatch.setattr(violetdb, "now", lambda: "2026-11-11T23:30:00+08:00")
+    assert memory["event_time"] == "2031-11-12"
+    assert "时间 2031-11-12（具体时刻不知道）" in format_recalled_memories([memory])
+    assert event_deadline("2031-11-12").isoformat() == "2031-11-12T23:59:59+08:00"
+    monkeypatch.setattr(violetdb, "now", lambda: "2031-11-12T23:30:00+08:00")
     violetdb.refresh_event_states()
     assert violetdb.get_event_memory(saved["memory_id"])["progress"] == "planned"
-    monkeypatch.setattr(violetdb, "now", lambda: "2026-11-12T00:01:00+08:00")
+    monkeypatch.setattr(violetdb, "now", lambda: "2031-11-13T00:01:00+08:00")
     violetdb.refresh_event_states()
     assert violetdb.get_event_memory(saved["memory_id"])["progress"] == "unknown"   # passed: unknown, never done
 

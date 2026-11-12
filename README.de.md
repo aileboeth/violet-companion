@@ -25,8 +25,9 @@ Die Oberfläche des Panels ist derzeit auf Chinesisch.
 
 **Personas und Beziehungen**
 
-- Mitgelieferte Personas: Violet (Standard), sanfte Begleiterin, fröhliche Mitschülerin, ruhig und verlässlich, eine, die weiß, dass sie eine KI ist, Big Fat Fish, die ursprüngliche Eve-Persona und eine leere. Du kannst auch deine eigene schreiben.
-- Beziehungen: nahestehend, Freundschaft, Partnerschaft, Tochter, Entwickler.
+- Mitgelieferte Personas: Violet (Standard), vier im Anime-Stil mit eigener Beziehung zu dir (Stiefschwester, Kindheitsfreundin, Jüngere aus dem Club, still besessene Mitstudentin; die Beziehung schreitet beim Chatten phasenweise voran), eine, die weiß, dass sie eine KI ist, Big Fat Fish, die ursprüngliche Eve-Persona und eine leere. Du kannst auch deine eigene schreiben.
+- Beziehungen für die übrigen Personas: nahestehend, Freundschaft, Partnerschaft, Tochter, Entwickler.
+- Ein Formular „Über dich“ (Name, Geschlecht, Geburtstag, Studium oder Beruf, Hobbys; alles optional): Sie kennt dich ab der ersten Nachricht, statt mit „Wie heißt du?“ anzufangen.
 - Jeder Chat-Kanal kann eine andere Persona verwenden. Jede Persona hat ihren eigenen Chatverlauf, ihr Gedächtnis, ihr Leben und ihre Stimmung, sodass beim Wechseln nichts verloren geht und nichts durcheinandergerät.
 - Sie hat einen eigenen virtuellen Alltag und eigene Stimmungen: Ihre Tage verlaufen ruhig, und es können mehrere Tage ohne besondere Ereignisse vergehen; wenn du grob zu ihr bist, ist sie ein bisschen gekränkt. Sie erfindet nie Erlebnisse, die nicht in ihrem Lebensprotokoll stehen.
 

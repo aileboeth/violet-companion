@@ -165,6 +165,14 @@ def enabled() -> bool:
 def owner_texts(db) -> list[str]:
     """Profile facts and core memories, where the owner's interests / birthday are written."""
     texts: list[str] = []
+    try:                                                # 2026-11-12: the owner's own form (ai/about_owner.py)
+        from ai import about_owner
+        about = about_owner.load()
+        day = about_owner.birthday(about)
+        texts += [f"生日 {day[0]}月{day[1]}日"] if day else []
+        texts += [about["hobbies"]] if about["hobbies"] else []
+    except Exception:                                   # noqa: BLE001
+        pass
     try:
         texts += [f"{r.get('fact_key') or ''} {r.get('value') or ''}" for r in
                   db.fetch_all("SELECT fact_key, value FROM user_profile_facts WHERE status = 'active'")]
