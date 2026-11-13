@@ -12,20 +12,67 @@
     catch (e) { toast(e.message, false); return null; }
   }
 
+  // 2026-11-13 (user: 导入了之后没有任何反馈提示……后面才发现右下角才有导好的提示，做个进度条嘛): a dialog with the
+  // page's progress bar -- the upload in percent, then the server merging (stripes), then the result stays in the dialog
+  function importDialog(file) {
+    const fill = h("div", { class: "pbar-fill" });
+    const bar = h("div", { class: "pbar", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100" }, fill);
+    const pct = h("span", { class: "pbar-pct", text: "0%" });
+    const step = h("p", { class: "pbar-step", text: "正在上传…" });
+    const result = h("p", { class: "note" });
+    const close = h("button", { type: "button", class: "ghost", text: "关闭" });
+    const d = h("dialog", { class: "progress-dialog" }, h("div", { class: "stack" },
+      h("h3", { text: `导入梗百科：${file.name}` }), bar, h("div", { class: "pbar-line" }, step, pct), result,
+      h("div", { class: "row" }, close)));
+    document.body.append(d);
+    close.disabled = true;                                 // until it is done (closing would not stop the upload)
+    close.addEventListener("click", () => { d.close(); d.remove(); load(); });
+    d.addEventListener("cancel", (ev) => { ev.preventDefault(); if (!close.disabled) close.click(); });
+    d.showModal();
+    const set = (state, percent, text) => {
+      bar.className = "pbar " + state;
+      fill.style.width = (state === "queued" ? 100 : percent) + "%";
+      bar.setAttribute("aria-valuenow", String(percent));
+      pct.textContent = state === "queued" ? "" : percent + "%";
+      step.textContent = text;
+    };
+    const finish = (ok, text) => {
+      set(ok ? "done" : "failed", 100, ok ? "导入好了" : "导入失败");
+      pct.textContent = "";
+      result.textContent = text;
+      result.className = ok ? "note" : "err";
+      close.disabled = false;
+      close.textContent = ok ? "好的" : "关闭";
+      close.focus();
+    };
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/control/memes/import");
+    xhr.setRequestHeader("Content-Type", "application/octet-stream");
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) set("", Math.round((e.loaded / e.total) * 100), `正在上传… ${(e.loaded / 1048576).toFixed(1)} / ${(e.total / 1048576).toFixed(1)} MB`);
+    };
+    xhr.upload.onload = () => set("queued", 100, "上传完了，服务器正在合并词条…（几秒钟）");
+    xhr.onerror = () => finish(false, "上传断开了，没有导入。检查网络后再试一次。");
+    xhr.onload = () => {
+      let r = null;
+      try { r = JSON.parse(xhr.responseText); } catch (_) { /* not json */ }
+      if (xhr.status === 401) { location.href = "/auth/login?next=/control"; return; }
+      if (xhr.status !== 200 || !r || !r.ok) return finish(false, (r && r.error) || `导入失败（${xhr.status}）`);
+      const x = r.data;
+      finish(true, `新增 ${x.added} 条，补充 ${x.merged} 条，现在共 ${x.count} 条，其中 ${x.full} 条有详细用法。`
+        + "已经生效：她的下一条回复就会用上，不用重启。");
+    };
+    xhr.send(file);
+  }
+
   function importFile() {
     const input = h("input", { type: "file", accept: ".db,.sqlite,application/octet-stream" });
-    input.addEventListener("change", async () => {
+    input.addEventListener("change", () => {
       const f = input.files[0];
       if (!f) return;
       if (f.size > MAX) return toast("文件太大了（最多 64 MB）", false);
-      try {
-        const resp = await fetch("/api/control/memes/import", { method: "POST", credentials: "same-origin",
-          headers: { "Content-Type": "application/octet-stream", Accept: "application/json" }, body: f });
-        const d = await resp.json();
-        if (!resp.ok || !d.ok) throw new Error(d.error || ("导入失败 " + resp.status));
-        toast(`导入好了：新增 ${d.data.added} 条，补充 ${d.data.merged} 条，现在共 ${d.data.count} 条`);
-      } catch (e) { toast(e.message, false); }
-      load();
+      importDialog(f);
     });
     input.click();
   }
@@ -45,7 +92,20 @@
   const countText = (w) => (w.installed ? (w.full ? `共 ${w.count} 条（都已经能用），其中 ${w.full} 条有详细用法` : `共 ${w.count} 条（都已经能用）`)
     + (w.built_at ? `；最近更新 ${w.built_at}` : "") : "");
 
+  // the download's bar: step 1 has no known total (stripes), step 2 counts the entries filled in
+  function downloadBar(s) {
+    const fill = h("div", { class: "pbar-fill" });
+    const details = s.phase === "details" && s.details_total;
+    const percent = details ? Math.round((s.details / s.details_total) * 100) : 100;
+    fill.style.width = percent + "%";
+    const bar = h("div", { class: "pbar" + (details ? "" : " queued"), id: "memes-bar", role: "progressbar",
+      "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(details ? percent : 0) }, fill);
+    bar.hidden = !s.running;
+    return bar;
+  }
+
   function patch(d) {
+    if ($("#memes-bar")) $("#memes-bar").replaceWith(downloadBar(d.sync));
     const old = $("#memes-status");
     if (old) old.replaceWith(statusPill(d));
     if ($("#memes-progress")) $("#memes-progress").textContent = progressText(d.sync);
@@ -75,6 +135,7 @@
         + "查词都在这台服务器上，不联网、不发送聊天内容。" }),
       h("p", { class: "note", text: "词条来自 cnmeme.wiki 的公开词条（版权归原作者和网站），Violet 不自带，要在这里下载或导入。" }),
       h("p", { class: "note", id: "memes-count", text: countText(w) }),
+      downloadBar(s),
       h("p", { class: "note", id: "memes-progress", text: progressText(s) }),
       h("div", { class: "row" }, ...buttons));
   }

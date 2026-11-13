@@ -686,8 +686,14 @@
 "上传失败": [
 "control_eve_import.js"
 ],
+"上传完了，服务器正在合并词条…（几秒钟）": [
+"control_memes.js"
+],
 "上传并预览": [
 "control.html"
+],
+"上传断开了，没有导入。检查网络后再试一次。": [
+"control_memes.js"
 ],
 "上传的文件已经从服务器上删掉。": [
 "control_eve_import.js"
@@ -1736,6 +1742,7 @@
 "control.html",
 "control.js",
 "control_channels.js",
+"control_memes.js",
 "control_persona.js"
 ],
 "关闭后下一次检查起不再记录新的生活进展，打开后马上开始；临时暂停也可以用下面的“暂停 / 恢复”": [
@@ -2941,6 +2948,9 @@
 "好了，之后合适的时候她会再问": [
 "control.js"
 ],
+"好的": [
+"control_memes.js"
+],
 "好，那就不做了。": [
 "ai/permissions.py"
 ],
@@ -3107,6 +3117,9 @@
 "导入失败": [
 "control_memes.js"
 ],
+"导入失败（{0}）": [
+"control_memes.js"
+],
 "导入失败，课表没有任何改动": [
 "wx_ilink_py/schedule_routes.py"
 ],
@@ -3117,7 +3130,7 @@
 "control_eve_import.js",
 "control_schedule.js"
 ],
-"导入好了：新增 {0} 条，补充 {1} 条，现在共 {2} 条": [
+"导入好了": [
 "control_memes.js"
 ],
 "导入完成": [
@@ -3137,6 +3150,9 @@
 ],
 "导入时跳过（手动优先）": [
 "control_schedule.js"
+],
+"导入梗百科：{0}": [
+"control_memes.js"
 ],
 "导入结果和预览的不一样（导入方式或数据变了），课表没有改动，请重新预览": [
 "ai/schedule/importer.py"
@@ -4392,6 +4408,9 @@
 "新增": [
 "control_schedule.js"
 ],
+"新增 {0} 条，补充 {1} 条，现在共 {2} 条，其中 {3} 条有详细用法。已经生效：她的下一条回复就会用上，不用重启。": [
+"control_memes.js"
+],
 "新增上课时间": [
 "control_schedule.js"
 ],
@@ -5043,6 +5062,12 @@
 ],
 "歌": [
 "ai/persona_templates.py"
+],
+"正在上传…": [
+"control_memes.js"
+],
+"正在上传… {0} / {1} MB": [
+"control_memes.js"
 ],
 "正在下载": [
 "control_memes.js"
