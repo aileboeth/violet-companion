@@ -5,6 +5,7 @@
 (() => {
   const MAX = 64 * 1024 * 1024;
   let timer = null;
+  let wasRunning = false;
 
   async function act(method, url, body, done) {
     try { const r = await api(method, url, body || {}); if (done) toast(done); load(); return r; }
@@ -29,21 +30,38 @@
     input.click();
   }
 
+  // 2026-11-13 (user: 下载的时候页面会一跳一跳的): while downloading only these texts change, in place
+  function statusPill(d) {
+    const w = d.wiki, s = d.sync;
+    const el = s.running ? pill("正在下载", "warn") : (w.installed ? pill(`${w.count} 条`, "ok") : pill("还没有下载", "warn"));
+    el.id = "memes-status";
+    return el;
+  }
+  const progressText = (s) => (s.running
+    ? (s.phase === "details" ? `第 2 步：补全每条的详细用法 ${s.details}/${s.details_total}（这一步慢，期间已经能用）`
+      : `第 1 步：取词条列表，已取 ${s.listed} 条（取到的已经能用）`)
+    : (s.message || ""));
+  // (user: 已经取了三千条了，但是还是显示 0 条有详细用法) -- every entry works from step 1 on; step 2 only adds detail
+  const countText = (w) => (w.installed ? (w.full ? `共 ${w.count} 条（都已经能用），其中 ${w.full} 条有详细用法` : `共 ${w.count} 条（都已经能用）`)
+    + (w.built_at ? `；最近更新 ${w.built_at}` : "") : "");
+
+  function patch(d) {
+    const old = $("#memes-status");
+    if (old) old.replaceWith(statusPill(d));
+    if ($("#memes-progress")) $("#memes-progress").textContent = progressText(d.sync);
+    if ($("#memes-count")) $("#memes-count").textContent = countText(d.wiki);
+  }
+
   function wikiBox(d) {
     const w = d.wiki, s = d.sync;
-    const status = s.running ? pill("正在下载", "warn")
-      : (w.installed ? pill(`${w.count} 条`, "ok") : pill("还没有下载", "warn"));
-    const progress = s.running
-      ? (s.phase === "details" ? `第 2 步：补全每条的详细用法 ${s.details}/${s.details_total}（这一步慢，期间已经能用）`
-        : `第 1 步：取词条列表，已取 ${s.listed} 条`)
-      : (s.message || "");
+    const status = statusPill(d);
     const buttons = [];
     if (s.running) {
       buttons.push(h("button", { type: "button", class: "ghost", text: "停止下载", onclick: () => act("POST", "/api/control/memes/stop", {}, "停下了") }));
     } else {
       buttons.push(h("button", { type: "button", text: w.installed ? "更新梗百科" : "下载梗百科", onclick: async () => {
         const text = w.installed ? "从 cnmeme.wiki 取新增和改过的词条？已有的不用重新下载。"
-          : "从 cnmeme.wiki 下载梗百科？先取词条列表（约 5–10 分钟，取完就能用），再在后台慢慢补全每条的详细用法（可能要 1–2 小时，可以随时停，下次接着下）。只读取网站的公开词条，不会发送你的聊天内容。";
+          : "从 cnmeme.wiki 下载梗百科？先取词条列表（约 5 分钟，取到的马上能用），再在后台补全每条的详细用法（约 1 小时，可以随时停，下次接着下）。只读取网站的公开词条，不会发送你的聊天内容。";
         if (await confirmBox(text, { danger: false, ok: "下载" })) act("POST", "/api/control/memes/download", { confirm: true }, "开始下载了");
       } }));
       buttons.push(h("button", { type: "button", class: "ghost", text: "从文件导入", title: "例如 dsh-memewiki 插件里的 data/memes.db", onclick: importFile }));
@@ -51,15 +69,13 @@
         if (await confirmBox("删除下载的梗百科？你教她的梗不受影响。")) act("DELETE", "/api/control/memes/wiki", null, "已删除");
       } }));
     }
-    clearTimeout(timer);
-    if (s.running) timer = setTimeout(load, 4000);
     return h("div", { class: "stack" },
       h("div", { class: "row" }, h("strong", { text: "梗百科" }), status),
       h("p", { class: "note", text: "你说的话里有梗百科收录的梗时，她会同时看到这个梗的意思和用法，像本来就懂一样接住；没把握的新词她也会自己查。"
         + "查词都在这台服务器上，不联网、不发送聊天内容。" }),
       h("p", { class: "note", text: "词条来自 cnmeme.wiki 的公开词条（版权归原作者和网站），Violet 不自带，要在这里下载或导入。" }),
-      w.installed ? h("p", { class: "note", text: `共 ${w.count} 条，其中 ${w.full} 条有详细用法` + (w.built_at ? `；最近更新 ${w.built_at}` : "") }) : null,
-      progress ? h("p", { class: "note", text: progress }) : null,
+      h("p", { class: "note", id: "memes-count", text: countText(w) }),
+      h("p", { class: "note", id: "memes-progress", text: progressText(s) }),
       h("div", { class: "row" }, ...buttons));
   }
 
@@ -107,6 +123,11 @@
     if (!box) return;
     let d;
     try { d = await api("GET", "/api/control/memes"); } catch (e) { box.replaceChildren(h("p", { class: "err", text: e.message })); return; }
+    clearTimeout(timer);
+    const running = d.sync.running;
+    if (running) timer = setTimeout(load, 4000);
+    if (running && wasRunning && $("#memes-card")) { patch(d); return; }   // still downloading: numbers only
+    wasRunning = running;
     box.replaceChildren(h("div", { class: "card", id: "memes-card" },
       h("div", { class: "row" }, h("h3", { text: "听懂梗" }), d.enabled ? pill("开", "ok") : pill("关着", "warn")),
       d.enabled ? null : h("p", { class: "note", text: "下面的“听懂梗”关着：她现在不会看梗的资料，也不能查。" }),

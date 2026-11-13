@@ -40,6 +40,7 @@ USER_AGENT = "CNMemeWikiPlugin/1.0 (Violet)"      # the site's API docs: set thi
 PAGE = 30                                          # the list API allows at most 30 per page
 LIST_PAUSE = 0.15
 DETAIL_PAUSE = 0.35
+DETAIL_WORKERS = 3
 MAX_SHOWN = 2
 TOOL_NAMES = {"look_up_meme", "remember_meme"}
 
@@ -578,28 +579,40 @@ def sync(fetch: Callable[[str, dict[str, Any] | None], Any] | None = None, detai
                 "SELECT title, slug FROM memes WHERE detail_at IS NULL AND slug IS NOT NULL AND slug != '' ORDER BY rowid")]
             with _lock:
                 _state.update(phase="details", details_total=len(todo), details=0)
-            for n, item in enumerate(todo, 1):
+
+            def one(item: dict[str, Any]) -> tuple[dict[str, Any], Any, Any]:
+                # 2026-11-13 (user's server: one by one would take 1.5-3 hours): DETAIL_WORKERS requests at a time,
+                # each worker pausing between its requests (the site asks clients to limit concurrency)
                 if _stop.is_set():
-                    break
+                    return item, None, "stopped"
                 try:
-                    body = fetch(f"{WIKI_API}/{item['slug']}", None)
+                    return item, fetch(f"{WIKI_API}/{item['slug']}", None), None
                 except Exception as exc:               # noqa: BLE001 -- one entry; the next run tries again
-                    logger.info("meme detail %s failed: %s", item["slug"], exc)
-                    with _lock:
-                        _state["failed"] += 1
+                    return item, None, exc
+                finally:
                     time.sleep(detail_pause)
-                    continue
-                entry = body.get("item") if isinstance(body, dict) and isinstance(body.get("item"), dict) else body
-                parts = sections_of(str((entry or {}).get("content_html") or "")) if isinstance(entry, dict) else {}
-                conn.execute("UPDATE memes SET usage = COALESCE(NULLIF(?, ''), usage), origin = COALESCE(NULLIF(?, ''), origin), "
-                             "other = COALESCE(NULLIF(?, ''), other), detail_at = ? WHERE title = ?",
-                             (parts.get("usage", ""), parts.get("origin", ""), parts.get("other", ""), _now_text(),
-                              item["title"]))
-                if n % 20 == 0:
-                    conn.commit()
-                with _lock:
-                    _state["details"] = n
-                time.sleep(detail_pause)
+            from concurrent.futures import ThreadPoolExecutor
+            done = 0
+            with ThreadPoolExecutor(DETAIL_WORKERS, thread_name_prefix="meme-detail") as pool:
+                for item, body, err in pool.map(one, todo):      # results written here, in this thread only
+                    if err == "stopped":
+                        continue
+                    if err is not None:
+                        logger.info("meme detail %s failed: %s", item["slug"], err)
+                        with _lock:
+                            _state["failed"] += 1
+                        continue
+                    entry = body.get("item") if isinstance(body, dict) and isinstance(body.get("item"), dict) else body
+                    parts = sections_of(str((entry or {}).get("content_html") or "")) if isinstance(entry, dict) else {}
+                    conn.execute("UPDATE memes SET usage = COALESCE(NULLIF(?, ''), usage), origin = COALESCE(NULLIF(?, ''), origin), "
+                                 "other = COALESCE(NULLIF(?, ''), other), detail_at = ? WHERE title = ?",
+                                 (parts.get("usage", ""), parts.get("origin", ""), parts.get("other", ""), _now_text(),
+                                  item["title"]))
+                    done += 1
+                    if done % 20 == 0:
+                        conn.commit()
+                    with _lock:
+                        _state["details"] = done
             conn.commit()
         _set_meta(conn)
     finally:
