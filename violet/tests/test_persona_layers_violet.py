@@ -43,7 +43,7 @@ def test_the_relationship_is_in_the_context(db, data_dir):
     from ai.context_engine import ContextEngine
     pt.set_relationship("creator")
     text = "\n".join(ContextEngine(db).build("chat", "你好").sections)
-    assert "【你们的关系：开发者】" in text and "创造和开发你的人" in text
+    assert "【你们的关系和现在的情况】" in text and "创造和开发你的人" in text
 
 
 def test_ai_persona_knows_what_it_is_and_has_no_invented_life(db, data_dir, monkeypatch):
@@ -53,7 +53,7 @@ def test_ai_persona_knows_what_it_is_and_has_no_invented_life(db, data_dir, monk
     monkeypatch.setenv("CHAT_LLM_MODEL", "deepseek-chat")
     pt.switch(db, "ai", "keep")
     core = PersonaCore.load()
-    assert core.is_ai and "一个 AI" in core.render() and "deepseek-chat" in core.render() and "照实说是" in core.render()
+    assert core.is_ai and "一个 AI" in core.render() and "deepseek-chat" in core.render() and "可以直说" in core.render()
     packet = ContextEngine(db).build("chat", "你今天干嘛了")
     names = list(packet.report["sections"])
     assert "ai_experience" in names and "ai_abilities" in names and "violet_life" not in names
@@ -96,8 +96,9 @@ def test_a_channel_with_its_own_persona_and_relationship(db, data_dir):
     assert PersonaCore.load(channel="telegram").is_ai and not PersonaCore.load(channel="wechat").is_ai
     with channel_scope(ChannelContext("telegram", "telegram", "Telegram")):
         text = "\n".join(ContextEngine(db).build("chat", "你好").sections)
-    assert "（AI）" in text and "【你们的关系：开发者】" in text
-    assert "【你们的关系" not in "\n".join(ContextEngine(db).build("chat", "你好").sections)   # the default adds nothing
+    assert "（AI）" in text and "创造和开发你的人" in text
+    # the main persona keeps the default relationship (2026-11-12: one section for every persona, how close by the log)
+    assert "创造和开发你的人" not in "\n".join(ContextEngine(db).build("chat", "你好").sections)
     pt.set_channel("napcat", None, "friend")
     assert "你和你的主人的关系：朋友" in _persona_text(db, "napcat")
     with pytest.raises(ValueError):

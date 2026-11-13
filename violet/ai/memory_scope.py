@@ -34,6 +34,7 @@ SCOPED_TABLES = frozenset({
     "user_situations", "interaction_preferences", "preference_observations", "persona_dynamic", "life_events",
     "life_plans", "life_threads", "life_revisions", "life_engine_runs", "mood_state", "consistency_flags",
     "task_sessions", "proactive_events", "proactive_settings",
+    "owner_memes",                                   # 2026-11-12: the memes the owner taught her (ai/memes.py)
 })
 
 _SCOPE: contextvars.ContextVar[str] = contextvars.ContextVar("violet_memory_scope", default=MAIN)

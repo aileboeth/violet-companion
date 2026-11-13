@@ -88,7 +88,20 @@ def local_timezone() -> tzinfo:
     return zone
 
 
+_CLOCK: "Callable[[], datetime] | None" = None
+
+
+def set_clock(clock: "Callable[[], datetime] | None") -> None:
+    """2026-11-12: the virtual test (tools/virtual_test.py) runs days of chat in an hour -- every "now" of Violet
+    (database rows, reminders, proactive timing, her life, the daily tidy-up) comes from this one function, so a
+    clock set here moves all of it. None = the real clock. Never set in normal operation."""
+    global _CLOCK
+    _CLOCK = clock
+
+
 def now_local() -> datetime:
+    if _CLOCK is not None:
+        return _CLOCK().astimezone(local_timezone())
     return datetime.now(local_timezone())
 
 

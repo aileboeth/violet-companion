@@ -16,6 +16,7 @@ Por enquanto, a interface do painel está em chinês.
 - Ela responde só a você, a pessoa vinculada a ela. Mensagens privadas de desconhecidos não recebem resposta, e o texto delas não é guardado.
 - Com uma conta pessoal do QQ, ela pode entrar em grupos: entra na conversa quando alguém diz o nome dela, a menciona com @ ou dá um cutucão, e de vez em quando puxa um assunto quando o grupo fica quieto. Com o tempo ela vai conhecendo as pessoas do grupo. Também pode ver as imagens do grupo, colecionar e enviar figurinhas e postar no QQ Zone (antes ela mostra o post para você).
 - Ela pode mandar várias mensagens seguidas, mensagens de voz (opcional: clona uma voz a partir de uma única gravação, roda na CPU do servidor) e desenhos feitos por ela.
+- Entende memes: baixe no painel a wiki de memes (memes da internet chinesa, do cnmeme.wiki) e, quando sua mensagem usa um, ela vê o que significa e entra na brincadeira em vez de levar ao pé da letra. Os memes que você explica, ela lembra.
 
 **Memória**
 

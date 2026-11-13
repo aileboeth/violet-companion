@@ -10,11 +10,11 @@ def test_a_chosen_relationship_is_not_overridden_by_the_guessed_stage(monkeypatc
                      "('user', 'incoming', 'text', '好肉麻啊你', '2026-09-01T10:00:00+08:00')")
     violetdb.add_user_message("text", "在干嘛")
     monkeypatch.setattr(persona_templates, "relationship", lambda channel: {"kind": "close", "label": "亲近（默认）", "call": None})
-    default = "\n".join(ContextEngine(violetdb)._relationship_section().lines)
+    default = "\n".join(ContextEngine(violetdb)._bond_section().lines)
     assert "保持轻松友好的距离" in default                      # the default relationship still follows the log
     monkeypatch.setattr(persona_templates, "relationship", lambda channel: {"kind": "partner", "label": "恋人", "call": "宝宝"})
-    chosen = "\n".join(ContextEngine(violetdb)._relationship_section().lines)
-    assert "保持轻松友好的距离" not in chosen and "第一次聊天在" in chosen
+    chosen = "\n".join(ContextEngine(violetdb)._bond_section().lines)
+    assert "保持轻松友好的距离" not in chosen and "你们是恋人" in chosen and "宝宝" in chosen
 
 
 def test_the_owners_own_bad_day_is_not_scolding_and_an_upset_mood_is_not_cold(violetdb):

@@ -610,6 +610,11 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
     lines.append("- 提醒：对方要你到某个时间提醒 / 叫他，就调用 set_reminder（成功才算设好）；不用提醒了就 cancel_reminder。"
                  "没调用 set_reminder 就不要说“到时候叫你 / 我会提醒你”")
     lines.append("- 记忆：聊过的事系统会自己记；想查以前聊过的某件事用 query_memory")
+    from ai import memes                                     # 2026-11-12
+    if memes.enabled():
+        lines.append("- 梗：对方说的梗词库里有的，资料会出现在〔背景〕里；没把握的新词 / 缩写用 look_up_meme 查"
+                     + ("" if memes.wiki_available() else "（梗百科还没下载，只能查对方教过你的）")
+                     + "；对方给你讲明白一个梗或你们之间的梗，用 remember_meme 记下")
     from ai import mood
     if mood.enabled():
         lines.append("- 心情：对方刚说的话让你真的开心了（被真心夸、被感谢、被哄）或真的难受了（被认真地骂、嫌弃、赶走），"

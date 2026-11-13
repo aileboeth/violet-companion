@@ -340,6 +340,8 @@ VIOLET_STICKER_AUTO_COLLECT=1
 VIOLET_STICKER_QQ_SYNC=1
 # 群里 / 别人私聊发来没见过的表情包时用识图模型看一眼（同一个只看一次）
 VIOLET_STICKER_LOOK=1
+# 听懂梗：你的话里有梗百科（后台“她能做的事 → 梗”里下载）或你教过她的梗时，把意思和用法给她看；她也能自己查（本地，不联网）
+VIOLET_MEMES=1
 # 发 QQ 动态（QQ 空间说说）：9:00–23:00，两条至少隔 4 小时，只写她自己的生活
 VIOLET_QZONE_ENABLED=0
 # 每天最多自己发几条动态；0 = 不限（后台手动发的不算）

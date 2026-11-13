@@ -16,6 +16,7 @@ Por ahora, la interfaz del panel está en chino.
 - Solo te responde a ti, la persona vinculada. Los mensajes privados de desconocidos no reciben respuesta y su texto no se guarda.
 - Con una cuenta personal de QQ puede unirse a grupos: interviene cuando alguien dice su nombre, la menciona con @ o le da un toque, y de vez en cuando saca un tema cuando el grupo está callado. Con el tiempo va conociendo a la gente del grupo. También puede ver las imágenes del grupo, coleccionar y enviar stickers y publicar en QQ Zone (antes te enseña la publicación).
 - Puede enviar varios mensajes seguidos, mensajes de voz (opcional: clona una voz a partir de una sola grabación, se ejecuta en la CPU del servidor) y dibujos hechos por ella.
+- Entiende los memes: descarga en el panel la wiki de memes (memes de internet en chino, de cnmeme.wiki) y, cuando tu mensaje usa uno, ella ve qué significa y le sigue el juego en vez de tomarlo al pie de la letra. Los memes que le explicas, los recuerda.
 
 **Memoria**
 

@@ -187,9 +187,34 @@ def normalize_chat_output(raw_content: str, sticker_for_label=_owner_sticker_for
                 messages.append({"type": "voice", "content": spoken, "media_id": None})
         elif rest:
             messages.append({"type": "text", "content": rest, "media_id": None})
+    messages = said_once(messages)
     if not messages:
         return {"should_send": False, "messages": []}
     return {"should_send": True, "messages": cap_messages(messages, reply_limit())}
+
+
+def _bigrams(text: str) -> set[str]:
+    text = re.sub(r"[^\w]", "", text or "")
+    return {text[i:i + 2] for i in range(len(text) - 1)}
+
+
+def said_once(messages: list[dict[str, Any]], overlap: float = 0.4) -> list[dict[str, Any]]:
+    """2026-11-12 (virtual test, AI persona: a text "鸡腿饭好，批准了。去排队吧，别急着回我…" then two voice messages saying
+    the same): a voice message is the thing said; a text line of the same reply that the voice already says (most of
+    its character pairs are in the voice) is not sent again. Measured on that reply: the repeated line 0.48, the others
+    under 0.1."""
+    spoken = set().union(*(_bigrams(m["content"]) for m in messages if m.get("type") == "voice")) \
+        if any(m.get("type") == "voice" for m in messages) else set()
+    if not spoken:
+        return messages
+    out = []
+    for m in messages:
+        if m.get("type") == "text":
+            own = _bigrams(m["content"])
+            if own and len(own & spoken) / len(own) >= overlap:
+                continue
+        out.append(m)
+    return out
 
 
 def reply_limit() -> int:

@@ -276,6 +276,9 @@ class VioletDatabase:
         # 2026-10-30: her own mood (ai/mood.py)
         from ai.mood import SCHEMA as mood_schema
         self.conn.executescript(mood_schema)
+        # 2026-11-12: what the owner taught her a meme of theirs means (ai/memes.py)
+        from ai.memes import SCHEMA as meme_schema
+        self.conn.executescript(meme_schema)
         self.conn.commit()
 
     def _create_tables_locked(self) -> None:

@@ -236,6 +236,8 @@ def create_app(
         register_restart_routes(app)
         from .ops_page_routes import register_ops_page_routes       # Violet stage 3: WeChat login, run log
         register_ops_page_routes(app, client)
+        from .meme_routes import register_meme_routes               # 2026-11-12: the memes she gets
+        register_meme_routes(app, violetdb)
     if runtime is not None:
         from .channel_routes import register_channel_routes        # phase 10: chat channels
         register_channel_routes(app, runtime)

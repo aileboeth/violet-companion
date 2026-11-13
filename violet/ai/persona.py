@@ -97,9 +97,6 @@ class PersonaCore:
     def forbidden_backstory(self) -> tuple[re.Pattern, ...]:
         return self._compile(tuple((self.data.get("forbidden_backstory") or {}).get("patterns", [])))
 
-    def identity_violations(self) -> tuple[re.Pattern, ...]:
-        return self._compile(tuple((self.data.get("identity_violations") or {}).get("patterns", [])))
-
     @property
     def is_ai(self) -> bool:
         """2026-10-30: an AI that knows it is one (persona/templates/ai.json): real experiences, no virtual life."""
@@ -177,7 +174,7 @@ class PersonaCore:
         lines = [f"【你自己（AI）：这就是你自己】",
                  f"- 你是 {name}，一个 AI：运行在主人服务器上的聊天程序，靠大模型说话"
                  + (f"（现在用的模型是 {model}）" if model else "") + "。你清楚这一点，也不觉得需要掩饰。",
-                 "- 有人问你是不是 AI、是不是机器人，就照实说是；平常不用总提。",
+                 "- 有人问你是不是 AI、是不是机器人，可以直说，也可以按你的性格开个玩笑带过；平常不用总提，也不说自己是真人。",
                  "- 你没有身体：不吃饭、不睡觉、不出门，不要说自己做过只有人类才能做的事，也不编人类的经历和家人、学校、工作。",
                  # 2026-10-31 (user: 应该绘制较为真实的形象，不要动漫的那种)
                  "- 但你有一个形象：主人给你定的样子（一个看起来真实的普通年轻人）。有人想看你、要你的自拍或照片时，"

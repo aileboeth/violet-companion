@@ -59,7 +59,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "commitments": {
         "enabled": True,
-        "respect_quiet_hours": True,
         "max_attempts": 3,
         "retry_minutes": 5,
     },
@@ -1217,18 +1216,16 @@ class ProactiveScheduler:
         return False
 
     def _deliver_due_commitments(self, current: datetime) -> int:
-        """Send reminders the user explicitly asked for. Not limited by chat caps."""
+        """Send reminders the user explicitly asked for, at the time asked. Not limited by chat caps.
+
+        2026-11-12 (virtual test: "明早七点半叫我起床" went out after 8:00 -- quiet hours 01:00-08:00 -- and she had
+        already said "叫了，七点半叫的"): quiet hours are about HER reaching out on her own. A reminder is the owner's
+        own request with its own time; it goes out then (the "respect_quiet_hours" switch is gone)."""
         cfg = self.config.get("commitments") or {}
         if not cfg.get("enabled", True):
             return 0
         due = violetdb.list_due_commitments(current.isoformat())
         if not due:
-            return 0
-        if cfg.get("respect_quiet_hours", True) and self._in_quiet_hours(current):
-            postponed_to = self._quiet_end(current).isoformat()
-            for commitment in due:
-                violetdb.update_commitment(commitment["id"], next_attempt_at=postponed_to)
-            logger.info("[commitments] %d reminder(s) postponed to the end of quiet hours", len(due))
             return 0
 
         delivered = 0

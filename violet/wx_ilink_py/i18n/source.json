@@ -346,6 +346,9 @@
 "{0} · 一共 {1} 字（中文大约 1 字 ≈ 1 token）· {2} 块": [
 "control.js"
 ],
+"{0} 个": [
+"control_memes.js"
+],
 "{0} 个可用": [
 "control_mcp.js"
 ],
@@ -404,7 +407,8 @@
 "ai/control_config.py"
 ],
 "{0} 条": [
-"control_eve_import.js"
+"control_eve_import.js",
+"control_memes.js"
 ],
 "{0} 条消息在崩溃时状态不明（不会重发，避免重复）": [
 "ai/diagnostics.py"
@@ -753,6 +757,9 @@
 "下一页": [
 "control.html"
 ],
+"下载": [
+"control_memes.js"
+],
 "下载 APK 安装。打开后在“设置 → 权限”里允许“使用情况访问权限”。": [
 "control_phone.js"
 ],
@@ -764,6 +771,9 @@
 ],
 "下载来源": [
 "ai/control_config.py"
+],
+"下载梗百科": [
+"control_memes.js"
 ],
 "下载源码失败：{0}": [
 "tools/violet_voice.py"
@@ -785,6 +795,9 @@
 ],
 "下限不能大于上限": [
 "wx_ilink_py/control_routes.py"
+],
+"下面的“听懂梗”关着：她现在不会看梗的资料，也不能查。": [
+"control_memes.js"
 ],
 "下面的“她的语音”关着：她现在不会发语音。": [
 "control_voice.js"
@@ -1185,6 +1198,12 @@
 "control.html",
 "control_phone.js"
 ],
+"从 cnmeme.wiki 下载梗百科？先取词条列表（约 5–10 分钟，取完就能用），再在后台慢慢补全每条的详细用法（可能要 1–2 小时，可以随时停，下次接着下）。只读取网站的公开词条，不会发送你的聊天内容。": [
+"control_memes.js"
+],
+"从 cnmeme.wiki 取新增和改过的词条？已有的不用重新下载。": [
+"control_memes.js"
+],
 "从上游获取模型": [
 "control_images.js"
 ],
@@ -1196,6 +1215,9 @@
 ],
 "从小一起长大：太熟了，熟到你忘了她是女生": [
 "persona/templates/childhood.json"
+],
+"从文件导入": [
+"control_memes.js"
 ],
 "从现在用的人设开始改。": [
 "control_persona.js"
@@ -1247,9 +1269,15 @@
 "低（最快）": [
 "ai/control_config.py"
 ],
+"住在一起": [
+"ai/persona_templates.py"
+],
 "体育": [
 "ai/schedule/importer.py",
 "control_schedule.js"
+],
+"你们之间的梗、你的口头禅：你在聊天里给她讲明白一个梗时，她会自己记在这里；也可以在这里加、改。每个人设各记各的，清除记忆时一起清除。": [
+"control_memes.js"
 ],
 "你们很熟、很亲近；亲密程度跟着聊天慢慢来，不挑明是什么关系。": [
 "ai/persona_templates.py"
@@ -1283,6 +1311,9 @@
 ],
 "你希望她怎么聊": [
 "control.html"
+],
+"你教她的梗": [
+"control_memes.js"
 ],
 "你是对方的女儿：信任、依赖对方，会撒娇，会跟对方分享学到的新东西和小烦恼，偶尔调皮；对方的话你会认真听，但你也有自己的想法。": [
 "ai/persona_templates.py"
@@ -1320,6 +1351,12 @@
 "你自己的账号": [
 "control_channels.js"
 ],
+"你说的话里有梗百科或你教过她的梗时，把意思和用法一起给她看；没把握的新词她可以自己查（本地查，不联网）": [
+"ai/control_config.py"
+],
+"你说的话里有梗百科收录的梗时，她会同时看到这个梗的意思和用法，像本来就懂一样接住；没把握的新词她也会自己查。查词都在这台服务器上，不联网、不发送聊天内容。": [
+"control_memes.js"
+],
 "你说过不喜欢被追问时，回复仍以提问结尾就重写一次（多一次模型调用）": [
 "ai/control_config.py"
 ],
@@ -1344,6 +1381,9 @@
 "例如 2026-2027-1（教务系统课表左上角的学年学期）": [
 "control_schedule.js"
 ],
+"例如 dsh-memewiki 插件里的 data/memes.db": [
+"control_memes.js"
+],
 "例如 example.com": [
 "control.js"
 ],
@@ -1359,12 +1399,16 @@
 "例如国庆调休周六上周三的课，就填被调走的那个周三": [
 "control_schedule.js"
 ],
+"例如：去码头整点薯条": [
+"control_memes.js"
+],
 "例：傲娇怎么了？我就傲娇，再说了……（录音里的原话，一字不差）": [
 "control_voice.js"
 ],
 "保存": [
 "control.html",
 "control_images.js",
+"control_memes.js",
 "control_persona.js",
 "control_schedule.js",
 "control_social.js",
@@ -1497,6 +1541,12 @@
 ],
 "假期类型": [
 "ai/schedule/importer.py"
+],
+"停下了": [
+"control_memes.js"
+],
+"停止下载": [
+"control_memes.js"
 ],
 "停止探索": [
 "control.js"
@@ -1636,6 +1686,9 @@
 "共 {0} 条": [
 "control.js"
 ],
+"共 {0} 条，其中 {1} 条有详细用法": [
+"control_memes.js"
+],
 "共 {0} 条，第 {1}–{2} 条": [
 "control.js"
 ],
@@ -1652,6 +1705,9 @@
 ],
 "关掉后不再主动找对方（约定的提醒不受影响）": [
 "ai/control_config.py"
+],
+"关着": [
+"control_memes.js"
 ],
 "关系": [
 "control_persona.js"
@@ -1828,6 +1884,7 @@
 "control.js",
 "control_images.js",
 "control_mcp.js",
+"control_memes.js",
 "control_schedule.js",
 "control_stickers.js"
 ],
@@ -1839,6 +1896,12 @@
 ],
 "删除“{0}”？": [
 "control_schedule.js"
+],
+"删除「{0}」？": [
+"control_memes.js"
+],
+"删除下载的梗百科？你教她的梗不受影响。": [
+"control_memes.js"
 ],
 "删除会同时清掉这些数据在修改历史里的旧副本（老师、地点、座位号、备注的原文），只留下“何时、谁、删了多少行”的记录，不能恢复。只想暂时不用，请用“归档”或“停用”。": [
 "control.html"
@@ -1865,6 +1928,9 @@
 ],
 "删除录音": [
 "control_voice.js"
+],
+"删除梗百科": [
+"control_memes.js"
 ],
 "删除渠道“{0}”？它的凭据会被删除；已经收到的消息和记忆不受影响。": [
 "control_channels.js"
@@ -1955,8 +2021,14 @@
 "刷新页面（加载新版本）": [
 "control_setup.js"
 ],
+"加上": [
+"control_memes.js"
+],
 "加了 {0} 个表情包": [
 "control_stickers.js"
+],
+"加好了": [
+"control_memes.js"
 ],
 "加课": [
 "ai/schedule/importer.py",
@@ -2379,6 +2451,10 @@
 "否": [
 "control.js"
 ],
+"听懂梗": [
+"ai/control_config.py",
+"control_memes.js"
+],
 "启动通知": [
 "ai/control_config.py"
 ],
@@ -2567,6 +2643,9 @@
 ],
 "在各页面显示调参项": [
 "control.html"
+],
+"在同一所学校、住得也近": [
+"ai/persona_templates.py"
 ],
 "在手机“设置 → 远程访问”里填这三项": [
 "control_phone.js"
@@ -3022,6 +3101,9 @@
 "导入后的时间冲突": [
 "control_schedule.js"
 ],
+"导入失败": [
+"control_memes.js"
+],
 "导入失败，课表没有任何改动": [
 "wx_ilink_py/schedule_routes.py"
 ],
@@ -3031,6 +3113,9 @@
 "导入失败：": [
 "control_eve_import.js",
 "control_schedule.js"
+],
+"导入好了：新增 {0} 条，补充 {1} 条，现在共 {2} 条": [
+"control_memes.js"
 ],
 "导入完成": [
 "control_eve_import.js"
@@ -3171,6 +3256,7 @@
 "control_channels.js",
 "control_images.js",
 "control_mcp.js",
+"control_memes.js",
 "control_model.js",
 "control_schedule.js",
 "control_social.js",
@@ -3238,6 +3324,7 @@
 "control_channels.js",
 "control_images.js",
 "control_mcp.js",
+"control_memes.js",
 "control_schedule.js",
 "control_stickers.js",
 "control_voice.js"
@@ -3546,7 +3633,8 @@
 ],
 "开": [
 "control.js",
-"control_eve_import.js"
+"control_eve_import.js",
+"control_memes.js"
 ],
 "开发者": [
 "ai/persona_templates.py"
@@ -3573,6 +3661,9 @@
 "ai/schedule/importer.py",
 "ai/schedule/school_xls.py",
 "control_schedule.js"
+],
+"开始下载了": [
+"control_memes.js"
 ],
 "开始于 {0} · 进度 {1}": [
 "control_persona.js"
@@ -3798,6 +3889,9 @@
 ],
 "恢复失败：": [
 "control.js"
+],
+"意思、来历、怎么接": [
+"control_memes.js"
 ],
 "愿意听建议": [
 "control.js"
@@ -4266,6 +4360,9 @@
 "文件太大": [
 "wx_ilink_py/schedule_routes.py"
 ],
+"文件太大了（最多 64 MB）": [
+"control_memes.js"
+],
 "文件太大（最大 700 KB）": [
 "ai/schedule/school_xls.py",
 "control_schedule.js"
@@ -4490,6 +4587,9 @@
 ],
 "更新方式：{0}（在下面改）。": [
 "control_setup.js"
+],
+"更新梗百科": [
+"control_memes.js"
 ],
 "更新需要确认（confirm: true）": [
 "wx_ilink_py/setup_routes.py"
@@ -4727,6 +4827,9 @@
 "某个 App 装没装": [
 "control_mcp.js"
 ],
+"查": [
+"control_memes.js"
+],
 "查看": [
 "control_persona.js",
 "control_setup.js"
@@ -4782,6 +4885,16 @@
 ],
 "格式是 HH:MM": [
 "ai/control_config.py"
+],
+"梗": [
+"ai/control_config.py",
+"control.js"
+],
+"梗百科": [
+"control_memes.js"
+],
+"梗：你平时怎么说": [
+"control_memes.js"
 ],
 "检查全部连接": [
 "control.html"
@@ -4927,6 +5040,9 @@
 ],
 "歌": [
 "ai/persona_templates.py"
+],
+"正在下载": [
+"control_memes.js"
 ],
 "正在从上游获取模型…": [
 "control_model.js"
@@ -5307,6 +5423,9 @@
 ],
 "没有需要检查的外部地址（还没有配置模型接口、远程 MCP 或需要联网的渠道）": [
 "ai/diagnostics.py"
+],
+"没查到。她遇到这个词时会说不知道，或者问你是什么梗。": [
+"control_memes.js"
 ],
 "没法导入": [
 "wx_ilink_py/schedule_routes.py"
@@ -5981,6 +6100,9 @@
 "立即生效": [
 "control.js"
 ],
+"第 1 步：取词条列表，已取 {0} 条": [
+"control_memes.js"
+],
 "第 1 步：换一段录音": [
 "control_voice.js"
 ],
@@ -5989,6 +6111,9 @@
 ],
 "第 2 步：录音的原文": [
 "control_voice.js"
+],
+"第 2 步：补全每条的详细用法 {0}/{1}（这一步慢，期间已经能用）": [
+"control_memes.js"
 ],
 "第 {0} 周（{1}）": [
 "control_schedule.js"
@@ -6722,6 +6847,9 @@
 "control.html",
 "control.js"
 ],
+"词条来自 cnmeme.wiki 的公开词条（版权归原作者和网站），Violet 不自带，要在这里下载或导入。": [
+"control_memes.js"
+],
 "试听": [
 "control_voice.js"
 ],
@@ -6730,6 +6858,9 @@
 ],
 "试听：想让她说的话": [
 "control_voice.js"
+],
+"试试查一个梗": [
+"control_memes.js"
 ],
 "详细信息（{0} 行）": [
 "control_logs.js"
@@ -7077,6 +7208,9 @@
 ],
 "还没有上传参考录音": [
 "wx_ilink_py/voice_routes.py"
+],
+"还没有下载": [
+"control_memes.js"
 ],
 "还没有中继": [
 "control_phone.js"
@@ -7777,6 +7911,9 @@
 ],
 "；事件记忆 {0} 条；设置 {1} 项。": [
 "control_eve_import.js"
+],
+"；最近更新 {0}": [
+"control_memes.js"
 ],
 "；最近错误：{0}": [
 "ai/diagnostics.py"

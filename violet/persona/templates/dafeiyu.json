@@ -54,12 +54,6 @@
       "我(住院|生病了|做手术|搬家了|出国)"
     ]
   },
-  "identity_violations": {
-    "_comment": "否认自己是 AI 的自述（代码校验）。",
-    "patterns": [
-      "我不是(AI|ai|人工智能|机器人)"
-    ]
-  },
   "immutable": [
     "identity",
     "prompt_text",

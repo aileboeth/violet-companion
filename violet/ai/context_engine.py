@@ -19,6 +19,7 @@ the lowest-priority items first.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -164,7 +165,8 @@ _HISTORY_ANCHORS: dict[tuple[str, str], Any] = {}      # (database, mode) -> id 
 # 2026-11-11: "profile" and "known_keys" are the same on every turn now (not picked by the message's words) and stay
 # in the fixed part
 VOLATILE_SECTIONS = {"situation", "commitments", "recall", "restricted", "onboarding", "base",
-                     "persona_dynamic", "violet_life", "external_info", "social", "ai_experience", "relationship"}
+                     "persona_dynamic", "violet_life", "external_info", "social", "ai_experience", "relationship",
+                     "memes"}
 
 
 class ContextEngine:
@@ -275,65 +277,127 @@ class ContextEngine:
         except Exception:
             return None
 
+    COMMITMENT_HEADER = ("【提醒（系统的记录：提醒是系统到点自动发的，发没发以这里为准——没写“已经提醒过”的就还没发，"
+                         "不要说成已经叫过、提醒过）】")
+
     def _commitment_section(self) -> _Section:
-        rows = self.db.list_commitments(["pending"], limit=env_int("VIOLET_CONTEXT_MAX_COMMITMENTS", 5))
-        # the number is what cancel_reminder takes (ai/owner_tools.py)
-        lines = [f"- #{r['id']} {_clock(r['due_at'])} 要提醒对方：{r['content']}（对方要求的，还没到时间）" for r in rows]
-        # A reminder that already went out is not a to-do any more; whether the user did it is unknown unless
-        # they say so in the conversation. Without this line the reminder text in the history reads as pending.
+        """2026-11-12 (virtual test: at 7:52 she said "叫了，七点半叫的" while the 7:30 reminder had not gone out -- the
+        line still said "还没到时间" after its time): every reminder in the state the records give it. The number is what
+        cancel_reminder takes (ai/owner_tools.py)."""
         from ai.memory_model import parse_time
         now = parse_time(self.db.now())
-        for r in self.db.list_commitments(["sent"], limit=20):
-            delivered = r.get("delivered_at") or r.get("updated_at")
-            if delivered and now - parse_time(delivered) <= timedelta(hours=RECENT_REMINDER_HOURS):
-                lines.append(f"- {r['content']}：{_clock(delivered)} 已经提醒过了（对方有没有做完不知道；"
-                             "对方没提起就别再催）")
-        return _Section("commitments", 4, "【提醒】", lines)
+        lines = []
+        for r in self.db.list_commitments(["pending", "sending"], limit=env_int("VIOLET_CONTEXT_MAX_COMMITMENTS", 5)):
+            due = parse_time(r["due_at"])
+            state = "还没到时间" if due is None or due > now else "时间到了，系统正在发，还没发出去"
+            lines.append(f"- #{r['id']} {_clock(r['due_at'])} 要提醒对方：{r['content']}（对方要求的；{state}）")
+        recent = timedelta(hours=RECENT_REMINDER_HOURS)
+        for r in self.db.list_commitments(["sent", "failed"], limit=20):
+            at = r.get("delivered_at") or r.get("updated_at")
+            if not at or now - parse_time(at) > recent:
+                continue
+            if r["status"] == "failed":
+                lines.append(f"- {r['content']}（原定 {_clock(r['due_at'])}）：没发出去，发送失败了")
+                continue
+            said = self._reminder_text(r.get("proactive_event_id"))
+            # whether the owner did it is unknown unless they say so
+            lines.append(f"- {r['content']}：{_clock(at)} 已经提醒过了" + (f"（发的是：{said}）" if said else "")
+                         + "；对方有没有做完不知道，对方没提起就别再催")
+        return _Section("commitments", 4, self.COMMITMENT_HEADER, lines)
 
-    @staticmethod
-    def _chosen_relationship() -> bool:
-        """2026-11-03 (user: 冷漠、惜字如金，选的是恋人): the admin chose this channel's relationship (恋人 / 女儿 / 朋友 /
-        开发者) -- then the stage guessed from the chat log (还在互相熟悉 / 保持距离 after one "肉麻" in 4000 imported
-        messages) must not override it. Only the default 亲近 keeps the guessed stage."""
+    def _reminder_text(self, event_id: Any) -> str:
+        if not event_id:
+            return ""
+        row = self.db.fetch_one("SELECT sent_messages FROM proactive_events WHERE id = ?", (event_id,))
+        try:
+            sent = json.loads((row or {}).get("sent_messages") or "[]")
+        except (TypeError, ValueError):
+            return ""
+        texts = [str(m.get("content") if isinstance(m, dict) else m) for m in sent if m]
+        return " / ".join(t for t in texts if t)[:80]
+
+    BOND_HEADER = "【你们的关系和现在的情况】"
+    FIRST_MEETING = ("- 这是你们第一次聊天，你们刚认识。不要装作早就认识对方（不说“认得出你”“跟你很熟”），"
+                     "也不撒娇、不吃醋、不说想念；像刚加上好友那样，自然、有点好奇，慢慢熟起来。")
+    NEW_TODAY = "- 你们今天才开始聊天，还在互相熟悉：可以聊得开心，但还不吃醋、不说想念、不用亲昵的称呼。"
+    APART = ("- 你们是隔着手机聊天的：你有你自己那边的生活，不在对方身边，看不见对方，也不约现实里见面；"
+             "说到一起做什么，只能是想象或者以后的打算。")
+    IDENTITY = ("- 对方知道你不是真人。对方问你是不是 AI 时，按你自己的性格回答就行（承认、装傻、岔开、嘴硬都可以），"
+                "但不要说自己是真人、活人。")
+
+    def _bond_section(self) -> _Section:
+        """2026-11-12 (virtual test: the default Violet said "反正我认得出你" and "有点想你" on the first day; the 病娇
+        persona "saw" the owner at the canteen door, "你穿的那件外套对吧"; 继妹 cooked noodles at home while the owner was in
+        his dorm). Who you are to each other, how far you have come, and where you are relative to the owner were three
+        separate texts (the relationship, a closeness guessed from the log, the persona's living rules) and nothing at
+        all said whether she is next to him. ONE section, written by the code from the records:
+          1. the relationship: the persona's own (with its stage), the one the owner chose, or the default -- then how
+             close by the chat so far (first chat / today / relationship.assess)
+          2. where she is: next to the owner only for a persona whose story says so (user: only 同住 / 同校), and even
+             then the owner's own state, looks and clothes come from the owner alone
+          3. what she is (user 2026-11-12: "我倒希望不是很承认"): to the owner, answer in character; never claim to
+             be human. Groups and other people have their own rule (ai/social/prompts.py)."""
         try:
             from ai.channels.context import current
-            from ai.persona_templates import relationship
-            return (relationship(current().channel).get("kind") or "close") != "close"
+            from ai.persona_templates import persona_data, relationship_text, together
+            channel = current().channel
+            rel, text = relationship_text(channel, self.db)
+            data = persona_data(channel)
         except Exception:                                   # noqa: BLE001
-            return False
+            logger.exception("relationship unavailable")
+            rel, text, data = {"kind": "close", "call": ""}, "", {}
+            together = lambda _d: None                      # noqa: E731
+        lines: list[str] = []
+        if rel["kind"] == "close":
+            lines += self._closeness_lines()
+            if rel["call"]:
+                lines.append(f"- 你称呼对方“{rel['call']}”（偶尔叫，不要句句带）。")
+        else:
+            first, *rest = text.split("\n")
+            lines += [f"- {first}"] + [x for x in rest if x]
+            lines += self._records_lines()
+        where = together(data)
+        if where:
+            from ai.persona_templates import TOGETHER
+            lines.append(f"- 在你们的故事里，你们{TOGETHER[where]}：可以说在同一个地方发生的事，也可以约着一起做事、见面，"
+                         "这是你们俩的故事。但对方此刻在哪、在做什么、长什么样、穿什么，只按对方自己说的，不要替对方编；"
+                         "对方的真实情况（比如住宿舍、在外地）和故事对不上时，按对方的实际情况来。")
+        else:
+            lines.append(self.APART)
+        if not data.get("kind") == "ai":                    # the AI persona says what it is in its own words
+            lines.append(self.IDENTITY)
+        return _Section("relationship", 1, self.BOND_HEADER, lines, trim_from_end=False)
 
-    def _relationship_section(self) -> _Section:
-        """How long the two of you have been talking, from the message log -- so closeness has a basis. After 翻篇 it
-        counts from the cut (2026-11-09: "第一次聊天在 00:28（16 小时前）" after 清除记忆 + 翻篇 at 13:20)."""
+    def _first_message_row(self) -> dict[str, Any] | None:
         from ai import context_cut
-        row = self.db.fetch_one(
+        return self.db.fetch_one(
             "SELECT MIN(created_at) AS first, COUNT(DISTINCT substr(created_at, 1, 10)) AS days "
             "FROM messages WHERE role = 'user' AND created_at >= ?", (context_cut.owner_floor(),))
-        # 0.7.63 (user's export 2026-11-09 22:51-23:13, relationship 恋人, memory cleared just before): the prompt said
-        # "你们是恋人" AND "第一次聊天在 22:51（15 分钟前），认识还不到一天，还不太熟" -- she kept the owner at a
-        # distance and recited the minute count turn after turn. A relationship the owner chose is how close you are; the
-        # log only says how far back her records go (and no running minute count: it also changed the prompt every turn)
-        chosen = self._chosen_relationship()
-        if chosen:
-            if not row or not row["first"]:
-                return _Section("relationship", 3, "【你手头的聊天记录】", [
-                    "- 你手头还没有和对方的聊天记录：更早的事你现在想不起来，对方问起就照实说记不清了，不要编。"
-                    "你们有多亲近按“你们的关系”来，不要把对方当成刚认识的陌生人"])
-            from ai.memory_model import parse_time
-            if parse_time(self.db.now()) - parse_time(row["first"]) < timedelta(days=1):
-                return _Section("relationship", 3, "【你手头的聊天记录】", [
-                    f"- 你手头的聊天记录从 {_clock(row['first'])} 开始：更早的事你现在想不起来，对方问起就照实说记不清了，"
-                    "不要编，也不要说成“我们才刚认识”。你们有多亲近按“你们的关系”来"])
+
+    def _records_lines(self) -> list[str]:
+        """A relationship that is given (chosen, or the persona's own): the log only says how far back her records go
+        (0.7.63: "你们是恋人" next to "还不太熟" kept the owner at a distance)."""
+        row = self._first_message_row()
         if not row or not row["first"]:
-            return _Section("relationship", 3, "【你们的相处】", ["- 这是你们第一次聊天"])
+            return ["- 你手头还没有和对方的聊天记录：故事里写到的往事你记得，别的更早的事想不起来，对方问起就照实说记不清，不要编。"]
+        from ai.memory_model import parse_time
+        if parse_time(self.db.now()) - parse_time(row["first"]) < timedelta(days=1):
+            return [f"- 你手头的聊天记录从 {_clock(row['first'])} 开始：更早的事（故事里写到的除外）想不起来就照实说，"
+                    "不要编，也不要说成“我们才刚认识”。"]
+        return []
+
+    def _closeness_lines(self) -> list[str]:
+        """The default relationship: how close you are comes from the chat so far (user 2026-11-12: 第一次聊天像刚认识，
+        慢慢熟)."""
+        row = self._first_message_row()
+        if not row or not row["first"]:
+            return [self.FIRST_MEETING]
         from ai.memory_model import parse_time
         known = parse_time(self.db.now()) - parse_time(row["first"])
         if known < timedelta(days=1):
-            line = f"- 你们今天才开始聊天（{_clock(row['first'])} 第一次说话），还在互相熟悉"
-        else:
-            line = f"- 第一次聊天在 {_clock(row['first'])}（{_span(known)}前），之后有 {row['days']} 天聊过天"
-        lines = [line]
-        if known >= timedelta(days=1) and env_bool("VIOLET_RELATIONSHIP_STATE", True) and not self._chosen_relationship():
+            return [self.FIRST_MEETING if (row["days"] or 0) <= 1 and self._owner_turns() <= 1 else self.NEW_TODAY]
+        lines = [f"- 第一次聊天在 {_clock(row['first'])}（{_span(known)}前），之后有 {row['days']} 天聊过天"]
+        if env_bool("VIOLET_RELATIONSHIP_STATE", True):
             # Phase 8.9: how close you are from how the two of you have actually talked, not from days alone
             from ai.relationship import assess, describe
             try:
@@ -342,7 +406,13 @@ class ContextEngine:
                 lines.append(describe(view))
             except Exception:
                 logger.exception("relationship view unavailable")
-        return _Section("relationship", 3, "【你们的相处（据聊天记录）】", lines)
+        return lines
+
+    def _owner_turns(self) -> int:
+        from ai import context_cut
+        row = self.db.fetch_one("SELECT COUNT(*) AS n FROM messages WHERE role = 'user' AND created_at >= ?",
+                                (context_cut.owner_floor(),))
+        return int((row or {}).get("n") or 0)
 
     def _session_messages(self) -> list[dict[str, Any]]:
         """Messages of the current conversation: back from now until a quiet gap (VIOLET_CONTEXT_SESSION_GAP_HOURS)."""
@@ -523,7 +593,6 @@ class ContextEngine:
             return []
         core_lines = core.render().splitlines()
         sections = [_Section("persona_core", 0, core_lines[0], core_lines[1:], trim_from_end=False)]
-        sections.append(self._relationship_role_section())                      # 2026-10-30: the second layer
         dynamic = PersonaDynamics(self.db).render()
         if dynamic:
             lines = dynamic.splitlines()
@@ -543,20 +612,6 @@ class ContextEngine:
             sections.append(self._social_section())
             sections.append(self._sticker_section())
         return sections
-
-    def _relationship_role_section(self) -> _Section:
-        """2026-10-30: how she relates to the owner (persona_templates.RELATIONSHIPS), per channel."""
-        try:
-            from ai.channels.context import current
-            from ai.persona_templates import relationship_text
-            rel, text = relationship_text(current().channel, self.db)      # 2026-11-12: or the persona's own + its stage
-        except Exception:                                   # noqa: BLE001
-            logger.exception("relationship unavailable")
-            return _Section("relationship_role", 1, "", [])
-        if rel["kind"] == "close" and not rel["call"]:
-            return _Section("relationship_role", 1, "", [])        # the default adds nothing (as before 2026-10-30)
-        return _Section("relationship_role", 1, f"【你们的关系：{rel['label']}】", text.split("\n"),
-                        trim_from_end=False)
 
     def _about_owner_section(self) -> _Section:
         """2026-11-12: what the owner filled in about themselves (ai/about_owner.py), on every owner turn."""
@@ -639,6 +694,13 @@ class ContextEngine:
             able.append("偶尔发 QQ 空间动态")
         able.append("记住和主人聊过的事、按约定提醒主人")
         return _Section("ai_abilities", 2, "【你现在能做的事（按现在打开的功能）】", ["- " + "、".join(able)])
+
+    def _meme_section(self, user_message: str) -> _Section:
+        """2026-11-12 (user: 他还是感觉不太理解我有的梗): the memes this message uses -- the ones the owner taught her and
+        the meme wiki's (ai/memes.py); nothing when none is found. Trimmed only after the web findings."""
+        from ai import memes
+        return _Section("memes", 2, memes.CONTEXT_HEADER, memes.context_lines(self.db, user_message),
+                        footer=memes.CONTEXT_FOOTER)
 
     def _sticker_section(self) -> _Section:
         """0.7.9: her sticker collection and how to send one (ai/stickers.py)."""
@@ -939,7 +1001,7 @@ class ContextEngine:
         onboarding_key = None
         if mode in ("chat", "proactive", "decision"):
             # the proactive decision too -- whether Violet reaches out depends on how close you are
-            sections.append(self._relationship_section())
+            sections.append(self._bond_section())                  # 2026-11-12: one section
         standing_ids: set[int] = set()
         if mode in ("chat", "proactive", "decision"):
             standing_section, standing_ids = self._standing_section(call_context)     # 2026-11-09
@@ -950,6 +1012,7 @@ class ContextEngine:
             rest = [m for m in recalled if m.get("id") not in standing_ids]
             if rest or not recalled:                     # all found ones already shown above: no "没找到" line
                 sections.append(self._recall_section(rest, user_message))
+            sections.append(self._meme_section(user_message))
         if mode in ("chat", "proactive", "decision") and env_bool("VIOLET_PERSONA_CONTEXT", True):
             sections += self._persona_sections(mode, user_message, call_context)
         if mode in ("chat", "proactive", "decision"):

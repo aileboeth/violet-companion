@@ -210,7 +210,8 @@ def start_fake_tools() -> list[dict[str, Any]]:
     def web_search(query: str) -> str:
         record("violet-web__web_search", {"query": query})
         if "天气" in query:
-            city = "北京" if "北京" in query else "杭州"
+            # 2026-11-12: the city asked about (the virtual test's owner lives in 广州)
+            city = next((c for c in ("北京", "上海", "广州", "深圳", "杭州", "成都", "武汉", "南京") if c in query), "杭州")
             return json.dumps({"results": [{"title": f"{city}今天天气", "url": "https://weather.example.com/today",
                                             "snippet": f"{city}今天多云转晴，18～25℃，东南风 2 级，空气质量良。"}]},
                               ensure_ascii=False)

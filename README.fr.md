@@ -16,6 +16,7 @@ L'interface du panneau est pour l'instant en chinois.
 - Elle ne répond qu'à vous, la personne à qui elle est liée. Les messages privés d'inconnus restent sans réponse et leur texte n'est pas conservé.
 - Avec un compte QQ personnel, elle peut rejoindre des groupes : elle intervient quand quelqu'un dit son nom, la mentionne avec @ ou lui donne un petit coup, et lance de temps en temps un sujet quand le groupe est silencieux. Elle apprend peu à peu à connaître les membres du groupe. Elle peut aussi regarder les images du groupe, collectionner et envoyer des stickers, et publier sur QQ Zone (elle vous montre la publication avant).
 - Elle peut envoyer plusieurs messages d'affilée, des messages vocaux (optionnel : clonage d'une voix à partir d'un seul enregistrement, exécuté sur le CPU du serveur) et des images qu'elle dessine.
+- Elle comprend les mèmes : téléchargez le wiki des mèmes (mèmes internet chinois de cnmeme.wiki) dans le panneau ; quand votre message en utilise un, elle voit ce qu'il veut dire et rebondit au lieu de le prendre au pied de la lettre. Les mèmes que vous lui expliquez, elle s'en souvient.
 
 **Mémoire**
 

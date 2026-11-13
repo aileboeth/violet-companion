@@ -118,6 +118,9 @@ _OWNED_ROLE_RE = re.compile(r"(我们|我的)的?([一-鿿]{0,4}?)(老师|导师
 _NOT_A_MODIFIER = set("去问找跟和给让叫说告帮请见想要会能起也都还就是像当被把对向天")    # 天: "我的天" (an exclamation)
 
 
+CLAIMS_HUMAN_RE = re.compile(r"我(是|也是|就是|可是)(个|一个)?(真人|真实的人|人类|活人|活生生的人)")
+
+
 def owned_role_claim(text: str) -> str | None:
     """"我们英语老师" -> the matched words; None when nothing claims a teacher / class / company of Violet's own."""
     for match in _OWNED_ROLE_RE.finditer(text or ""):
@@ -311,9 +314,12 @@ class ConsistencyGuard:
             claim = owned_role_claim(text)                 # phase 9.4 real run: "我们英语老师要是也这样就好了"
             if claim:
                 found.append(Violation("forbidden_backstory", f"owns a school / work role: {claim}"))
-        for pattern in self.core.identity_violations():
-            if pattern.search(text):
-                found.append(Violation("identity_conflict", f"matches {pattern.pattern}"))
+        # 2026-11-12 (user: 承不承认 AI 都没什么关系，倒希望不是很承认): to the owner she may dodge the question in
+        # character; the one thing she never says is that she is a real person. One rule for every persona (it was a
+        # per-template list that also forbade "我不是AI")
+        match = CLAIMS_HUMAN_RE.search(text)
+        if match:
+            found.append(Violation("identity_conflict", f"claims to be human: {match.group(0)}"))
         return found
 
     def _user_experiences(self) -> list[str]:

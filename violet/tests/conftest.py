@@ -149,6 +149,8 @@ _TABLES = (
     "stickers", "social_media", "social_posts",
     # 2026-10-30: her mood, deleted stickers
     "mood_state", "sticker_blocklist",
+    # 2026-11-12: the memes the owner taught her
+    "owner_memes",
 )
 
 

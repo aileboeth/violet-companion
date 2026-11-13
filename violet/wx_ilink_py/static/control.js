@@ -670,7 +670,7 @@ function renderTools(servers) {
     const el = toolServerCard(s); el.id = "tool-srv-" + s.name; return el;
   }) : [h("p", { class: "note", text: "还没有添加其他 MCP 服务器。" })]));
   jumpNav($("#tools-jump"), [["她能自己做的事", "set-g-permissions"], ["手机", "phone-mcp"], ["联网", "tools-web"], ["语音", "tools-voice"],
-    ["其他 MCP 服务器", "tools-mcp"], ["添加服务器", "mcp-add-box"]]);
+    ["梗", "tools-memes"], ["其他 MCP 服务器", "tools-mcp"], ["添加服务器", "mcp-add-box"]]);
 }
 function toolServerCard(s, title = s.name) {
   const facts = [`状态 ${TOOL_STATUS[s.status] || s.status}`, `传输 ${s.transport}`, s.url ? `地址 ${s.url}` : null, s.command,

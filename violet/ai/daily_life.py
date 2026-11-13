@@ -33,6 +33,26 @@ _TITLE_RE = re.compile(r"《([^》]{1,30})》")
 _QUANTIFIER_RE = re.compile(r"^(几首|几条|几本|一张|一位|一些|一首|一本)")
 
 
+def _install_seed() -> str:
+    """A random string made once per install (so two installs do not live the same days)."""
+    import secrets
+    from ai.persona_templates import control_dir
+    path = control_dir() / "life-seed"
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+        if value:
+            return value
+    except OSError:
+        pass
+    value = secrets.token_hex(8)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(value, encoding="utf-8")
+    except OSError:                                          # read-only: the same within this run
+        logger.warning("life seed could not be saved")
+    return value
+
+
 class DailyLife:
     def __init__(self, db, config: dict[str, Any] | None = None):
         self.db = db
@@ -44,13 +64,30 @@ class DailyLife:
         return bool(self.daily.get("enabled", False) and self.daily.get("slots")) and env_bool("VIOLET_DAILY_LIFE", True)
 
     # ------------------------------------------------------------------
+    def _persona(self) -> tuple[str, dict[str, Any]]:
+        """(her name, her own day's slots or the shipped ones)."""
+        try:
+            from ai.persona import PersonaCore
+            data = PersonaCore.load().data
+        except Exception:                                    # noqa: BLE001
+            data = {}
+        own = data.get("daily")
+        name = str((data.get("identity") or {}).get("name") or "")
+        return name, own if isinstance(own, dict) and own else self.daily["slots"]
+
     def plan_for(self, day: date, tz) -> list[dict[str, Any]]:
-        """The whole day, decided from the date (and what the days before it already had)."""
-        # fixed random-seed string (kept from before the rename to Violet, so a given date keeps its day)
-        rng = random.Random(f"{self.daily.get('seed_salt', 'eve-day')}:{day.isoformat()}")
+        """The whole day, decided from the date (and what the days before it already had).
+
+        2026-11-12 (virtual test: every persona of every install said "昨天在家做了蛋炒饭，有点咸" on its first day):
+        the seed was the date alone and the slots one shared list -- the same day for everybody, in Violet's flat. Now a
+        persona brings her own slots ("daily" in her template: the 继妹 cooks at home, the 学妹 sits in the club room),
+        and the seed is this install's own (control/life-seed), her name and the date: still the same day every time
+        it is looked at."""
+        name, slots_spec = self._persona()
+        rng = random.Random(f"{self.daily.get('seed_salt', 'eve-day')}:{_install_seed()}:{name}:{day.isoformat()}")
         if rng.random() < float(self.daily.get("quiet_day_probability", 0.15)):
             return []
-        slots = list(self.daily["slots"].items())
+        slots = list(slots_spec.items())
         lo, hi = (list(self.daily.get("items_per_day") or [1, 3]) + [3])[:2]
         count = min(rng.randint(int(lo), int(hi)), len(slots))
         day_start = datetime(day.year, day.month, day.day, tzinfo=tz)

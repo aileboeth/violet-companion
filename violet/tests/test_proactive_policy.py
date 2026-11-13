@@ -145,15 +145,14 @@ def test_fixed_task_not_right_after_another_proactive_message(world):
 
 # --- commitments -------------------------------------------------------------------------------
 
-def test_reminder_waits_for_quiet_hours_to_end(world):
+def test_a_reminder_goes_out_on_time_even_in_quiet_hours(world):
+    """2026-11-12 (virtual test): "明早七点半叫我起床" went out after 8:00 -- quiet hours are for her own messages."""
     current = now(world.db)
-    quiet_end = current + timedelta(hours=1)
-    world.write_config(quiet_hours={"start": hhmm(current - timedelta(hours=1)), "end": hhmm(quiet_end)})
+    world.write_config(quiet_hours={"start": hhmm(current - timedelta(hours=1)), "end": hhmm(current + timedelta(hours=1))})
     commitment = due_commitment(world.db)
     world.scheduler.tick()
-    assert world.client.sent_texts == []
-    postponed = world.db.get_commitment(commitment["id"])
-    assert postponed["status"] == "pending" and postponed["next_attempt_at"][11:16] == hhmm(quiet_end)
+    assert world.client.sent_texts
+    assert world.db.get_commitment(commitment["id"])["status"] == "sent"
 
 
 def test_reminder_falls_back_to_template_when_generation_fails(world):
@@ -182,7 +181,7 @@ def test_reminder_is_claimed_only_once(world):
 
 
 def test_reminder_send_failure_is_retried_then_marked_failed(world):
-    world.write_config(commitments={"enabled": True, "respect_quiet_hours": True, "max_attempts": 2, "retry_minutes": 0})
+    world.write_config(commitments={"enabled": True, "max_attempts": 2, "retry_minutes": 0})
     world.llm.responders["fake-chat"] = lambda kw: "该喝水啦"
     world.client.send_failures = [requests.ReadTimeout("x"), requests.ReadTimeout("y")]
     commitment = due_commitment(world.db)

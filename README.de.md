@@ -16,6 +16,7 @@ Die Oberfläche des Panels ist derzeit auf Chinesisch.
 - Sie antwortet nur dir, der Person, mit der sie verknüpft ist. Privatnachrichten von Fremden bleiben unbeantwortet, und ihr Text wird nicht gespeichert.
 - Mit einem persönlichen QQ-Konto kann sie Gruppen beitreten: Sie mischt sich ein, wenn jemand ihren Namen sagt, sie mit @ erwähnt oder sie anstupst, und bringt ab und zu selbst ein Thema auf, wenn es in der Gruppe still wird. Mit der Zeit lernt sie die Leute in der Gruppe kennen. Sie kann sich auch Bilder in der Gruppe ansehen, Sticker sammeln und senden und in QQ Zone posten (sie zeigt dir den Beitrag vorher).
 - Sie kann mehrere Nachrichten hintereinander schicken, Sprachnachrichten (optional: eine Stimme aus einer einzigen Aufnahme klonen, läuft auf der Server-CPU) und Bilder, die sie selbst malt.
+- Sie versteht Memes: Lade im Panel das Meme-Wiki herunter (chinesische Internet-Memes von cnmeme.wiki); benutzt deine Nachricht eins, sieht sie, was es bedeutet, und spielt mit, statt es wörtlich zu nehmen. Memes, die du ihr erklärst, merkt sie sich.
 
 **Gedächtnis**
 

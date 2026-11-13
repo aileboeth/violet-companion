@@ -16,6 +16,7 @@ The control panel's interface is currently in Chinese.
 - She only replies to you, the person she is bound to. Private messages from strangers get no reply, and their text is not stored.
 - With a personal QQ account she can join groups: she joins in when someone says her name, @-mentions her or pokes her, and now and then starts a topic when the group goes quiet. She gets to know the people in the group over time. She can also look at images in the group, collect and send stickers, and post to QQ Zone (she shows you the post first).
 - She can send several messages in a row, voice messages (optional: clone a voice from one recording, runs on the server CPU), and pictures she draws.
+- She gets internet memes: download the meme wiki (Chinese internet memes from cnmeme.wiki) in the panel, and when your message uses one she sees what it means and plays along instead of taking it literally. Memes you explain to her, she remembers.
 
 **Memory**
 

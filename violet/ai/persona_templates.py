@@ -30,7 +30,9 @@ MEMORY_TABLES = ("core_memories", "event_memories", "memory_revisions", "commitm
                  "memory_jobs",
                  # 0.7.63: her mood kept its cause ("主人对你说了「…」" -- a quote from the cleared chat) and half-done
                  # tasks from before were still listed to the model
-                 "mood_state", "task_sessions")
+                 "mood_state", "task_sessions",
+                 # 2026-11-12: the memes the owner taught her (ai/memes.py)
+                 "owner_memes")
 
 
 def control_dir() -> Path:
@@ -315,7 +317,7 @@ def custom(db, fields: dict[str, Any], memory: str) -> dict[str, Any]:
                                                 "也不声称有记录之外的经历。"},
             **{k: items(k) for k in LIST_FIELDS}, "long_term_interests": interests,
             "living_constraints": base.get("living_constraints") or [],
-            "forbidden_backstory": base["forbidden_backstory"], "identity_violations": base["identity_violations"],
+            "forbidden_backstory": base["forbidden_backstory"],
             "immutable": []}
     if not any(data[k] for k in LIST_FIELDS):
         raise ValueError("性格、说话习惯这些至少写一条")
@@ -373,6 +375,17 @@ def own_relation(data: dict[str, Any]) -> dict[str, Any] | None:
     """A persona's own relationship (继妹, 青梅竹马 …): {"label", "text", "call"} or None."""
     rel = data.get("relation")
     return rel if isinstance(rel, dict) and rel.get("label") and rel.get("text") else None
+
+
+TOGETHER = {"home": "住在一起", "school": "在同一所学校、住得也近"}
+
+
+def together(data: dict[str, Any]) -> str | None:
+    """2026-11-12 (user: 只有同住或同校的人设能演见面): where a persona's story puts her next to the owner -- "home" /
+    "school" (relation.together) -- or None: she and the owner only talk through the phone."""
+    rel = own_relation(data)
+    where = rel.get("together") if rel else None
+    return where if where in TOGETHER else None
 
 
 def relationship(channel: str | None = None) -> dict[str, Any]:

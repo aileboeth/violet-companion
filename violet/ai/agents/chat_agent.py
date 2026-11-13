@@ -73,9 +73,11 @@ PROACTIVE_REQUEST = (
     "按上面的主动触达决策、背景和你们最近的聊天，直接写出要发给对方的话。"
     "每条微信消息单独占一行，不要输出 JSON，不要输出 Markdown。"
     "禁止使用这些主动陪伴套话：我在这儿陪着你、我一直在、我在这、想聊会儿吗、要不要和我聊聊、我会陪着你。"
-    "主动消息要像你们平时那样随手发一条（按“你自己”和“你们的关系”），短、具体、自然；通常 1 到 2 条，"
+    "主动消息要像你们平时那样随手发一条（按“你自己”和“你们的关系和现在的情况”），短、具体、自然；通常 1 到 2 条，"
     "不要为了显得温柔而加陪伴服务式收尾。"
-    "不一定要提问：只说你想说的那件事、一句想念或一句撒娇也很好，不用每次都问对方今天怎么样、吃了吗、在干嘛。")
+    "不一定要提问：只说你想说的那件事就很好，不用每次都问对方今天怎么样、吃了吗、在干嘛。"
+    # 2026-11-12 (virtual test: "晚上安静下来，忽然有点想你" on the day they met; "烧腊饭抢到没有" asked twice)
+    "想念、撒娇这些按“你们的关系和现在的情况”来，还没熟就不说。你上次主动发的消息对方还没回时，不要再问同一件事。")
 
 # user, 2026-11-10: "输入的什么语言回答什么语言吧，中间夹杂几句外语也比较正常" -- no setting, one rule
 REPLY_LANGUAGE = ("【语言】对方这句话主要用什么语言，你就用什么语言回。对方在一句话里夹几个外语词或一两句外语很正常，"
@@ -238,6 +240,11 @@ class ChatAgent(BaseAgent):
                           "note_feeling": lambda args: owner_tools.note_feeling(violetdb, self._call_context, args)}
         for schema in owner_tools.SCHEMAS:
             self.register_tool(schema, owner_handlers[schema["function"]["name"]])
+        from ai import memes                                          # 2026-11-12
+        meme_handlers = {"look_up_meme": lambda args: memes.tool_look_up(violetdb, args),
+                         "remember_meme": lambda args: memes.tool_remember(violetdb, args)}
+        for schema in memes.SCHEMAS:
+            self.register_tool(schema, meme_handlers[schema["function"]["name"]])
 
     def _tool_query_memory(self, args: dict[str, Any]) -> dict[str, Any]:
         from ai import owner_tools
@@ -279,7 +286,8 @@ class ChatAgent(BaseAgent):
             hidden = {n for n in mcp_tool_names(tools)
                       if not server_applies_to_agent(servers.get(n.split("__", 1)[0]) or {"agents": []}, "proactive")
                       or permissions.get(n, "read") != "read"}
-            hidden |= WEB_TOOLS | IMAGE_TOOLS | STICKER_TOOLS | QQ_TOOLS | own_tools
+            from ai.memes import TOOL_NAMES as MEME_TOOLS
+            hidden |= WEB_TOOLS | IMAGE_TOOLS | STICKER_TOOLS | QQ_TOOLS | own_tools | MEME_TOOLS
             return [t for t in tools if t["function"]["name"] not in hidden]
         hidden = set()
         if "direct_tools" in self._call_context:
@@ -289,9 +297,13 @@ class ChatAgent(BaseAgent):
             hidden |= {n for n in mcp_tool_names(tools) if n not in offered}
         if not owner_tools.has_memories(violetdb):
             hidden.add("query_memory")                                # nothing a search could find
-        from ai import test_mode
+        from ai import memes, test_mode
+        if not memes.enabled():
+            hidden |= memes.TOOL_NAMES
+        elif not memes.wiki_available() and not memes.own_list(violetdb):
+            hidden.add("look_up_meme")                                # nothing to look in
         if test_mode.active():
-            hidden |= owner_tools.REMINDER_TOOLS | {"note_feeling"}  # test mode writes nothing
+            hidden |= owner_tools.REMINDER_TOOLS | {"note_feeling", "remember_meme"}  # test mode writes nothing
         from ai import mood
         if not mood.enabled():
             hidden.add("note_feeling")

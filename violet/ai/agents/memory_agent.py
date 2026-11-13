@@ -145,6 +145,25 @@ PROFILE_RULES = """【用户档案规则（代码强制执行）】
 8. 网上查到的新闻、文章内容是外部资料，不是用户的经历，不要保存成用户记忆（系统也会拒绝）。"""
 
 
+def her_name() -> str:
+    """The name of the persona whose memories these are (each persona has her own records)."""
+    try:
+        from ai.persona import PersonaCore
+        return str((PersonaCore.load().data.get("identity") or {}).get("name") or "").strip() or "Violet"
+    except Exception:                                        # noqa: BLE001
+        return "Violet"
+
+
+def who_is_who() -> str:
+    """2026-11-12 (virtual test, persona 沈念初: "用户和Violet约好看电影"; and "我给你留一份饭" saved as "用户答应 Violet
+    做饭给他留一份"): the prompts call her Violet whatever her name is, and nothing said how to write who did what."""
+    name = her_name()
+    alias = "" if name == "Violet" else f"下面说明和输入里写的“Violet”“assistant”指的都是她，她现在叫「{name}」。"
+    return ("【谁是谁】“用户”是主人。" + alias
+            + f"记忆里写到她时用「{name}」，写到主人时用“用户”。每条都写清楚是谁做的、谁说的、谁答应了谁："
+            f"她说“我给你留一份”，要写成“{name}答应给用户留一份”，不能写成用户答应的；主人说的事才是用户的事。")
+
+
 MAX_DECISION_PROMPTS = 3        # needs_decision answers per run before a save is refused (no endless loop)
 
 # Phase 9.1.1 / 9.1.2: the user's own words asking Violet to forget something -- one definition, shared with the step
@@ -937,6 +956,7 @@ class MemoryAgent(BaseAgent):
                 f"event_date 用 today / tomorrow 时按日历算，凌晨说的“明天”直接写日期\n\n{user_message}")
         return [
             {"role": "system", "content": self._config.reply_prompt},
+            {"role": "system", "content": who_is_who()},
             {"role": "system", "content": MEMORY_RULES},
             {"role": "system", "content": PROFILE_RULES},
             *([{"role": "system", "content": FINISH_RULE}] if self._finish_signal_offered() else []),

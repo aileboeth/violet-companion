@@ -82,10 +82,10 @@ def test_nothing_is_left_for_the_relay_workaround_to_turn_into_user_messages(nig
 def test_a_chosen_relationship_is_not_contradicted_by_a_short_chat_log(night, monkeypatch):
     _partner(monkeypatch)
     text = "\n".join(str(m["content"]) for m in _sent(monkeypatch))
-    assert "你们的关系：恋人" in text
+    assert "你们是恋人" in text
     for wrong in ("还不太熟", "认识还不到一天", "分钟前", "还在互相熟悉"):
         assert wrong not in text, wrong
-    assert "聊天记录从 11-09 22:51 开始" in text and "按“你们的关系”来" in text
+    assert "聊天记录从 11-09 22:51 开始" in text and "不要说成“我们才刚认识”" in text
 
 
 def test_no_running_minute_count_without_a_chosen_relationship_either(night, monkeypatch):

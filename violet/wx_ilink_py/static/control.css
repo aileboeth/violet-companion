@@ -560,7 +560,7 @@ label.inline{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .sub-box > summary { font-weight: 600; color: var(--text); font-size: 13.5px; margin: 0; }
 .sub-box[open] > summary { margin-bottom: 10px; }
 #tools-mcp > .cards.list:not(:empty) { margin-bottom: 4px; }
-#tools-mcp, #tools-voice { margin-top: 14px; }
+#tools-mcp, #tools-voice, #tools-memes { margin-top: 14px; }
 /* channels: QQ waiting for the scan takes the whole row; its window left, the text right */
 .platform-wide { grid-column: 1 / -1; order: 10; }       /* after the other cards: they stay in one row */
 .platform-wide .qq-scan { display: grid; grid-template-columns: minmax(220px, 360px) minmax(0, 1fr); gap: 8px 18px;

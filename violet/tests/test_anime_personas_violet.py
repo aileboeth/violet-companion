@@ -112,7 +112,7 @@ def test_every_new_template_is_complete_and_keeps_the_fixed_lines(key):
     assert "对不确定的事情承认不知道" in d["values"]
     assert "大" in d["identity"]["self_description"] + "".join(d["living_constraints"])   # a university student
     assert "高一" not in whole and "高二" not in whole and "高中" not in whole and "男主" not in whole
-    assert any("真人" in p for p in d["identity_violations"]["patterns"])      # never claims to be a real person
+    assert "identity_violations" not in d             # 2026-11-12: one rule in code (consistency.CLAIMS_HUMAN_RE)
     assert any("按现在的阶段来" in line for line in d["avoid"])
 
 
@@ -142,7 +142,7 @@ def test_a_persona_with_its_own_relationship_replaces_the_choice(db, data_dir):
     assert pt.relationship()["call"] == "哥"                               # ... so it still follows the form
     assert pt.set_relationship("persona", "哥哥")["call"] == "哥哥"        # the owner's own choice is kept
     text = _context(db)
-    assert "【你们的关系：继妹】" in text and "没有血缘的继妹" in text and "你称呼对方“哥哥”" in text
+    assert "【你们的关系和现在的情况】" in text and "没有血缘的继妹" in text and "你称呼对方“哥哥”" in text
     assert "{call}" not in text and "你和对方的过去" in text and "口吻示例" in text and "不要这样" in text
     assert "不要编造家人、工作、学校、恋爱等背景" not in text            # her family and school are hers
     assert "还不太熟" not in text and "互相熟悉" not in text

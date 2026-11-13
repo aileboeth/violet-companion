@@ -66,8 +66,9 @@ def test_the_chat_prompt_after_a_fresh_start_has_nothing_from_before(fresh_start
 
 def test_how_long_you_have_known_each_other_starts_at_the_cut(fresh_start):
     from ai.context_engine import ContextEngine
-    line = "\n".join(ContextEngine(fresh_start)._relationship_section().lines)
-    assert "13:27" in line and "00:28" not in line
+    # 2026-11-12: the same day as the cut reads as getting to know each other (no clock time any more)
+    line = "\n".join(ContextEngine(fresh_start)._bond_section().lines)
+    assert "00:28" not in line and ("刚认识" in line or "今天才开始聊天" in line)
 
 
 def test_todays_message_count_starts_at_the_cut(fresh_start):

@@ -40,7 +40,6 @@
   "fixed_task_min_gap_minutes": 30,
   "commitments": {
     "enabled": true,
-    "respect_quiet_hours": true,
     "max_attempts": 3,
     "retry_minutes": 5
   },

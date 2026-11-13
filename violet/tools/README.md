@@ -27,6 +27,7 @@ The evaluation tools run the real Violet flow in an isolated sandbox: their own 
 | File | What it does |
 |---|---|
 | `scenario_eval.py` | Does she use her abilities when she should? About 40 everyday situations (voice, stickers, the weather, the phone, reminders, her mood, small talk, groups) run once each through the real code with your model; every one is scored and its tokens are counted, to compare before and after a change |
+| `virtual_test.py` | Long-run test in virtual time: a second model plays you and chats with her for days (memory, corrected facts, reminders, moods, proactive messages, a silent day, a difficult user, every persona); a judge model reads each day and lists problems with quotes. Runs on a throw-away copy of the data, never touches her real chats |
 | `decision_eval.py` | The memory step and the proactive decision with fewer tokens: the same result? |
 | `memory_conflicts.py`, `memory_restore_decayed.py` | Lists conflicting memories (read-only); recovers event memories that an older version deleted by mistake |
 | `schedule_rollback.py` | Drops the timetable tables from the database (used when rolling back the timetable feature) |

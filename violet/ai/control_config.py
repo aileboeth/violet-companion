@@ -236,6 +236,9 @@ SETTINGS: list[Setting] = [
             "群里或别人私聊发来的普通图片也用识图模型看（以前只看表情包）：每次决定最多看最新的几张，同一张图只看一次", True),
     Setting("VIOLET_SOCIAL_PICTURES_PER_DECISION", "每次最多看几张图片", "qq_stickers", "int", "now",
             "一次决定里最多看几张没看过的图片（每张一次识图调用）", 2, 0, 10),
+    # 2026-11-12 (user: 他还是感觉不太理解我有的梗): ai/memes.py
+    Setting("VIOLET_MEMES", "听懂梗", "memes", "bool", "now",
+            "你说的话里有梗百科或你教过她的梗时，把意思和用法一起给她看；没把握的新词她可以自己查（本地查，不联网）", True),
     Setting("VIOLET_QZONE_ENABLED", "发 QQ 动态", "qzone", "bool", "now",
             "她偶尔在 QQ 空间发一条说说（9:00–23:00，两条至少隔 4 小时，只写她自己的生活，不写你的事）；"
             "发过的动态在“聊天渠道 → QQ”下面能看到", False),
@@ -398,7 +401,7 @@ COMMON_KEYS = frozenset({
 GROUPS = {"api": "接口", "models": "模型与 Agent", "prompts": "提示词版本", "messages": "消息发送", "proactive": "主动联系",
           "life": "生活引擎", "behavior": "聊天行为", "memory": "记忆与提醒", "guard": "回复检查", "web": "联网搜索",
           "voice": "语音", "images": "图片", "stickers": "表情包", "social": "QQ 群聊和别人的私聊",
-          "qq_stickers": "QQ 上的表情包", "qzone": "QQ 动态", "mcp": "工具与 MCP", "schedule": "课表",
+          "qq_stickers": "QQ 上的表情包", "qzone": "QQ 动态", "mcp": "工具与 MCP", "schedule": "课表", "memes": "梗",
           "system": "系统", "logs": "日志与排查", "updates": "版本更新",
           "wechat_model": "这个渠道的模型", "qq_model": "这个渠道的模型", "telegram_model": "这个渠道的模型"}
 # 2026-11-02 (user: 聊天渠道是分开的，设置里却全归为一类): the settings page has tabs 通用 / 微信 / QQ / Telegram; these
