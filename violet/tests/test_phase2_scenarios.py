@@ -330,13 +330,18 @@ def test_s4_user_restarting_a_cooled_topic_is_continued_naturally(make_world):
 
 def test_s5_explicit_reminder_is_delivered_once_despite_chat_limits(make_world):
     w = make_world()
-    w.llm.responders["fake-memory"] = script(
-        tool("create_commitment", content="交实验报告", evidence="明天早上九点提醒我交实验报告",
-             due_date="tomorrow", due_clock="09:00"))
+    tomorrow = (datetime.fromisoformat(w.db.now()) + timedelta(days=1)).date().isoformat()
+    # 2026-11-13: the reminder is set by Chat while replying (set_reminder) -- the memory step no longer sets any
     chat(w, normal="好，明天叫你", reminder="九点啦，该交实验报告了")
+    plain, pending = w.llm.responders["fake-chat"], [tool("set_reminder", content="交实验报告", due_at=f"{tomorrow} 09:00")]
+
+    def respond(kw):                       # the owner's turn: set it first, then the reply
+        if pending and "要提醒的事" not in str(kw["messages"]) and not any(m["role"] == "tool" for m in kw["messages"]):
+            return pending.pop()
+        return plain(kw)
+    w.llm.responders["fake-chat"] = respond
     say(w, "明天早上九点提醒我交实验报告")
     commitment = w.db.list_commitments()[0]
-    tomorrow = (datetime.fromisoformat(w.db.now()) + timedelta(days=1)).date().isoformat()
     assert (commitment["status"], commitment["due_at"]) == ("pending", f"{tomorrow}T09:00:00+08:00")
     assert commitment["evidence"] == "明天早上九点提醒我交实验报告"
 
@@ -368,15 +373,12 @@ def test_s5_explicit_reminder_is_delivered_once_despite_chat_limits(make_world):
 
 def test_s6_shared_event_without_request_creates_no_follow_up(make_world):
     w = make_world()
+    # 2026-11-13: the memory step has no reminder tools at all (Chat sets reminders while replying)
     w.llm.responders["fake-memory"] = script(
-        tool("create_commitment", content="问面试结果", evidence="我今天去面试了", due_date="tomorrow"),
-        lambda kw: (last_tool_result(kw)["action"] == "rejected"
-                    and tool("save_memory", summary="用户今天去参加了面试", category="event", progress="ongoing")),
-    )
+        tool("save_memory", summary="用户今天去参加了面试", category="event", progress="ongoing"))
     say(w, "我今天去面试了，有点紧张")
-    memory_call = w.llm.calls_for("fake-memory")
-    rejection = json.loads([m for m in memory_call[1]["messages"] if m["role"] == "tool"][0]["content"])
-    assert (rejection["action"], rejection["reason"]) == ("rejected", "not_an_explicit_request")
+    offered = {t["function"]["name"] for t in (w.llm.calls_for("fake-memory")[0].get("tools") or [])}
+    assert offered and "create_commitment" not in offered
     assert w.db.list_commitments() == []
     interview = w.db.list_event_memories()[0]
     assert (interview["content"], interview["kind"], interview["progress"]) == ("用户今天去参加了面试", "event", "ongoing")

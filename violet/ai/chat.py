@@ -935,6 +935,16 @@ def find_touched_topic(text: str, restricted: list[dict[str, Any]]) -> dict[str,
     return None
 
 
+def spoken_reminder(content: str) -> str:
+    """The reminder as said to the owner at its time. 2026-11-13 (0.7.73 virtual test): a record written for the
+    system -- "明早叫用户一声（起床提醒）" -- went out word for word at 08:00 as "提醒你一下：明早叫用户一声（起床提醒）".
+    The owner is "你", notes in brackets are not said, and "明早 / 明天" at the start is now."""
+    text = re.sub(r"（[^）]*）|\([^)]*\)", "", content or "")
+    text = text.replace("用户", "你").replace("对方", "你")
+    text = re.sub(r"^(明早|明天早上|明天上午|明天下午|明天晚上|明晚|明天|今晚|今天)", "", text.strip()).strip(" ，,。")
+    return text or (content or "").strip()
+
+
 def run_commitment_pipeline(commitment: dict[str, Any], chat_agent) -> dict[str, Any]:
     """Generate the text of a due reminder the user explicitly asked for.
 
@@ -963,12 +973,14 @@ def run_commitment_pipeline(commitment: dict[str, Any], chat_agent) -> dict[str,
     from ai.channels.outbound import chat_payload, fixed_text   # phase 10.6: sealed, sendable messages only
     payload = chat_payload(text if isinstance(text, str) else "", images=False)   # reminders never send images
     joined = "".join(m["content"] for m in payload.get("messages", []))
-    mentions = VioletDatabase.normalize_text(content) in VioletDatabase.normalize_text(joined) or touches_topic(joined, content)
+    said = spoken_reminder(content)
+    mentions = any(VioletDatabase.normalize_text(c) in VioletDatabase.normalize_text(joined) or touches_topic(joined, c)
+                   for c in dict.fromkeys((content, said)) if c)
     if payload.get("should_send") and mentions:
         return {"messages": payload["messages"], "used_fallback": False, "error": error}
     template = env_str("VIOLET_COMMITMENT_FALLBACK_TEMPLATE", "提醒你一下：{content}") or "提醒你一下：{content}"
     return {
-        "messages": fixed_text(template.format(content=content)),
+        "messages": fixed_text(template.format(content=said)),
         "used_fallback": True,
         "error": error or ("generated text did not mention the reminder" if payload.get("should_send") else "no text generated"),
     }

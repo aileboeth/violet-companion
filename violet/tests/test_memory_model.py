@@ -194,29 +194,14 @@ def test_explicit_request_check(evidence, message, ok, reason):
     assert check_explicit_request(evidence, message) == (ok, reason)
 
 
-def test_commitment_tool_requires_explicit_authorisation(agents, violetdb):
-    with turn_context(turn_id="t-share", user_message="我今天去面试了，有点紧张"):
-        rejected = call(agents["memory"], "create_commitment", content="问面试结果", evidence="我今天去面试了",
-                        due_date="tomorrow")
-    assert rejected["action"] == "rejected" and violetdb.list_commitments() == []
-    with turn_context(turn_id="t-ask", user_message="明天早上提醒我交实验报告"):
-        created = call(agents["memory"], "create_commitment", content="交实验报告", evidence="明天早上提醒我交实验报告",
-                       due_date="tomorrow", due_clock="早上")
-        again = call(agents["memory"], "create_commitment", content="交实验报告", evidence="明天早上提醒我交实验报告",
-                     due_date="tomorrow", due_clock="早上")
-    assert created["ok"] and again["action"] == "already_saved"
-    rows = violetdb.list_commitments()
-    assert len(rows) == 1 and rows[0]["status"] == "pending" and rows[0]["due_at"].endswith("T08:00:00+08:00")
-
-
-def test_commitment_can_be_cancelled_by_the_user(agents, violetdb):
-    with turn_context(turn_id="t-a", user_message="明天提醒我买牛奶"):
-        cid = call(agents["memory"], "create_commitment", content="买牛奶", evidence="明天提醒我买牛奶",
-                   due_date="tomorrow")["commitment_id"]
-    with turn_context(turn_id="t-b", user_message="牛奶我买好了，不用提醒了"):
-        assert call(agents["memory"], "cancel_commitment", commitment_id=cid, evidence="其他人说的")["action"] == "rejected"
-        assert call(agents["memory"], "cancel_commitment", commitment_id=cid, evidence="不用提醒了")["action"] == "cancelled"
-    assert violetdb.get_commitment(cid)["status"] == "cancelled"
+def test_the_memory_step_neither_sets_nor_cancels_reminders(agents, violetdb):
+    """2026-11-13: reminders are set in ONE place, by Chat while replying (set_reminder / cancel_reminder). The memory
+    step once added its own -- "明早叫用户一声（起床提醒）" at a guessed 08:00 -- and it went out word for word."""
+    names = {t["function"]["name"] for t in agents["memory"]._tools}
+    assert not {"create_commitment", "cancel_commitment"} & names
+    assert not hasattr(agents["memory"], "_tool_create_commitment")
+    from ai.agents.memory_agent import MEMORY_RULES
+    assert "你不创建、也不取消提醒" in MEMORY_RULES and "create_commitment" not in MEMORY_RULES
 
 
 # --- corrections ---------------------------------------------------------------------------

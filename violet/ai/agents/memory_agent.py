@@ -8,7 +8,8 @@ MemoryAgent: 记忆判断 agent。
   * 字符相似不会自动合并或覆盖记忆；相似记忆只作为候选，必须显式选择
     related_to=<id>（同一件事的新进展）或 new_event=true（另一件事）。
   * 事件进展只由用户明确的新信息改变（update_event_progress）；时间流逝不会变成“已结束”。
-  * 只有用户原话明确要求提醒/跟进，才能创建 commitment（create_commitment 会核验原话）。
+  * 提醒只由 Chat 在回复时设（set_reminder，ai/owner_tools.py）；MemoryAgent 不建也不取消提醒（2026-11-13：
+    它曾在主人没说时间时自己建了“明早叫用户一声（起床提醒）”，按“早上”算成 08:00，到点原样发了出去）。
 """
 
 import contextvars
@@ -22,13 +23,12 @@ from ai.conversation_state import TopicTracker
 from ai.memory_model import mentions_topic, touches_topic
 from ai.memory_model import (
     ENDED_PROGRESS, EVENT_PROGRESS, INTENT_LABELS, INTENT_LEVELS, KIND_LABELS, PROGRESS_LABELS, EventTimeMismatch,
-    check_explicit_request, commitment_default_time, condition_clause, invented_part_clock, parse_time,
-    recall_search_text, resolve_event_time, resolve_time, sounds_conditional,
+    condition_clause, invented_part_clock, parse_time,
+    recall_search_text, resolve_event_time, sounds_conditional,
 )
 from ai.onboarding import OnboardingPlanner
 from ai.profile_store import Profile, evidence_in_message
 from ai.tool_schemas import (
-    CANCEL_COMMITMENT_SCHEMA,
     CORRECT_PROFILE_FACT_SCHEMA,
     DECLINE_PROFILE_QUESTION_SCHEMA,
     MEMORY_DONE_SCHEMA,
@@ -37,7 +37,6 @@ from ai.tool_schemas import (
     SET_INTERACTION_PREFERENCE_SCHEMA,
     SET_SITUATION_SCHEMA,
     CORRECT_MEMORY_SCHEMA,
-    CREATE_COMMITMENT_SCHEMA,
     QUERY_MEMORY_SCHEMA,
     REINFORCE_CORE_MEMORY_SCHEMA,
     REINFORCE_MEMORY_SCHEMA,
@@ -73,8 +72,8 @@ MEMORY_RULES = """【记忆系统规则（代码强制执行，优先于前文�
    不要为了少调用一次而跳过这个判断。
 5. 时间过去不代表事情结束。只有用户明确说了结果，才能把 progress 设为 done/cancelled。
 6. 用户纠正你记错的内容：用 correct_memory（或 update_core_memory）；用户说某条记忆根本不对：用 retract_memory。
-7. 只有用户原话明确要求“提醒我/到时候问我/跟进”时才调用 create_commitment，evidence 必须逐字引用用户原话；
-   普通分享（“我今天去面试了”）绝不创建 commitment。用户说“不用提醒了”时用 cancel_commitment。
+7. 提醒不归你管：对方要她提醒 / 叫他 / 到时候问他，是她回复时自己用 set_reminder 设的（设没设看“待执行的提醒”）；
+   你不创建、也不取消提醒。那件事本身该记的，照普通事件或计划记。
 8. 用户再次提到同一事实且没有新信息：reinforce_memory；不要因为话题被提起就提高重要性，除非用户给出新的重要信息。
 9. 返回 confirmed_by_user 的记忆是用户确认过的（管理后台纠正过或用户亲口纠正过）：内容只能凭用户本轮原话修改，
    在 evidence 里逐字引用那句话；只是有了新进展，用 update_event_progress 只改进展。模糊的一句话不足以改它。
@@ -99,8 +98,6 @@ FINAL_WRITE_ACTIONS: dict[str, frozenset[str]] = {
     "update_event_progress": frozenset({"progress_updated"}),
     "correct_memory": frozenset({"corrected"}),
     "retract_memory": frozenset({"retracted", "forgotten", "already_settled"}),
-    "create_commitment": frozenset({"created", "already_saved"}),
-    "cancel_commitment": frozenset({"cancelled"}),
     "remember_profile_fact": frozenset({"created", "superseded_previous", "confirmed", "already_known"}),
     "correct_profile_fact": frozenset({"corrected", "created", "confirmed"}),
     "retract_profile_fact": frozenset({"retracted"}),
@@ -270,8 +267,6 @@ class MemoryAgent(BaseAgent):
         self.register_tool(schema=UPDATE_EVENT_PROGRESS_SCHEMA, handler=self._tool_update_event_progress)
         self.register_tool(schema=CORRECT_MEMORY_SCHEMA, handler=self._tool_correct_memory)
         self.register_tool(schema=RETRACT_MEMORY_SCHEMA, handler=self._tool_retract_memory)
-        self.register_tool(schema=CREATE_COMMITMENT_SCHEMA, handler=self._tool_create_commitment)
-        self.register_tool(schema=CANCEL_COMMITMENT_SCHEMA, handler=self._tool_cancel_commitment)
         self.register_tool(schema=REMEMBER_PROFILE_FACT_SCHEMA, handler=self._tool_remember_profile_fact)
         self.register_tool(schema=CORRECT_PROFILE_FACT_SCHEMA, handler=self._tool_correct_profile_fact)
         self.register_tool(schema=RETRACT_PROFILE_FACT_SCHEMA, handler=self._tool_retract_profile_fact)
@@ -724,54 +719,6 @@ class MemoryAgent(BaseAgent):
         return _dumps({"ok": True, "action": "forgotten", "memory_id": memory_id,
                        "messages_changed": len(report["messages_changed"])})
 
-    def _settled_before_reply(self) -> str | None:
-        """2026-11-11: Chat sets reminders itself (set_reminder, ai/owner_tools.py) and told the owner the result.
-        This run, after the reply, never adds a second one for the same turn."""
-        turn_id = self._turn_id()
-        row = (violetdb.fetch_one("SELECT id, due_at FROM commitments WHERE source_turn_id = ? ORDER BY id LIMIT 1",
-                                  (turn_id,)) if turn_id else None)
-        if row:
-            return _dumps({"ok": True, "action": "already_saved", "commitment_id": row["id"], "due_at": row["due_at"],
-                           "note": "这个提醒在回复时已经设好了，不要再创建。"})
-        return None
-
-    def _tool_create_commitment(self, args: dict) -> str:
-        settled = self._settled_before_reply()
-        if settled is not None:
-            return settled
-        ok, reason = check_explicit_request(args.get("evidence"), self._user_text())
-        if not ok:
-            return _dumps({"ok": False, "action": "rejected", "reason": reason,
-                           "note": "只有用户原话明确要求提醒/跟进时才能创建；普通事件只需要 save_memory。"})
-        content = (args.get("content") or "").strip()
-        if not content:
-            return _dumps({"ok": False, "error": "content 为空"})
-        due_at = resolve_time(args.get("due_time"), args.get("due_date"), args.get("due_clock"),
-                              default_time=commitment_default_time())
-        if not due_at:
-            return _dumps({"ok": False, "error": "需要提醒时间：due_time（ISO）或 due_date + due_clock"})
-        if parse_time(due_at) < parse_time(violetdb.now()):
-            return _dumps({"ok": False, "error": f"提醒时间 {due_at} 已经过去"})
-        kind = args.get("kind") if args.get("kind") in ("reminder", "follow_up") else "reminder"
-        result = violetdb.add_commitment(content, due_at, kind=kind, evidence=args.get("evidence"),
-                                      source_turn_id=self._turn_id())
-        commitment = result["commitment"]
-        return _dumps({"ok": True, "action": result["action"], "commitment_id": commitment["id"], "due_at": commitment["due_at"]})
-
-    def _tool_cancel_commitment(self, args: dict) -> str:
-        evidence = re.sub(r"\s+", "", args.get("evidence") or "")
-        if not evidence or evidence not in re.sub(r"\s+", "", self._user_text()):
-            return _dumps({"ok": False, "action": "rejected", "reason": "evidence_not_in_user_message"})
-        try:
-            commitment_id = int(args.get("commitment_id"))
-        except (TypeError, ValueError):
-            return _dumps({"ok": False, "error": "commitment_id 无效"})
-        commitment = violetdb.get_commitment(commitment_id)
-        if not commitment or commitment["status"] != "pending":
-            return _dumps({"ok": False, "error": "commitment 不存在或已不是待提醒状态"})
-        violetdb.update_commitment(commitment_id, status="cancelled", last_error="cancelled by user")
-        return _dumps({"ok": True, "action": "cancelled", "commitment_id": commitment_id})
-
     # -- phase 3: profile / situation / preferences -------------------------------
     @staticmethod
     def _fact_result(result: dict[str, Any]) -> str:
@@ -929,7 +876,7 @@ class MemoryAgent(BaseAgent):
         rows = violetdb.list_commitments(["pending"], limit=10)
         if not rows:
             return "待执行的提醒：无"
-        return "待执行的提醒（用户取消时用 cancel_commitment）：\n" + "\n".join(
+        return "待执行的提醒（她回复时设好的，你不用改）：\n" + "\n".join(
             f"- id={r['id']}; 时间={r['due_at']}; 内容={r['content']}" for r in rows
         )
 

@@ -111,8 +111,7 @@ save_memory 工具参数：
 已有事件有了新进展（例如“服务器修好了”）：“未结束的事件”列表里有它时，直接用列表里的 id 调用；
 列表里没有时再 query_memory 查找（返回空不代表列表里的事件不存在）：
 update_event_progress({"memory_id": 3, "progress": "done", "summary": "用户的服务器故障已经修好", "reason": "用户原话"})
-用户纠正你记错的内容：correct_memory；用户明确要求提醒/跟进：create_commitment（evidence 逐字引用原话）。
-普通分享不要创建提醒，事件不会自动变成待跟进任务。
+用户纠正你记错的内容：correct_memory。提醒由她回复时自己设，你不创建也不取消提醒；事件不会自动变成待跟进任务。
 
 update_memory 工具参数：
 {

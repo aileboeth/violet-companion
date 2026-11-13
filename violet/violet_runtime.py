@@ -1476,10 +1476,31 @@ class VioletRuntime:
         except Exception:
             logger.exception("test mode diagnosis not sent for turn %s", turn.turn_id)
 
+    FALLBACK_QUIET_HOURS = 2.0
+
+    def _fallback_just_said(self) -> bool:
+        """2026-11-13 (the relay's model channel was down for 45 minutes during a virtual test): every message of the
+        owner got "我这边刚刚卡了一下……" back, a dozen times in a row. Said once is enough: while the last message she
+        sent is still that line (nothing real went out since) and it is recent, she stays quiet."""
+        try:
+            row = self.db.fetch_one("SELECT origin, created_at FROM outbound_messages WHERE status = 'sent' "
+                                    "ORDER BY id DESC LIMIT 1")
+            if not row or row["origin"] != "fallback":
+                return False
+            from datetime import timedelta
+            from ai.memory_model import parse_time
+            return parse_time(self.db.now()) - parse_time(row["created_at"]) < timedelta(hours=self.FALLBACK_QUIET_HOURS)
+        except Exception:                                    # noqa: BLE001 -- unsure: say it
+            logger.debug("last fallback unknown", exc_info=True)
+            return False
+
     def _send_fallback(self, sender: "MessageSender", turn: Turn, error: str | None):
         fallback = env_str("VIOLET_FALLBACK_REPLY", DEFAULT_FALLBACK_REPLY)
         if not fallback:
             return None, [], error
+        if self._fallback_just_said():
+            logger.warning("turn %s failed again; the fallback line was just sent, not repeating it", turn.turn_id)
+            return None, [], f"{error or ''}; fallback not repeated"[:500]
         from ai.channels.outbound import fixed_text
         report = sender.send_messages(fixed_text(fallback), origin="fallback", turn_id=turn.turn_id)
         if report.failed:

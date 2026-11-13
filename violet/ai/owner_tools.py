@@ -27,11 +27,15 @@ QUERY_MEMORY_SCHEMA = {"type": "function", "function": {
 SET_REMINDER_SCHEMA = {"type": "function", "function": {
     "name": "set_reminder",
     "description": ("对方明确要你到某个时间提醒 / 叫 / 喊他做某件事时用（“明早七点叫我起床”“周五下午三点提醒我交报告”"
-                    "“半小时后喊我”）。到时间系统会让你发消息提醒。只有调用成功才算设好了；时间说不清就先问清楚，不要猜。"
+                    "“半小时后喊我”）。到时间系统会让你发消息提醒。只有调用成功才算设好了。"
+                    # 2026-11-13 (0.7.73 virtual test): "明早记得叫我一声" -> she only asked "几点叫，还是七点半？", he
+                    # went to sleep, and nothing she set would have woken him
+                    "对方没说几点：你们以前定过的时间（背景“提醒”那一段或记忆里有）就按那个设好，回复里说出时间，对方可以改；"
+                    "从来没定过、也猜不到，才先问几点——只问不设的话，对方睡着了就没人叫他了。"
                     "对方只是提到一件事、没有要你提醒，不用设——但你自己想说“到时候叫你 / 提醒你”，就必须先调用它设好；"
                     "没调用就不要说会提醒。"),
     "parameters": {"type": "object", "properties": {
-        "content": {"type": "string", "description": "要提醒的事，用对方的说法，简短，例如：起床、交报告"},
+        "content": {"type": "string", "description": "要提醒的事，用对方的说法，简短，例如：起床、交报告（到点会直接念给对方听）"},
         "due_at": {"type": "string", "description": "提醒的时间，按背景里的“现在”算出来，格式 YYYY-MM-DD HH:MM（24 小时制，对方所在的时区）"}},
         "required": ["content", "due_at"]}}}
 

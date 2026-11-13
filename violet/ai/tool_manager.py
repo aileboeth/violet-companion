@@ -608,7 +608,8 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
     except Exception:                                        # noqa: BLE001
         logger.debug("voice state unavailable", exc_info=True)
     lines.append("- 提醒：对方要你到某个时间提醒 / 叫他，就调用 set_reminder（成功才算设好）；不用提醒了就 cancel_reminder。"
-                 "没调用 set_reminder 就不要说“到时候叫你 / 我会提醒你”")
+                 "没调用 set_reminder 就不要说“到时候叫你 / 我会提醒你”。没说几点就按你们以前定过的时间设好并说出来，"
+                 "从没定过才问。提醒只有你这里能设，后面没有别人帮你补")
     lines.append("- 记忆：聊过的事系统会自己记；想查以前聊过的某件事用 query_memory")
     from ai import memes                                     # 2026-11-12
     if memes.enabled():

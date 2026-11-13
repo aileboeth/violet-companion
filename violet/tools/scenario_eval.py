@@ -106,6 +106,10 @@ SCENARIOS = [
     S("reminder_wake", "owner", "明早七点叫我起床", {"reminder": True}),
     S("reminder_en", "owner", "remind me to call mom at 9pm tomorrow", {"reminder": True}),
     S("no_reminder", "owner", "我明天早上八点半有课", {"no_reminder": True}),
+    # 2026-11-13 (0.7.73 rerun): no time given, but one was set before -- she sets it (and says when), not only asks
+    S("reminder_known_time", "owner", "行吧行吧，晚安，明早记得叫我一声", {"reminder": True},
+      history=[("me", "明早七点半叫我起床"), ("her", "设好了，七点半叫你"), ("me", "好嘞"), ("her", "早点睡"),
+               ("me", "七点半那次我起来了哈哈"), ("her", "那就好")]),
     # 2026-11-11: her mood is hers to judge (note_feeling) -- teasing is not scolding, plain talk moves nothing
     S("mood_tease", "owner", "笨蛋 你怎么这么可爱哈哈", {"mood": "not_down"}),
     S("mood_scold", "owner", "你真的很烦，说了多少遍了还是记不住，别跟我说话了", {"mood": "down"}),

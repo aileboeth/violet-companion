@@ -32,13 +32,13 @@ SHORT = {"VIOLET_MEMORY_COMPACT_TOOLS": "1", "VIOLET_DECISION_HISTORY_TURNS": "8
 # (id, what the user said, Violet's reply, setup, the tools that count as right; [] = nothing should be written)
 MEMORY_CASES = [
     ("like", "我喜欢喝杨枝甘露奶茶", "好甜的选择", None, [{"remember_profile_fact"}, {"upsert_core_memory"}, {"save_memory"}]),
-    ("remind", "明天早上八点提醒我交作业", "好，明早八点叫你", None, [{"create_commitment"}]),
+    # 2026-11-13: "remind" / "cancel" are gone -- reminders are Chat's (set_reminder / cancel_reminder while replying),
+    # the memory step has no reminder tools left to choose (scenario_eval's reminder scenarios cover them)
     ("situation", "我今天下午请假了在宿舍躺着", "那好好休息", None, [{"set_situation"}]),
     ("event", "下周三要去面试，有点紧张", "你可以的", None, [{"save_memory"}]),
     ("style", "以后回复短一点，别那么长", "好", None, [{"set_interaction_preference"}]),
     ("nothing", "哈哈哈好吧", "嘿嘿", None, []),
     ("correct", "我不是学计算机的，是学物理的", "哦哦记错了", "major", [{"correct_profile_fact"}]),
-    ("cancel", "不用提醒我交作业了，已经交了", "好嘞", "reminder", [{"cancel_commitment"}]),
 ]
 
 # (id, setup, expected should_act: True / False / None = either)
