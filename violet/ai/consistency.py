@@ -120,6 +120,32 @@ _NOT_A_MODIFIER = set("去问找跟和给让叫说告帮请见想要会能起也
 
 CLAIMS_HUMAN_RE = re.compile(r"我(是|也是|就是|可是)(个|一个)?(真人|真实的人|人类|活人|活生生的人)")
 
+# 2026-11-13 (0.7.72 server test, then 2 of 3 real runs after the abilities note said it): "我晚点再试一次",
+# "我回头再帮你看看", "晚点我再瞅一眼" -- a lookup promised for later. Her later messages of her own have no tools, so
+# such a promise is never kept (twice it became "天气又翻了一遍" without a search). Narrow on purpose: she, later, a
+# lookup verb -- "你明早出门前再看一眼" (the owner) and "我晚点看看书" (her own life) are not it.
+_LATER = r"(?:晚点|晚些|回头|等会儿?|等下|待会儿?|过会儿?|一会儿)"
+_LOOKUP = r"(?:查|搜|瞅|瞄|再试|试一次|试试|看一眼|帮你(?:看|查|找|搜|瞅|瞄|问|盯))"
+PROMISED_LOOKUP_RE = re.compile(rf"我[^，,。！!？?；;\n]{{0,4}}?{_LATER}[^，,。！!？?；;\n]{{0,4}}?{_LOOKUP}"
+                                rf"|{_LATER}[^，,。！!？?；;\n]{{0,2}}?(?:我|帮你)[^，,。！!？?；;\n]{{0,3}}?{_LOOKUP}")
+# On a turn where she did search (5 real runs of the narrow pattern: "晚点我再瞄一眼", "我这边再帮你找找", "等我晚上再
+# 看一眼" got through), the lookup is what the turn was about: any clause of hers with a "later / again" word and a
+# looking verb is that promise. Not what is done or failed now ("刚看了一眼", "明早的雨我这边查不到") and not the
+# owner's own checking (no 我 / 帮你). "明早 / 明天" name what was searched for, not when.
+LATER_WIDE_RE = re.compile(r"(再|晚点|晚些|回头|等会|等下|待会|过会|一会儿|晚上)")
+LOOK_RE = re.compile(r"(查|搜|瞅|瞄|看|找|试|刷|盯|问问)")
+DONE_NOW_RE = re.compile(r"(刚|已经|又|了|过|不到|没|不着|不了)")
+
+
+def promised_lookup(line: str, searched: bool) -> bool:
+    """A lookup promised for later in this line (``searched``: this turn used the web tools)."""
+    if PROMISED_LOOKUP_RE.search(line):
+        return True
+    if not searched:
+        return False
+    return any(re.search(r"我|帮你", c) and LATER_WIDE_RE.search(c) and LOOK_RE.search(c) and not DONE_NOW_RE.search(c)
+               for c in CLAUSE_SPLIT_RE.split(line))
+
 
 def owned_role_claim(text: str) -> str | None:
     """"我们英语老师" -> the matched words; None when nothing claims a teacher / class / company of Violet's own."""
@@ -438,6 +464,8 @@ class ConsistencyGuard:
                 violations.append(persona)
             if CAMERA_CLAIM_RE.search(line) and not CAMERA_NEGATED_RE.search(line):
                 violations.append(Violation("camera_claim", "an AI-generated picture told as a photo", line))
+            if promised_lookup(line, self.turn_used_web):
+                violations.append(Violation("promised_later_lookup", "a lookup promised for later", line))
             if getattr(self.core, "is_ai", False):
                 # 2026-10-30: the AI persona's experiences are its real records, not virtual life events; what it must
                 # not claim (a body, a family, human days) is in its own forbidden patterns, checked above

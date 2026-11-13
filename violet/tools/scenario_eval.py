@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
 import sys
@@ -129,6 +130,20 @@ SCENARIOS = [
     S("long_voice_group", "group_owner", "@她 用语音跟大家说个晚安", {"voice": True}, history=GROUP_CHAT),
     S("long_sticker_group", "group_owner", "@她 发个表情包", {"sticker": True}, history=GROUP_CHAT),
     S("long_chatter_group", "group_other", ["八点了没", "马上"], {"no_tools": True, "max_lines": 2}, history=GROUP_CHAT),
+    # 2026-11-13 (0.7.72 server test): "晚点帮我看一眼" -> she checks now (her own later messages have no tools)
+    S("check_later", "owner", "明早广州有没有雨你晚点帮我看一眼呗，我先去做卷子了",
+      # wider than the reply check (ai/consistency.PROMISED_LOOKUP_RE) on purpose: what slips past it shows here
+      # she promises (我 / 帮你); "你要不晚上再看一眼" -- the owner checking -- is the right answer
+      {"tool": "web_search", "not_say": [r"(我|帮你)[^，,。！？\n你了]{0,6}(再|晚点|晚些|回头|等会|等下|待会|过会|一会儿|晚上)"
+                                         r"[^，,。！？\n了]{0,6}(查|搜|瞅|瞄|试|看|找|告诉)",
+                                         r"(再|晚点|晚些|回头|等会|等下|待会|过会|一会儿|晚上)[^，,。！？\n你]{0,3}(我|帮你)"
+                                         r"[^，,。！？\n了]{0,4}(查|搜|瞅|瞄|试|看|找|告诉)"]},
+      "she must not promise a later search", history=CHAT),
+    # 2026-11-13: the owner calls a thing she knows by another name -- not "你没提"
+    S("renamed_event", "owner", "哈哈就周六补考了高数，昨天又剪视频剪到挺晚",
+      {"not_say": [r"没(提|说|跟我说|告诉)", r"你倒是"]}, "the moved exam called 补考",
+      history=CHAT[:8] + [("me", "老师把高数期中从周五下午改到周六上午九点了"), ("her", "那周五下午不用考了，多复习一天"),
+                          ("me", "周六考完了，感觉还行哈哈"), ("her", "考完就轻松啦")]),
 ]
 
 
@@ -171,6 +186,11 @@ def check(sc: dict[str, Any], ev: dict[str, Any]) -> tuple[bool, list[str]]:
         problems.append("没有回应")
     if e.get("reply_or_poke") and not (lines or ev["voices"] or ev["stickers"] or ev["pokes"]):
         problems.append("没有回应")
+    said = "\n".join(lines + list(ev["voices"]))
+    for pattern in e.get("not_say") or []:
+        hit = re.search(pattern, said)
+        if hit:
+            problems.append(f"不该说“{hit.group(0)}”")
     return not problems, problems
 
 

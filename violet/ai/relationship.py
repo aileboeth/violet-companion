@@ -23,8 +23,10 @@ from ai.memory_model import parse_time
 
 SESSION_GAP = timedelta(hours=3)
 # Phase 8.9.1: only wording that is warm in itself. A bare "找你" / "跟你说" is mostly narration ("今天好忙 都没顾上
-# 找你", "跟你说个事"), so seeking Violet out counts only in forms like "想找你" / "找你聊" / "想跟你说说话".
-WARM_RE = re.compile(r"(想你|想我没|想我了|有没有想我|喜欢你|抱抱|亲亲|贴贴|么么|(来|想|就|又|要|才)找你|找你(聊|玩|说)|"
+# 找你", "跟你说个事"), so seeking Violet out counts only in forms like "想找你" / "想跟你说说话".
+# 2026-11-13 (virtual test 0.7.72: the first message "我叫小周，刚来找你聊聊" counted as warmth -> the next day was
+# "warming" and she wrote "突然有点想你了"): "来找你聊聊" is how anyone starts a chat. Only WANTING to come is warm.
+WARM_RE = re.compile(r"(想你|想我没|想我了|有没有想我|喜欢你|抱抱|亲亲|贴贴|么么|想(来|去)?找你|(多|常|只)(来)?找你|"
                      r"想(跟|和)你(说|聊)|你真好(?!笑)|你好可爱|你挺可爱|你说话挺可爱|可爱死|乖乖|晚安.{0,2}[宝贝]|宝贝|陪我)")
 # a warm phrase right after a negation is not warmth: "没顾上找你", "不想你", "没人陪我", "不是喜欢你"
 NEGATED_RE = re.compile(r"(没|不|别|顾不上|懒得)[^，。！？,.!?\s]{0,3}$")

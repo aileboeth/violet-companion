@@ -229,7 +229,8 @@ def test_searxng_down_degrades_naturally(searx_world, monkeypatch):
     w = searx_world
     monkeypatch.setenv("VIOLET_WEB_SEARXNG_URL", "http://127.0.0.1:1")              # the container is not running
     w.llm.responders["fake-intent"] = wants(SEARCH)
-    chat_plays(w, (SEARCH, {"query": "Python 最新版本"}), final="我这边搜索暂时连不上，晚点再帮你查？")
+    chat_plays(w, (SEARCH, {"query": "Python 最新版本"}), final="我这边搜索暂时连不上，你过会儿自己再查一下？")
+    # (2026-11-13: "晚点再帮你查" is a promise her later messages cannot keep -- ai/consistency.promised_lookup)
     say(w, "Python 现在最新是哪个版本")
     result = tool_texts(w.chats[-1])[0]
     assert '"error_code": "unavailable"' in result and "搜索服务现在连不上" in result

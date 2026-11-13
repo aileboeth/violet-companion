@@ -289,7 +289,8 @@ def test_search_failure_is_reported_as_such(web_world):
     w = web_world
     w.provider.fail_with = SearchError("timeout", "search provider timed out")
     w.llm.responders["fake-intent"] = wants(SEARCH)
-    chat_plays(w, (SEARCH, {"query": "Violet 新版"}), final="我这边没搜到，搜索那边超时了，晚点再帮你看？")
+    chat_plays(w, (SEARCH, {"query": "Violet 新版"}), final="我这边没搜到，搜索那边超时了，你过会儿自己再搜一下？")
+    # (2026-11-13: "晚点再帮你看" is a promise her later messages cannot keep -- ai/consistency.promised_lookup)
     say(w, "现在最新版本是啥")
     result = tool_texts(w.chats[-1])[0]
     assert '"error_code": "timeout"' in result and "搜索服务超时了" in result

@@ -619,6 +619,11 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
     if mood.enabled():
         lines.append("- 心情：对方刚说的话让你真的开心了（被真心夸、被感谢、被哄）或真的难受了（被认真地骂、嫌弃、赶走），"
                      "先调用 note_feeling 记一下，再回复；玩笑和打情骂俏不用记")
+    # 2026-11-13 (virtual test 0.7.72: "明早有没有雨你晚点再帮我瞅一眼" -> "行，晚点我再瞅一眼"; her later messages of
+    # her own have no tools, so twice she wrote "天气又翻了一遍，还是没查到" without any search). What she can do
+    # LATER is part of what she can do: only reminders reach the future.
+    lines.append("- 以后：上面这些只有在回复对方的这一刻能用；你自己主动发消息时什么工具都用不了。所以对方让你“晚点 / 等会儿"
+                 "帮我查、帮我看看”，现在就查好告诉对方，不要答应以后再查；只有用 set_reminder 设好的提醒会到点发出去")
     return "\n".join(lines)
 
 
