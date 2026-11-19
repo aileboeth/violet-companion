@@ -461,9 +461,22 @@ class Eval:
         voice.ready = lambda: True                           # "spoken" at once, without the voice service
         voice.speak = lambda text, fmt="silk", timeout=0: b"#!SILK_V3" + str(text).encode("utf-8")
 
+        # 2026-11-18: code-level phone_state reads are not her tool calls (matches virtual_test.py)
+        from ai import phone_state
+        raw_read = phone_state._read
+
+        def code_read(*args, **kwargs):
+            mark = len(EVENTS["tools"])
+            try:
+                return raw_read(*args, **kwargs)
+            finally:
+                del EVENTS["tools"][mark:]
+        phone_state._read = code_read
+
         def fake_image(db, call_context, args):
             EVENTS["images"].append(json.dumps(args, ensure_ascii=False))
-            return json.dumps({"ok": True, "caption": "（评测：没有真的画）", "note": "评测里不真的画图"}, ensure_ascii=False)
+            return json.dumps({"ok": True, "image_marker": "[[图片:1]]", "caption": "（评测：没有真的画）",
+                               "note": "评测里不真的画图，回复里带上 image_marker 即可"}, ensure_ascii=False)
         image_tools.create_image = fake_image
         for description in STICKERS:
             stickers.add_bytes(violetdb, PNG + description.encode("utf-8"), source="eval", description=description)

@@ -157,6 +157,24 @@ class DailyLife:
                 view["later"].append(item)
         return view
 
+    def ensure_today(self, now: datetime | None = None) -> dict[str, Any] | None:
+        """Materialise today's daily items on demand (e.g. before a proactive check so she still has a day even when the
+        owner has not messaged yet). Skips AI personas and disabled daily life."""
+        if not self.enabled():
+            return None
+        try:
+            from ai.persona import PersonaCore
+            if PersonaCore.load().is_ai:
+                return None
+        except Exception:                                    # noqa: BLE001
+            pass
+        now = now or parse_time(self.db.now())
+        try:
+            return self.day(now.date(), now)
+        except Exception:                                    # noqa: BLE001
+            logger.exception("daily life ensure_today for %s unavailable", now.date())
+            return None
+
     def recent(self, now: datetime | None = None) -> list[dict[str, Any]]:
         """Today and the days before it (oldest first); empty when disabled."""
         if not self.enabled():

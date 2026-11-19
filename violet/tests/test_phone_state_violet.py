@@ -205,8 +205,8 @@ def test_a_moment_makes_the_decision_run_now(monkeypatch, violetdb, tmp_path):
                    encoding="utf-8")
     monkeypatch.setenv("VIOLET_PHONE_EVENTS", "1")
     s = ProactiveScheduler(None, None, send_messages=lambda m, e=None: None, config_path=cfg)
-    current = now_china()
     violetdb.add_user_message("text", "晚安")
+    current = now_china()
     s._set_next_proactive_at(current + timedelta(hours=3))
     assert s._is_due(current) == (False, "not due yet")
     assert s._is_due(current, ignore_next_at=True)[0] is True

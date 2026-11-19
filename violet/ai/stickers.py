@@ -203,14 +203,49 @@ def delete(db, sticker_id: int) -> bool:
     return True
 
 
-def prompt_lines(db, limit: int = 30) -> list[str]:
-    """"编号 N：description" -- the ones she uses most first, then the newest; only described, enabled ones."""
+def _clip_words(text: str, limit: int) -> str:
+    text = text.strip()
+    return text if len(text) <= limit else text[: max(1, limit - 1)].rstrip("，,、；;：: ") + "…"
+
+
+def compact_description(text: str | None, limit: int = 42) -> str:
+    """Short one-line cue for prompts; SQLite keeps the full description for find_stickers and by_description."""
+    raw = " ".join(str(text or "").split())
+    if not raw:
+        return ""
+    if "；" not in raw and len(raw) <= limit:
+        return raw
+    fields: dict[str, str] = {}
+    for seg in raw.split("；"):
+        for key in ("画面", "什么时候发", "关键词"):
+            if seg.startswith(key + "："):
+                fields[key] = seg[len(key) + 1:].strip()
+                break
+    if fields:
+        scene, when = fields.get("画面", ""), fields.get("什么时候发", "")
+        quotes = re.findall(r"[“\"「『]([^”\"」』]{1,18})[”\"」』]", scene)
+        head = f"「{quotes[0]}」" if quotes else _clip_words(scene, 16)
+        if quotes and len(scene) > len(quotes[0]) + 2:
+            rest = re.sub(r"[，,、]?(上面|图上|配字)?写着[“\"「『][^”\"」』]+[”\"」』]", "", scene).strip(" ，,。；")
+            if rest and len(head) + len(rest) <= 20:
+                head = f"{head}{rest}"
+        body = f"{head}｜{_clip_words(when, max(12, limit - len(head) - 1))}" if (head and when) else (head or when)
+        return _clip_words(body, limit)
+    return _clip_words(raw, limit)
+
+
+def prompt_lines(db, limit: int | None = None) -> list[str]:
+    """"编号 N：compact description" -- top N by use_count/id, sorted by id ASC so use_count bumps keep cache stable."""
     if not enabled():
         return []
+    if limit is None:
+        from ai.settings import env_int
+        limit = max(1, env_int("VIOLET_STICKER_PROMPT_LIMIT", 12))
     rows = db.fetch_all("SELECT id, description FROM stickers WHERE enabled = 1 AND description IS NOT NULL "
                         "AND description != '' AND description NOT LIKE '【不雅】%' AND description NOT LIKE '【质量差】%' "
                         "ORDER BY use_count DESC, id DESC LIMIT ?", (int(limit),))
-    return [f"- {r['id']}：{r['description']}" for r in rows]
+    rows.sort(key=lambda r: r["id"])
+    return [f"- {r['id']}：{compact_description(r['description'])}" for r in rows]
 
 
 BAD_MARKS = {"dirty": "【不雅】", "junk": "【质量差】"}
@@ -389,7 +424,5 @@ def chat_section(db) -> str:
     if not lines:
         return ""
     # 2026-11-11: one way to send -- the marker line (ai/sticker_tools.py says why)
-    return ("【你收藏的表情包】聊到合适的时候可以发一个：在回复里单独一行写 [[表情:编号]]，它就会作为表情包发出去"
-            "（那一行只写这个标记，不要加别的字，也不要把说明文字写出来）。"
-            "不用每次都发，一次最多一个；按说明里“什么时候发”挑，没有真正合适的就不发，不要硬配一个意思不对的；表情包只是配语气，不能代替回答。"
-            "下面是常用的，想找别的用 find_stickers。\n" + "\n".join(lines))
+    return ("【你收藏的表情包】合适时可单独一行写 [[表情:编号]]（只写标记，别把说明写成字；一次最多一个，"
+            "没有真正合适的就不发，不能代替回答）。常用如下，找别的用 find_stickers：\n" + "\n".join(lines))

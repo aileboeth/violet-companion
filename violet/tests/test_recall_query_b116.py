@@ -36,8 +36,8 @@ def test_original_question_enters_chat_as_actual_completed_event(make_world):
     observed = []
     def chat(request):
         system = "\n".join(m.get("content", "") for m in request["messages"] if m["role"] in ("system", "user"))
-        lines = [line for line in system.splitlines() if line.startswith(f"- id={target}; ")]
-        assert any(content in line and "已结束" in line for line in lines)
+        lines = [line for line in system.splitlines() if line.startswith("- ") and content in line]
+        assert any("已结束" in line for line in lines)
         observed.extend(lines)
         return "记得，答辩已经顺利结束了。"
     w.llm.responders["fake-chat"] = chat

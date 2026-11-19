@@ -76,12 +76,13 @@ class Setting:
 def _agent_settings() -> list[Setting]:
     out = []
     for role, label in ROLES:
+        default_temp = 0.85 if role == "CHAT" else 0.2
         out += [
             Setting(f"{role}_LLM_MODEL", f"{label} 模型", "models", "model", "now", "模型标识，按中转服务里的名字填写"),
             Setting(f"{role}_LLM_FALLBACK_MODEL", f"{label} 备用模型", "models", "model", "now",
                     "主模型重试用完后各试一次；留空表示不用", optional=True),
             Setting(f"{role}_LLM_MODEL_TEMPERATURE", f"{label} 温度", "models", "float", "now",
-                    "代码里只有温度这一个可调的采样参数；max_tokens / reasoning_effort 没有按 Agent 发送", None, 0.0, 2.0),
+                    "代码里只有温度这一个可调的采样参数；max_tokens / reasoning_effort 没有按 Agent 发送", default_temp, 0.0, 2.0),
         ]
     return out
 
@@ -724,6 +725,36 @@ class ControlStore:
         raise ValueError("没有可以恢复的旧值")
 
     # -- applying
+    def migrate_installer_v1_prompts(self) -> dict[str, None]:
+        """2026-11-18: violet_setup used to seed prompt.chat / prompt.proactive = 'v1' (actor='installer'), which locked
+        CHAT_LLM_PROMPT onto the legacy v1 prompt and bypassed chat.v4 / ai_prompt. Clear a 'v1' override once when its
+        latest change in history.jsonl was written by 'installer'; keep any choice saved from the dashboard."""
+        if not self.settings_path.exists():
+            return {}
+        doc = self._read(self.settings_path)
+        rev = int(doc.get("revision") or 0)
+        key_id = str(self.settings_path)
+        if _CHECKED_INSTALLER_V1.get(key_id) == rev:
+            return {}
+        values = doc.get("values") or {}
+        candidates = [k for k in ("prompt.chat", "prompt.proactive") if values.get(k) == "v1"]
+        if not candidates:
+            _CHECKED_INSTALLER_V1[key_id] = rev
+            return {}
+        history = self.history(limit=10_000)
+        to_clear: dict[str, None] = {}
+        for key in candidates:
+            last = next((h for h in history
+                         if any(isinstance(c, dict) and c.get("key") == key for c in (h.get("changes") or []))), None)
+            if last is not None and last.get("actor") == "installer":
+                to_clear[key] = None
+        if to_clear:
+            self.save(to_clear, "migration", "auto: clear installer v1 prompt")
+            _CHECKED_INSTALLER_V1[key_id] = self.revision()
+        else:
+            _CHECKED_INSTALLER_V1[key_id] = rev
+        return to_clear
+
     def environ_values(self) -> dict[str, str]:
         """Environment variable -> value for every override (prompt versions become the prompt text)."""
         out: dict[str, str] = {}
@@ -747,6 +778,10 @@ class ControlStore:
         """Set every override. A variable this store set before but no longer overrides goes back to .env, or to
         the value the process had before the first override, or is removed -- never left at the old override."""
         environ = os.environ if environ is None else environ
+        try:
+            self.migrate_installer_v1_prompts()
+        except Exception:
+            logger.exception("migrating installer v1 prompt setting failed")
         wanted = self.environ_values()
         with self._lock:
             originals = _ORIGINALS.setdefault(id(environ), {})
@@ -830,6 +865,7 @@ def _dotenv_values() -> dict[str, str]:
 
 _DEFAULT_STORE: ControlStore | None = None
 _ORIGINALS: dict[int, dict[str, str | None]] = {}     # per environ: value before this module first overrode a name
+_CHECKED_INSTALLER_V1: dict[str, int] = {}
 
 
 def store() -> ControlStore:

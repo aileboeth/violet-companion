@@ -126,6 +126,7 @@ class TurnBuffer:
         self._timer_factory = timer_factory
         self._lock = threading.Lock()
         self._entries: list[_Entry] = []
+        self._flushing = False
         self._timer: threading.Timer | None = None
         self._flush_requested_at: float | None = None
 
@@ -135,7 +136,15 @@ class TurnBuffer:
 
     def has_pending(self) -> bool:
         with self._lock:
-            return bool(self._entries)
+            return bool(self._entries) or self._flushing
+
+    def cancel(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            self._entries.clear()
+            self._flush_requested_at = None
 
     def add_text(self, inbound_id: int, text: str, received_at: str | None = None) -> float:
         with self._lock:
@@ -182,29 +191,34 @@ class TurnBuffer:
                     self._timer.start()
                     return
             entries, self._entries = self._entries, []
+            self._flushing = True
             self._timer = None
             self._flush_requested_at = None
 
-        texts = []
-        for entry in entries:
-            if entry.future is None:
-                texts.append(entry.text or "")
-                continue
-            try:
-                texts.append(entry.future.result(timeout=0) or IMAGE_VISION_FAILED_TEXT)
-            except Exception:
-                texts.append(IMAGE_VISION_FAILED_TEXT)
-        turn = Turn(
-            inbound_ids=[e.inbound_id for e in entries],
-            texts=texts,
-            received_at=entries[-1].received_at,
-            channel=self.conversation[0],
-            peer_id=self.conversation[1],
-        )
         try:
-            self._on_ready(turn)
-        except Exception:
-            logger.exception("could not enqueue turn %s", turn.turn_id)
+            texts = []
+            for entry in entries:
+                if entry.future is None:
+                    texts.append(entry.text or "")
+                    continue
+                try:
+                    texts.append(entry.future.result(timeout=0) or IMAGE_VISION_FAILED_TEXT)
+                except Exception:
+                    texts.append(IMAGE_VISION_FAILED_TEXT)
+            turn = Turn(
+                inbound_ids=[e.inbound_id for e in entries],
+                texts=texts,
+                received_at=entries[-1].received_at,
+                channel=self.conversation[0],
+                peer_id=self.conversation[1],
+            )
+            try:
+                self._on_ready(turn)
+            except Exception:
+                logger.exception("could not enqueue turn %s", turn.turn_id)
+        finally:
+            with self._lock:
+                self._flushing = False
 
 
 # ---------------------------------------------------------------------------
@@ -680,7 +694,12 @@ class VioletRuntime:
         self.stats: dict[str, int] = {}
         self.sender = sender or MessageSender(client, db, stats=self.stats, channel="wechat")
         self.pipeline_lock = threading.RLock()
+        self._scope_guard = threading.Lock()
+        self._scope_locks: dict[str, threading.RLock] = {"main": self.pipeline_lock}
         self.turn_queue: "queue.Queue[Turn]" = queue.Queue()
+        self._scope_queues: dict[str, "queue.Queue[Turn]"] = {}
+        self._scope_workers: dict[str, threading.Thread] = {}
+        self._workers_started = False
         self._timer_factory = timer_factory
         self.buffer = self._new_buffer(("wechat", ""))
         # phase 10: every (channel, peer) has its own debounce buffer and outbox sender; WeChat keeps the two above
@@ -706,7 +725,8 @@ class VioletRuntime:
         self.poll_restarts = 0
         if proactive_scheduler is not None and hasattr(proactive_scheduler, "attach_runtime"):
             proactive_scheduler.attach_runtime(is_busy=self.is_busy, pipeline_lock=self.pipeline_lock,
-                                               channel_context=self.proactive_channel_context)
+                                               channel_context=self.proactive_channel_context,
+                                               scope_lock=self.scope_lock)
         # Phase 2: memory consolidation runs after the reply, in the background.
         self.tracker = TopicTracker(db)
         self.profile = Profile(db)
@@ -817,13 +837,50 @@ class VioletRuntime:
         self.stats[key] = self.stats.get(key, 0) + amount
 
     # -- lifecycle ----------------------------------------------------------
+    def scope_lock(self, scope: str | None = None) -> threading.RLock:
+        """Per-persona pipeline lock ('main' uses self.pipeline_lock for compatibility)."""
+        if scope is None:
+            from ai import memory_scope
+            scope = memory_scope.current()
+        if not scope or scope == "main":
+            return self.pipeline_lock
+        with self._scope_guard:
+            return self._scope_locks.setdefault(scope, threading.RLock())
+
+    def _scope_of_channel(self, channel: str | None) -> str:
+        from ai import memory_scope
+        try:
+            return memory_scope.for_channel(channel or "wechat")
+        except Exception:                                   # noqa: BLE001
+            return "main"
+
+    def _queue_for_scope(self, scope: str) -> "queue.Queue[Turn]":
+        if not scope or scope == "main":
+            return self.turn_queue
+        with self._scope_guard:
+            return self._scope_queues.setdefault(scope, queue.Queue())
+
+    def _ensure_scope_worker(self, scope: str) -> None:
+        if not scope or scope == "main" or self._stop.is_set():
+            return
+        q = self._queue_for_scope(scope)
+        with self._scope_guard:
+            worker = self._scope_workers.get(scope)
+            if worker is not None and worker.is_alive():
+                return
+            worker = threading.Thread(target=self._worker_loop, args=(q,), name=f"violet-turn-{scope}", daemon=True)
+            self._scope_workers[scope] = worker
+            worker.start()
+
     def start_worker(self) -> None:
+        self._workers_started = True
         if self.memory_worker is not None:
             self.memory_worker.start()
-        if self._worker_thread and self._worker_thread.is_alive():
-            return
-        self._worker_thread = threading.Thread(target=self._worker_main, name="violet-turn-worker", daemon=True)
-        self._worker_thread.start()
+        if not (self._worker_thread and self._worker_thread.is_alive()):
+            self._worker_thread = threading.Thread(target=self._worker_main, name="violet-turn-worker", daemon=True)
+            self._worker_thread.start()
+        for scope in list(self._scope_queues):
+            self._ensure_scope_worker(scope)
 
     def start_polling(self) -> None:
         if self._poll_thread and self._poll_thread.is_alive():
@@ -858,7 +915,10 @@ class VioletRuntime:
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
         self._poll_stop.set()
-        for thread in (self._poll_thread, self._worker_thread):
+        self._workers_started = False
+        for buffer in list(self.buffers.values()):
+            buffer.cancel()
+        for thread in (self._poll_thread, self._worker_thread, *list(self._scope_workers.values())):
             if thread and thread.is_alive():
                 thread.join(timeout=timeout)
         self.media_executor.shutdown(wait=False, cancel_futures=True)
@@ -878,8 +938,15 @@ class VioletRuntime:
         """Test helper: wait until background memory jobs are processed."""
         return self.memory_worker.wait_idle(timeout) if self.memory_worker else True
 
-    def is_busy(self) -> bool:
-        return any(b.has_pending() for b in list(self.buffers.values())) or self.turn_queue.unfinished_tasks > 0
+    def is_busy(self, scope: str | None = None) -> bool:
+        if scope is not None:
+            buffers_busy = any(b.has_pending() for (ch, _), b in list(self.buffers.items())
+                               if self._scope_of_channel(ch) == scope)
+            q = self.turn_queue if scope == "main" else self._scope_queues.get(scope)
+            return buffers_busy or bool(q is not None and q.unfinished_tasks > 0)
+        return (any(b.has_pending() for b in list(self.buffers.values()))
+                or self.turn_queue.unfinished_tasks > 0
+                or any(q.unfinished_tasks > 0 for q in list(self._scope_queues.values())))
 
     def health(self) -> dict[str, Any]:
         try:
@@ -894,7 +961,8 @@ class VioletRuntime:
             "last_poll_error": self.last_poll_error,
             "consecutive_poll_errors": self.consecutive_poll_errors,
             "poll_restarts": self.poll_restarts,
-            "queued_turns": self.turn_queue.unfinished_tasks,
+            "queued_turns": self.turn_queue.unfinished_tasks + sum(
+                q.unfinished_tasks for q in list(self._scope_queues.values())),
             "buffer_pending": any(b.has_pending() for b in list(self.buffers.values())),
             "stats": dict(self.stats),
             "inbound": self.db.count_inbound_by_status(),
@@ -1201,12 +1269,20 @@ class VioletRuntime:
 
     # -- turn processing -------------------------------------------------------
     def _enqueue_turn(self, turn: Turn) -> None:
-        self.turn_queue.put(turn)
+        scope = self._scope_of_channel(turn.channel or "wechat")
+        if scope == "main" or not self._workers_started:
+            self.turn_queue.put(turn)
+            return
+        self._queue_for_scope(scope).put(turn)
+        self._ensure_scope_worker(scope)
 
     def _worker_main(self) -> None:
+        self._worker_loop(self.turn_queue)
+
+    def _worker_loop(self, q: "queue.Queue[Turn]") -> None:
         while not self._stop.is_set():
             try:
-                turn = self.turn_queue.get(timeout=0.5)
+                turn = q.get(timeout=0.5)
             except queue.Empty:
                 continue
             try:
@@ -1214,7 +1290,7 @@ class VioletRuntime:
             except Exception:
                 logger.exception("turn %s crashed the worker iteration", turn.turn_id)
             finally:
-                self.turn_queue.task_done()
+                q.task_done()
 
     def _agent_kwargs(self) -> dict[str, Any]:
         return {
@@ -1266,7 +1342,7 @@ class VioletRuntime:
         report = None
         memory_job = False
         from ai.channels.context import channel_scope
-        with self.pipeline_lock:
+        with self.scope_lock():
             try:
                 if sender is None:
                     raise LookupError(f"channel {conversation[0]} is not available any more")
@@ -1389,8 +1465,16 @@ class VioletRuntime:
     def _has_newer(self, conversation: tuple[str, str]) -> bool:
         """New messages of this conversation wait in the debounce buffer or the turn queue."""
         buffer = self.buffers.get(conversation) if conversation != ("wechat", "") else self.buffer
-        with self.turn_queue.mutex:
-            queued = any((t.channel or "wechat", t.peer_id or "") == conversation for t in self.turn_queue.queue)
+        scope = self._scope_of_channel(conversation[0])
+        queues = [self.turn_queue]
+        if scope != "main" and scope in self._scope_queues:
+            queues.append(self._scope_queues[scope])
+        queued = False
+        for q in queues:
+            with q.mutex:
+                if any((t.channel or "wechat", t.peer_id or "") == conversation for t in q.queue):
+                    queued = True
+                    break
         return queued or (buffer is not None and buffer.has_pending())
 
     def _interrupt_check(self, turn: Turn, conversation: tuple[str, str]):

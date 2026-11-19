@@ -108,8 +108,7 @@ MCP_RESULT_MAX_CHARS=6000
 MCP_CALL_RETRIES=1
 # Phase 9.2：MCP_SERVERS 也可以用本地子进程（stdio，不占端口、不联网）：
 # {"name":"campus","transport":"stdio","command":["python","-m","some_server"],"tools":{"get_course_schedule":"read"}}
-# 局域网 / 公网地址必须是 https；只有 127.0.0.1 / localhost 可以用 http。"offer":"always" 表示每轮都把这个服务器的工具给 Chat
-# （默认 "on_demand"：只有 Intent 判断需要查时才给）。启停、超时、替换凭据可以在管理后台“工具”页操作。
+# 局域网 / 公网地址必须是 https；只有 127.0.0.1 / localhost 可以用 http。启停、授权给哪个 Agent、超时、替换凭据可以在管理后台“工具”页操作。
 # 工具白名单（第二阶段）：只有在 mcp_tool_policy.json 或服务器配置 "tools" 中显式列出的工具才会提供给模型；
 # 未列出的工具一律隐藏并拒绝调用（不再根据工具名推测权限）。可用下面的变量指向另一份白名单文件。
 MCP_TOOL_POLICY_FILE=
@@ -225,9 +224,6 @@ VIOLET_SEMANTIC_GUARD_MAX_TOKENS_PER_DAY=60000
 # ── 联网搜索与自主探索（第五阶段 B）────────────────────────────────────────────
 # 内置 Web MCP（web_search / fetch_url，进程内 MCP，仅 ChatAgent 可用，主动消息不可用）。默认关闭。
 VIOLET_WEB_ENABLED=0
-# Phase 9.3：on_demand（默认）= IntentAgent 判断这一轮需要联网时才把工具给 Chat（一个工具 required，多个 auto）；
-# always = 每轮都给 Chat（第五阶段 B 的做法，由模型自己决定）。后台“工具”页也能改。
-VIOLET_WEB_OFFER=on_demand
 # 搜索后端：searxng（默认，自建开源 SearXNG，部署见 deploy/searxng/README.zh-CN.md）| none（不搜索）
 # | mock（离线虚构结果，仅开发）| bocha / brave（可选的付费搜索 API，Phase 9.3）
 VIOLET_WEB_SEARCH_PROVIDER=searxng
@@ -332,8 +328,9 @@ VIOLET_SOCIAL_QUIET_SECONDS=15
 VIOLET_SOCIAL_CONTEXT_MESSAGES=30
 # 和你聊天时，她知道自己最近在群里说过什么
 VIOLET_SOCIAL_OWNER_DIGEST=1
-# 表情包：她可以从自己的收藏里挑一个发（收藏在后台“图片”页管理）
+# 表情包：她可以从自己的收藏里挑一个发（收藏在后台“图片”页管理）；每次放进提示词里的常用数量上限（其余用 find_stickers 查找）
 VIOLET_STICKERS=1
+VIOLET_STICKER_PROMPT_LIMIT=12
 # 你在 QQ 上发给她的表情包自动收藏
 VIOLET_STICKER_AUTO_COLLECT=1
 # QQ 登录后和每 6 小时：这个 QQ 号自己收藏的表情放进她的收藏，分批写说明（她只用有说明的）
@@ -431,13 +428,10 @@ VIOLET_PREF_IMPLICIT_MAX_CONFIDENCE=0.6
 # 用户在这么久没有收到 Violet 消息后开口，视为用户主动发起对话（重置冷场计数）。
 VIOLET_USER_INITIATED_GAP_MINUTES=30
 
-# 提示词默认在 persona/prompts/intent.txt；设置 INTENT_LLM_PROMPT 会覆盖它
-
-# 提示词默认在 persona/prompts/performer.txt；设置 PERFORMER_LLM_PROMPT 会覆盖它
 # ── Chat Agent ────────────────────────────────────────────────────────────────
 CHAT_LLM_MODEL=grok-4.2
-CHAT_LLM_MODEL_TEMPERATURE=0.8
-# 提示词默认是 persona/chat_prompt_versions/chat.v1.txt（后台可选其他版本）；设置 CHAT_LLM_PROMPT 会覆盖它
+CHAT_LLM_MODEL_TEMPERATURE=0.85
+# 提示词默认是 persona/chat_prompt_versions/chat.v4.txt（后台可选其他版本）；设置 CHAT_LLM_PROMPT 会覆盖它
 
 # ── Memory Agent ──────────────────────────────────────────────────────────────
 MEMORY_LLM_MODEL_TEMPERATURE=0.2
@@ -446,7 +440,7 @@ MEMORY_LLM_MODEL=gpt-5-mini
 
 PROACTIVE_LLM_MODEL=gpt-5-mini
 PROACTIVE_LLM_MODEL_TEMPERATURE=0.2
-# 提示词默认是 persona/proactive_prompt_versions/proactive.v1.txt（后台可选其他版本）；设置 PROACTIVE_LLM_PROMPT 会覆盖它
+# 提示词默认是 persona/proactive_prompt_versions/proactive.v4.txt（后台可选其他版本）；设置 PROACTIVE_LLM_PROMPT 会覆盖它
 
 # --- Phase 7 B.1: local test tools (python -m tools.violet_test_chat / dialogue_eval / model_compat) ---
 # Shell-only switches for the test tools; Violet itself never reads them. Never put a key in this file.

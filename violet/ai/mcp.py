@@ -593,19 +593,12 @@ def builtin_servers() -> list[dict[str, Any]]:
     """Built-in MCP servers enabled by configuration (appended to MCP_SERVERS)."""
     servers = []
     if env_str("VIOLET_WEB_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on"):
-        # phase 9.3: offer "on_demand" -- Intent decides from the tool catalog when a turn needs the web (latest news,
-        # a link the user sent...), the 9.2 plan gives Chat exactly those tools (one -> required, several -> auto);
-        # small talk gets none. VIOLET_WEB_OFFER=always restores phase 5B (web tools on every turn, the model decides).
-        offer = env_str("VIOLET_WEB_OFFER", "on_demand").strip().lower()
         servers.append({"name": "violet-web", "transport": "inprocess", "factory": "violet-web", "tool_profile": "violet-web",
                         "agents": ["chat"], "connect_timeout": 5,
-                        "offer": offer if offer in ("on_demand", "always") else "on_demand",
                         "call_timeout": env_float("VIOLET_WEB_TOOL_TIMEOUT_SECONDS", 30.0)})
     if env_str("VIOLET_SCHEDULE_ENABLED", "0").strip().lower() in ("1", "true", "yes", "on"):
-        # phase 9.4.2: the user's own timetable, read-only, Chat only, always on demand (Intent decides; small talk
-        # gets none). Proactive contact never calls it -- 9.4.4 reads the computed plan in code instead.
         servers.append({"name": "violet-schedule", "transport": "inprocess", "factory": "violet-schedule",
-                        "tool_profile": "violet-schedule", "agents": ["chat"], "connect_timeout": 5, "offer": "on_demand",
+                        "tool_profile": "violet-schedule", "agents": ["chat"], "connect_timeout": 5,
                         "call_timeout": env_float("VIOLET_SCHEDULE_TOOL_TIMEOUT_SECONDS", 10.0)})
     return servers
 

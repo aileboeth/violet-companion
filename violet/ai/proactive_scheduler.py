@@ -160,18 +160,27 @@ class ProactiveScheduler:
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         # Shared with the message runtime so a proactive run never overlaps a
-        # user turn (the agents are shared objects).
-        self._is_busy = is_busy or (lambda: False)
+        # user turn of the same persona scope.
+        self._is_busy = is_busy or (lambda *_a: False)
         self._pipeline_lock = pipeline_lock or threading.RLock()
+        self._scope_lock: Callable[[str | None], Any] | None = None
         self.tracker = TopicTracker(violetdb)
         self.profile = Profile(violetdb)
         self.config = self.load_config()
 
-    def attach_runtime(self, is_busy: Callable[[], bool], pipeline_lock, channel_context: Callable | None = None) -> None:
+    def attach_runtime(self, is_busy: Callable[..., bool], pipeline_lock, channel_context: Callable | None = None,
+                       scope_lock: Callable[[str | None], Any] | None = None) -> None:
         self._is_busy = is_busy
         self._pipeline_lock = pipeline_lock
+        self._scope_lock = scope_lock
         if channel_context is not None:
             self._channel_context = channel_context
+
+    def _busy_in_scope(self, scope: str) -> bool:
+        try:
+            return bool(self._is_busy(scope))
+        except TypeError:
+            return bool(self._is_busy())
 
     def _channel_scope(self):
         """Phase 10: a proactive message is written for the channel it will be sent on."""
@@ -197,15 +206,24 @@ class ProactiveScheduler:
         """2026-11-02 (ai/memory_scope): every persona has her own rhythm, reminders and channel."""
         from ai import memory_scope
         for scope in memory_scope.all_scopes():
-            with memory_scope.run_as(scope):
-                scoped = self._channel_scope()
-                if scoped is None:
-                    continue
-                try:
-                    with scoped:
-                        work()
-                except Exception:
-                    logger.exception("[ProactiveScheduler] tick failed for persona %s", scope)
+            if self._scope_lock is not None and self._busy_in_scope(scope):
+                continue
+            lock = self._scope_lock(scope) if self._scope_lock is not None else None
+            if lock is not None and not lock.acquire(blocking=False):
+                continue
+            try:
+                with memory_scope.run_as(scope):
+                    scoped = self._channel_scope()
+                    if scoped is None:
+                        continue
+                    try:
+                        with scoped:
+                            work()
+                    except Exception:
+                        logger.exception("[ProactiveScheduler] tick failed for persona %s", scope)
+            finally:
+                if lock is not None:
+                    lock.release()
 
     def load_config(self) -> dict[str, Any]:
         self.config = load_json(self.config_path, DEFAULT_CONFIG)
@@ -266,8 +284,18 @@ class ProactiveScheduler:
             self._stop_event.wait(max(5, interval))
 
     def tick(self) -> None:
-        # A user turn is buffered / queued / running: try again next tick
-        # (checked before fixed tasks are marked as done for today).
+        # Per-scope mode (attached to VioletRuntime): one persona's slow turn never blocks another persona's tick.
+        if self._scope_lock is not None:
+            if not self._busy_in_scope("main"):
+                main_lock = self._scope_lock("main")
+                if main_lock.acquire(blocking=False):
+                    try:
+                        self._poll_phone_events()
+                    finally:
+                        main_lock.release()
+            self._each_scope(self._tick_locked)
+            return
+        # Standalone / legacy mode: single shared is_busy + pipeline_lock
         if self._is_busy():
             return
         if not self._pipeline_lock.acquire(blocking=False):
@@ -599,6 +627,13 @@ class ProactiveScheduler:
                 "weekly_used": self._task_week_count(task_name, current),
             }
 
+        # 2026-11-19: materialise today's daily life before building state/motives so she still has a day even when the
+        # owner has not messaged yet (previously 6 consecutive proactive checks skipped with "没有可分享的生活小事")
+        try:
+            from ai.daily_life import DailyLife
+            DailyLife(violetdb).ensure_today(current)
+        except Exception:                                    # noqa: BLE001
+            logger.debug("[ProactiveScheduler] daily life ensure_today skipped", exc_info=True)
         return {
             "event_type": "scheduled_proactive_check",
             "scheduled_at": current.isoformat(),
@@ -637,10 +672,12 @@ class ProactiveScheduler:
                 "SELECT content, created_at FROM messages ORDER BY id DESC LIMIT 120"))
                 if r["created_at"] and parse_time(r["created_at"]) >= since]
             talked = {p["id"] for p in plans if any(mentions_life(t, p["content"]) for t in recent_text)}
+            from ai import persona_templates as pt
+            persona_stage = pt.stage(None, violetdb)
             motives = proactive_motives(view, None if minutes is None else minutes / 60, state.get("cold_streak", 0),
                                         state.get("allowed_life_events") or [], plans, talked,
                                         unanswered=self._unanswered_proactive(current),
-                                        afterglow=self._afterglow(current))
+                                        afterglow=self._afterglow(current), persona_stage=persona_stage)
             # phase 8.9.8: where the talk about it ended ("周末一起找吧 / 拍封面给你"), so it is not reopened as undecided
             from ai.daily_life import last_talk, talk_note
             contents = {p["id"]: p["content"] for p in plans}
@@ -659,11 +696,11 @@ class ProactiveScheduler:
             return {}
         recent, habit_note = self._recent_proactive(current)
         out = {"relationship_stage": view.stage, "violet_motives": motives, "motive_note": (
-            "violet_motives 是 Violet 此刻真有的、想找对方的理由（分享自己的小事、想念对方、想听对方的意见、接着聊之前的事、"
-            "上一条很久没回时有点委屈地再找对方一次、接着刚才亲近的那份情绪）。刚聊完、气氛还热的时候，接着那份情绪往往比"
-            "换个新话题自然。"
-            "要主动联系时，优先从里面挑一个，写进 chat_brief.topic；一个都没有就不发也完全正常，"
-            "不用为了发消息而按时间段问候。"), "recent_proactive": recent, "proactive_habit_note": habit_note}
+            "violet_motives 是 Violet 此刻真有的、想找对方的理由（今天刚发生的生活小事 daily_share、长期经历 share、"
+            "想念对方、想听对方的意见、接着聊之前的事、上一条很久没回时有点委屈地再找对方一次、接着刚才亲近的那份情绪）。"
+            "里面只要有自然合适的理由（比如刚发生了一件好玩的小事，或一阵子没聊），且时机不打扰对方，就大方选一个发一句；"
+            "刚聊完、气氛还热的时候，接着那份情绪往往比换新话题自然；真的一条也没有才不发，不要按时间段硬发空洞问候。"),
+            "recent_proactive": recent, "proactive_habit_note": habit_note}
         if raised:
             contents = {p["id"]: p["content"] for p in plans}
             out["already_raised"] = [{"about": contents[pid], "at": at.strftime("%m-%d %H:%M")} for pid, at in raised.items()]
@@ -943,16 +980,29 @@ class ProactiveScheduler:
         if self.tracker.topic_state(LIFE_TOPIC)["unengaged"] >= int(cfg.get("cooling_after_disengaged_shares", 2)):
             return []
         result = []
+        daily_today = []
+        today_iso = violetdb.now()[:10]
         for event in LifeStore(violetdb).recent_happened(days=float(cfg.get("recent_days", 3))):
-            if event["source"] == "life_daily":
-                continue                          # phase 8.9: everyday small things are for chat, not worth a message
             if int(event["share_count"]) >= int(cfg.get("max_shares_per_event", 1)):
                 continue
             if self.tracker.topic_state(life_topic_key(event["id"]))["cooling"]:
                 continue
+            if event["source"] == "life_daily":
+                # 2026-11-19: offer at most one fresh today-only persona daily event so she has real life to share
+                # instead of skipping 6 consecutive proactive checks on quiet days
+                if str(event.get("occurred_at") or "")[:10] == today_iso:
+                    daily_today.append({
+                        "id": event["id"], "content": event["content"], "occurred_at": event["occurred_at"],
+                        "type": "violet_daily_event",
+                        "note": "你今天刚发生的小事（还没告诉过对方）；很适合按性格随口分享一句或小吐槽一下",
+                    })
+                continue
             result.append({"id": event["id"], "content": event["content"], "occurred_at": event["occurred_at"],
                            "type": "violet_life_event", "note": "Violet 自己确实发生过的小事；可以随口提一句，也可以不提"})
-        return result[-2:]
+        picked = result[-2:]
+        if len(picked) < 2 and daily_today:
+            picked.append(daily_today[-1])
+        return picked
 
     def _record_life_shares(self, event_ids: list[int], proactive_event_id: int | None) -> None:
         from ai.life_store import LifeStore
@@ -1084,7 +1134,26 @@ class ProactiveScheduler:
             self.tracker.record_eve_topic(
                 pipeline.get("topic_key"), pipeline.get("mentioned_memory_ids") or [], proactive_event_id=event_id,
             )
-            self._record_life_shares(pipeline.get("mentioned_life_event_ids") or [], event_id)
+            life_ids = list(pipeline.get("mentioned_life_event_ids") or [])
+            # 2026-11-19: even if the decision omitted mentioned_life_event_ids, mark a today's daily event shared once
+            # the sent message or brief talks about it so she never shares the exact same daily item twice.
+            try:
+                from ai.daily_life import mentions_life
+                from ai.life_store import LifeStore
+                dec = pipeline.get("proactive_decision") or {}
+                brief = dec.get("chat_brief") if isinstance(dec.get("chat_brief"), dict) else {}
+                text = "\n".join([str((pipeline.get("chat") or {}).get("content") or ""),
+                                  str(brief.get("topic") or ""), str(dec.get("reason") or "")])
+                today_iso = violetdb.now()[:10]
+                for ev in LifeStore(violetdb).recent_happened(days=1.5):
+                    if (ev["source"] == "life_daily" and ev["id"] not in life_ids
+                            and int(ev.get("share_count") or 0) == 0
+                            and str(ev.get("occurred_at") or "")[:10] == today_iso
+                            and mentions_life(text, ev["content"])):
+                        life_ids.append(ev["id"])
+            except Exception:                                # noqa: BLE001
+                pass
+            self._record_life_shares(life_ids, event_id)
             self._record_web_shares(pipeline.get("mentioned_web_finding_ids") or [], event_id)
             self._set_next_proactive_at(self._backoff_next_time(now_china()))
         except Exception:

@@ -17,7 +17,7 @@ from ai.persona import PersonaCore, PersonaDynamics, persona_dir
 CORE_EDIT_NOTE = "核心人设只能人工编辑 persona/persona_core.json 并递增 version；系统和 Dashboard 都不能修改。"
 
 
-def register_persona_routes(app: Flask, violetdb) -> None:
+def register_persona_routes(app: Flask, violetdb, all_agents=None) -> None:
     store = LifeStore(violetdb)
 
     def ok(payload, status=200):
@@ -204,6 +204,169 @@ def register_persona_routes(app: Flask, violetdb) -> None:
         except ValueError as exc:
             return bad(str(exc))
         return ok(result)
+
+    @app.post("/api/persona/sandbox")
+    def persona_sandbox():
+        """Stateless in-memory persona chat preview: zero DB writes, zero memory/mood/channel side effects."""
+        import json as _json
+        import time as _time
+        from ai import about_owner, persona_templates as pt
+        from ai.agents.base_agent import LLMNotConfigured
+        from ai.agents.chat_agent import AI_PROMPT_FILE, ChatAgent, OWN_PROMPT_FILE, compose
+        from ai.chat_output import normalize_chat_output
+        from ai.context_engine import ai_natural
+        from ai.settings import PROJECT_ROOT
+
+        data = body()
+        message = str(data.get("message") or "").strip()
+        if not message or len(message) > 1000:
+            return bad("请输入试聊消息（1 到 1000 字）")
+
+        tpl_key = str(data.get("template") or "").strip()
+        pdata = None
+        if not tpl_key:
+            pdata = PersonaCore.load().data
+        elif tpl_key == "custom":
+            pdata = pt.custom_saved()
+            if not pdata:
+                return bad("还没有保存过自定义人设")
+        else:
+            if not tpl_key.replace("-", "").replace("_", "").isalnum():
+                return bad("没有这个人设模板")
+            tpath = pt.TEMPLATE_DIR / f"{tpl_key}.json"
+            if not tpath.is_file():
+                return bad("没有这个人设模板")
+            try:
+                pdata = _json.loads(tpath.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return bad("人设模板文件读取失败", 500)
+
+        stages = [s for s in (pdata.get("stages") or []) if isinstance(s, dict) and s.get("label")]
+        stage_req = data.get("stage")
+        stage_idx: int | None = None
+        if stage_req is not None and stage_req != "":
+            if isinstance(stage_req, bool) or not isinstance(stage_req, int) or not 0 <= stage_req < len(stages):
+                return bad("阶段编号不对")
+            stage_idx = stage_req
+        elif stages:
+            if not tpl_key or tpl_key == pt.current().get("template"):
+                cur_stage = pt.stage(None, violetdb)
+                stage_idx = cur_stage["index"] if cur_stage else 0
+            else:
+                stage_idx = 0
+
+        core = PersonaCore(pdata, "sandbox")
+        ident = pdata.get("identity") or {}
+        title = str(pdata.get("_title") or ident.get("name") or "人设")
+        own_rel = pt.own_relation(pdata)
+        call = pt.owner_call(pdata) if own_rel else (pt.relationship().get("call") or "")
+        call_line = f"你称呼对方“{call}”（偶尔叫，不要句句带）。" if call else ""
+        stage_label = ""
+        stage_line = ""
+        if stages and stage_idx is not None:
+            st = stages[stage_idx]
+            stage_label = str(st["label"])
+            sample_raw = str(st.get("sample") or "")
+            sample_hint = (f"这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{pt._fill(sample_raw, pdata, call)}」"
+                           if sample_raw else "")
+            stage_line = (f"\n- 你们现在的阶段（{stage_idx + 1}/{len(stages)}，{stage_label}）："
+                          f"{pt._fill(str(st.get('text') or ''), pdata, call)}{sample_hint}"
+                          "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
+        if own_rel:
+            rel_label = str(own_rel.get("label") or "")
+            rel_text = pt._fill(str(own_rel.get("text") or ""), pdata, call) + call_line + stage_line
+        else:
+            rel = pt.relationship()
+            rel_label = rel["label"]
+            rel_text = pt.RELATIONSHIPS.get(rel["kind"], pt.RELATIONSHIPS["close"])[1] + call_line + stage_line
+        rel_section = f"【你们的关系：{rel_label}】{rel_text}"
+
+        chat_agent = next((a for a in (all_agents or []) if isinstance(a, ChatAgent)), None)
+        if chat_agent is None:
+            chat_agent = ChatAgent()
+        cfg = chat_agent._config
+        if core.is_ai and ai_natural():
+            try:
+                base_prompt = (PROJECT_ROOT / AI_PROMPT_FILE).read_text(encoding="utf-8").strip()
+            except OSError:
+                base_prompt = cfg.reply_prompt
+        elif pdata.get("prompt_text"):
+            try:
+                base_prompt = (PROJECT_ROOT / OWN_PROMPT_FILE).read_text(encoding="utf-8").strip()
+            except OSError:
+                base_prompt = cfg.reply_prompt
+        else:
+            base_prompt = cfg.reply_prompt
+
+        stable = [base_prompt, core.render(), rel_section]
+        history_in = data.get("history") if isinstance(data.get("history"), list) else []
+        history: list[dict[str, str]] = []
+        for item in history_in[-12:]:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role")
+            content = str(item.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                history.append({"role": role, "content": content[:1000]})
+        notes: list[str] = []
+        owner_lines = about_owner.lines()
+        if owner_lines:
+            notes.append(owner_lines)
+        notes.append(f"现在是 {violetdb.now()[:16].replace('T', ' ')}（试聊预览，不保存记录）。")
+
+        messages = compose(stable, history, notes, message)
+        prompt_parts = []
+        for m in messages:
+            text = str(m.get("content") or "")
+            first = text.strip().splitlines()[0][:60] if text.strip() else ""
+            prompt_parts.append({"role": m.get("role"), "title": first, "chars": len(text)})
+
+        started = _time.monotonic()
+        try:
+            client = chat_agent._get_client(cfg)
+            resp = chat_agent._create_completion_with_retry(
+                client,
+                model=cfg.reply_model,
+                messages=messages,
+                temperature=cfg.reply_temperature,
+            )
+        except LLMNotConfigured:
+            return bad("还没有设置模型服务的 API Key（请先在模型服务页配置）")
+        except Exception as exc:
+            return bad(f"试聊调用失败（{exc.__class__.__name__}）", 502)
+        latency_ms = int((_time.monotonic() - started) * 1000)
+
+        raw = ""
+        try:
+            raw = str((resp.choices[0].message.content if resp.choices else "") or "").strip()
+        except Exception:
+            raw = ""
+        normalized = normalize_chat_output(raw, sticker_for_label=None, sticker_for_description=None)
+        out_lines = [str(m.get("content") or "") for m in normalized.get("messages") or [] if m.get("content")]
+        if not out_lines and raw:
+            out_lines = [raw]
+        usage_obj = getattr(resp, "usage", None)
+        usage = None
+        if usage_obj is not None:
+            details = getattr(usage_obj, "prompt_tokens_details", None)
+            usage = {
+                "prompt_tokens": int(getattr(usage_obj, "prompt_tokens", 0) or 0),
+                "completion_tokens": int(getattr(usage_obj, "completion_tokens", 0) or 0),
+                "cached_tokens": int(getattr(details, "cached_tokens", 0) or 0) if details else 0,
+            }
+        return ok({
+            "messages": out_lines,
+            "raw": raw,
+            "model": cfg.reply_model,
+            "temperature": cfg.reply_temperature,
+            "latency_ms": latency_ms,
+            "persona_title": title,
+            "stage_label": stage_label,
+            "stage_index": stage_idx,
+            "prompt_chars": sum(p["chars"] for p in prompt_parts),
+            "prompt_parts": prompt_parts,
+            "usage": usage,
+        })
 
     @app.post("/api/persona/dynamics/<int:entry_id>/decide")
     def persona_decide(entry_id: int):

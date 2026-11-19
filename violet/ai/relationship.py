@@ -110,38 +110,53 @@ def assess(db, now: datetime | None = None) -> RelationshipView:
 
 # Phase 8.9.3: why Violet might want to reach out on her own -- reasons, not a schedule. The scheduler still decides
 # WHEN a proactive check may happen (quiet hours, caps, busy, cold streak); these only say what she would come for.
-MISS_AFTER_HOURS = {"close": 6, "warming": 24}
+# 2026-11-19: 12h for warming (was 24h, which caused proactive checks to skip all day even when daily_limit=3..5).
+MISS_AFTER_HOURS = {"close": 6, "warming": 12}
 
 
 def proactive_motives(view: RelationshipView, hours_since_user: float | None, cold_streak: int,
                       life_events: list[dict], open_plans: list[dict],
                       talked_plan_ids: set | None = None, unanswered: list[dict] | None = None,
-                      afterglow: dict | None = None) -> list[dict]:
+                      afterglow: dict | None = None, persona_stage: dict | None = None) -> list[dict]:
     """Violet's own reasons to get in touch now: something of hers to share, missing the user, a small decision she
     would like the user's say on, or (phase 8.9.5) a plan of hers the two of you talked about lately, to pick up
     again. Empty is normal (and with a wish for distance there is nothing to add)."""
     if view.stage == "distance":
         return []
+    # 2026-11-19: align effective proactive warmth with the active persona's stage (e.g. 慢慢靠近 / 熟络分享 / 亲近依赖)
+    eff_stage = view.stage
+    if persona_stage and not view.cooled:
+        idx = int(persona_stage.get("index", 0) or 0)
+        if idx >= 2:
+            eff_stage = "close"
+        elif idx >= 1 and eff_stage == "new":
+            eff_stage = "warming"
     talked_plan_ids = talked_plan_ids or set()
     motives = []
     # phase 8.9.11 (real ab-v2c): "忙着想你呢" at 20:30, and at 22:03 her first message was the bookstore -- the only
     # reason offered. What the two of you were just feeling is a reason of its own (once: before she writes again).
-    if afterglow and view.stage in ("warming", "close") and not view.cooled:
+    if afterglow and eff_stage in ("warming", "close") and not view.cooled:
         motives.append({"type": "afterglow", "at": afterglow.get("at"), "note": (
             f"你们刚才（{afterglow.get('at')}）聊得正亲近，对方说了“{afterglow.get('quote')}”。可以接着那份情绪来找对方："
             "说说你后来还惦记着那句话、害羞或开心的心情，或者顺着再逗对方一下；不用硬换成别的话题，也不用提问。"
-            if view.stage == "close" else
+            if eff_stage == "close" else
             f"你们刚才（{afterglow.get('at')}）聊得挺开心，对方说了“{afterglow.get('quote')}”。可以接着那会儿的心情说一句，"
             "不用硬换话题，也不用提问。")})
-    if life_events:
+    daily_events = [e for e in (life_events or []) if e.get("type") == "violet_daily_event"]
+    thread_events = [e for e in (life_events or []) if e.get("type") != "violet_daily_event"]
+    if thread_events:
         motives.append({"type": "share", "note": "有件自己的小事想告诉对方（见 allowed_life_events）"})
-    miss_after = MISS_AFTER_HOURS.get(view.stage)
+    if daily_events:
+        ev = daily_events[-1]
+        motives.append({"type": "daily_share", "event_id": ev.get("id"), "about": ev.get("content"),
+                        "note": "这是你今天刚发生的一件日常小事（还没告诉过对方），很适合按你的性格随口分享一句、吐槽一下，或借着聊两句（用了把它的 id 写进 mentioned_life_event_ids）"})
+    miss_after = MISS_AFTER_HOURS.get(eff_stage)
     if miss_after and not view.cooled and cold_streak == 0 and hours_since_user is not None and hours_since_user >= miss_after:
         hours = int(hours_since_user)
         # phase 8.9.5: every real "miss" message became "想你了 + 今天过得怎么样？" -- a line of her own is enough
         motives.append({"type": "miss", "hours_since_user": hours, "note": (
             f"已经 {hours} 小时没聊了，Violet 有点想对方：可以只说一句想对方了、撒个娇讨点关注，或者说一件突然想到对方的小事；"
-            "不一定要问对方近况；不埋怨对方没来找她，也不催对方回" if view.stage == "close" else
+            "不一定要问对方近况；不埋怨对方没来找她，也不催对方回" if eff_stage == "close" else
             "有一阵子没聊了：可以轻轻说一句有点想对方，或者拿一件小事当理由来找对方说话；不埋怨、不催")})
     # phase 8.9.10 (real ab-v2b): close, she wrote once on her own and nobody answered for hours -- missing the user,
     # a little hurt and wanting attention is a reason of its own. Once: after two unanswered messages the scheduler
@@ -149,7 +164,7 @@ def proactive_motives(view: RelationshipView, hours_since_user: float | None, co
     unanswered = unanswered or []
     # phase 9.1.1: the exact time since her message decides, never the rounded "hours" (5.95 -> 6.0 passed the gate)
     waited = float(unanswered[0].get("elapsed_hours", unanswered[0].get("hours", 0))) if unanswered else 0.0
-    if (view.stage == "close" and not view.cooled and len(unanswered) == 1
+    if (eff_stage == "close" and not view.cooled and len(unanswered) == 1
             and waited >= MISS_AFTER_HOURS["close"]):
         last = {**unanswered[0], "hours": waited}
         motives.append({"type": "miss_unanswered", "hours_since_her_message": int(last["hours"]), "note": (
@@ -160,7 +175,7 @@ def proactive_motives(view: RelationshipView, hours_since_user: float | None, co
             "对方一次：想对方、有点委屈、可怜巴巴，或者玩笑式地闹个小别扭（假装生气、嘟囔自己被晾着了、要对方哄一哄），"
             "这些都是撒娇，可以说出来；只找这一次。不行的是认真地指责、翻旧账、让对方愧疚、连着追问，或者上升成感情问题。"
             "别把上一条的内容换个说法再说一遍")})
-    if view.stage in ("warming", "close"):
+    if eff_stage in ("warming", "close"):
         talked = [p for p in open_plans if p.get("id") in talked_plan_ids]
         fresh = [p for p in open_plans if p.get("id") not in talked_plan_ids]
         if talked:

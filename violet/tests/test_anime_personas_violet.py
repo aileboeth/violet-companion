@@ -169,7 +169,10 @@ def test_the_stage_moves_with_the_days_talked_and_can_be_fixed(db, data_dir):
     with pytest.raises(ValueError):
         pt.set_stage(None, 99)
     pt.switch(db, "violet", "keep")
-    assert pt.stage(None, db) is None                                     # no stages without such a persona
+    assert pt.stage(None, db)["labels"][0] == "初识慢热"                  # default Violet has 4 stages on 'close'
+    pt.set_relationship("partner")
+    assert pt.stage(None, db) is None                                     # chosen explicit relationship replaces stages
+    pt.set_relationship("close")
 
 
 def test_a_channel_with_its_own_such_persona_and_the_api(admin, db, tidy):
@@ -194,7 +197,8 @@ def test_renaming_her_changes_the_name_inside_her_texts(db, data_dir):
     pt.switch(db, "quiet", "keep", name="小唯")
     core = PersonaCore.load(channel="wechat")
     assert core.data["identity"]["name"] == "小唯" and "朝雾唯" not in json.dumps(core.data, ensure_ascii=False)
-    assert "小唯是一个虚构的女孩" in core.render()
+    assert "小唯 的稳定人设" in core.render() and "是一个虚构的女孩" not in core.render()
+    assert "小唯是一个虚构的女孩" in core.data["identity"]["virtual_declaration"]
 
 
 # ------------------------------------------------------------------------------------------------ the reply check

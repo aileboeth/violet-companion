@@ -68,17 +68,31 @@ def _labels(items: Any) -> list[str]:
 def preview(data: dict[str, Any]) -> dict[str, Any]:
     """What the page shows of a persona (0.7.9: the whole thing on hover, so one can compare before switching)."""
     ident = data.get("identity") or {}
+    stage_dicts = [s for s in data.get("stages") or [] if isinstance(s, dict) and s.get("label")]
+    stage_items = [
+        {
+            "index": i,
+            "label": str(s["label"]),
+            "days": int(s.get("days") or 0),
+            "text": _fill(str(s.get("text") or ""), data),
+            "sample": _fill(str(s.get("sample") or ""), data),
+        }
+        for i, s in enumerate(stage_dicts)
+    ]
     return {"title": data.get("_title") or ident.get("name") or "人设", "summary": data.get("_summary") or "",
             "blank": bool(data.get("blank")), "name": ident.get("name") or "",
             "self_description": ident.get("self_description") or "",
             "personality": _labels(data.get("personality")), "habits": _labels(data.get("communication_habits")),
             "interests": _labels(data.get("long_term_interests")), "values": _labels(data.get("values")),
             "flaws": _labels(data.get("flaws")),
+            "examples": [_fill(str(x), data) for x in (data.get("examples") or []) if x],
+            "avoid": [_fill(str(x), data) for x in (data.get("avoid") or []) if x],
             # 2026-11-12: a persona that brings its own relationship and its stages (placeholders as written)
             "relation": str((data.get("relation") or {}).get("label") or ""),
             "relation_text": _fill(str((data.get("relation") or {}).get("text") or ""), data),
             "backstory": [_fill(x, data) for x in _labels(data.get("backstory"))],
-            "stages": [str(s.get("label") or "") for s in data.get("stages") or [] if isinstance(s, dict)]}
+            "stages": [item["label"] for item in stage_items],
+            "stage_items": stage_items}
 
 
 def owner_call(data: dict[str, Any]) -> str:
@@ -464,11 +478,15 @@ def _stage_choice(channel: str | None) -> int | None:
 
 
 def stage(channel: str | None = None, db=None) -> dict[str, Any] | None:
-    """Where the persona's relationship stands: {"index", "label", "text", "auto", "days", "labels"}; None for a
-    persona without stages. Automatic: the last stage whose "days" the chat has reached."""
+    """Where the persona's relationship stands: {"index", "label", "text", "sample", "auto", "days", "labels",
+    "next_days", "next_label", "days_to_next", "total", "items"}; None for a persona without stages (or when a
+    non-built-in persona switched away from the default 'close' relationship)."""
     data = persona_data(channel)
     stages = [s for s in data.get("stages") or [] if isinstance(s, dict) and s.get("label")]
-    if not own_relation(data) or not stages:
+    if not stages:
+        return None
+    rel = relationship(channel)
+    if not own_relation(data) and rel["kind"] != "close":
         return None
     days = _chat_days(db) if db is not None else 0
     chosen = _stage_choice(channel)
@@ -476,9 +494,27 @@ def stage(channel: str | None = None, db=None) -> dict[str, Any] | None:
         index = min(chosen, len(stages) - 1)
     else:
         index = max([i for i, s in enumerate(stages) if days >= int(s.get("days") or 0)] or [0])
-    return {"index": index, "label": str(stages[index]["label"]), "text": str(stages[index].get("text") or ""),
-            "auto": chosen is None, "days": days, "labels": [str(s["label"]) for s in stages],
-            "next_days": next((int(s.get("days") or 0) for s in stages[index + 1:]), None)}
+    call = rel.get("call") or ""
+    next_stage = stages[index + 1] if index + 1 < len(stages) else None
+    next_days = int(next_stage.get("days") or 0) if next_stage else None
+    items = [
+        {
+            "index": i,
+            "label": str(s["label"]),
+            "days": int(s.get("days") or 0),
+            "text": _fill(str(s.get("text") or ""), data, call),
+            "sample": _fill(str(s.get("sample") or ""), data, call),
+        }
+        for i, s in enumerate(stages)
+    ]
+    return {
+        "index": index, "total": len(stages), "label": str(stages[index]["label"]),
+        "text": str(stages[index].get("text") or ""), "sample": str(stages[index].get("sample") or ""),
+        "auto": chosen is None, "days": days, "labels": [str(s["label"]) for s in stages],
+        "next_days": next_days, "next_label": str(next_stage["label"]) if next_stage else None,
+        "days_to_next": max(0, next_days - days) if next_days is not None else None,
+        "items": items,
+    }
 
 
 def set_stage(channel: str | None, value: int | None) -> None:
@@ -502,18 +538,19 @@ def set_stage(channel: str | None, value: int | None) -> None:
 
 
 def relationship_text(channel: str | None = None, db=None) -> tuple[dict[str, Any], str]:
-    """(relationship, the text for the prompt): the chosen relationship, or the persona's own with its stage."""
+    """(relationship, the text for the prompt): the chosen relationship, or the persona's own, with any active stage."""
     rel = relationship(channel)
-    call = f"你称呼对方“{rel['call']}”（偶尔叫，不要句句带）。" if rel["call"] else ""
-    if rel["kind"] != PERSONA_KIND:
-        return rel, RELATIONSHIPS[rel["kind"]][1] + call
     data = persona_data(channel)
-    text = _fill(str(own_relation(data)["text"]), data, rel["call"]) + call
+    call = f"你称呼对方“{rel['call']}”（偶尔叫，不要句句带）。" if rel["call"] else ""
     now = stage(channel, db)
-    if now:
-        text += (f"\n- 你们现在的阶段（{now['index'] + 1}/{len(now['labels'])}，{now['label']}）："
-                 f"{_fill(now['text'], data, rel['call'])}"
-                 "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
+    sample_hint = (f"这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{_fill(now['sample'], data, rel['call'])}」"
+                   if now and now.get("sample") else "")
+    stage_line = (f"\n- 你们现在的阶段（{now['index'] + 1}/{len(now['labels'])}，{now['label']}）："
+                  f"{_fill(now['text'], data, rel['call'])}{sample_hint}"
+                  "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。") if now else ""
+    if rel["kind"] != PERSONA_KIND:
+        return rel, RELATIONSHIPS[rel["kind"]][1] + call + stage_line
+    text = _fill(str(own_relation(data)["text"]), data, rel["call"]) + call + stage_line
     return rel, text
 
 
@@ -540,9 +577,12 @@ def set_channel(channel: str, template: str | None, kind: str | None = None, cal
     if template == "custom" and not (control_dir() / CUSTOM_COPY).is_file():
         raise ValueError("还没有写过自定义人设")
     data = channel_map()
+    prev = data.get(channel) if isinstance(data.get(channel), dict) else {}
     entry = {}
     if template:
         entry["template"] = template
+        if prev.get("template") == template and "stage" in prev:
+            entry["stage"] = prev["stage"]
     rel = _clean_relationship(kind or None, call)
     if rel:
         entry["relationship"] = rel

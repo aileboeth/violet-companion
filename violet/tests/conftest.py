@@ -201,4 +201,13 @@ def _reset_mcp_registry():
 
 
 def pytest_sessionfinish(session, exitstatus):
-    print(f"\n[violet-tests] isolated temp dir: {_TMP}")
+    if os.environ.get("VIOLET_KEEP_TEST_TMP") == "1":
+        print(f"\n[violet-tests] isolated temp dir kept: {_TMP}")
+        return
+    try:
+        from ai.chat import violetdb as db
+        db.close()
+    except Exception:
+        pass
+    import shutil
+    shutil.rmtree(_TMP, ignore_errors=True)

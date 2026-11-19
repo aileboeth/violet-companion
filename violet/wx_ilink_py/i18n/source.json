@@ -1,6 +1,7 @@
 {
-"- 你们现在的阶段（{0}/{1}，{2}）：{3}阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。": [
-"ai/persona_templates.py"
+"- 你们现在的阶段（{0}/{1}，{2}）：{3}{4}阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。": [
+"ai/persona_templates.py",
+"wx_ilink_py/persona_routes.py"
 ],
 ".env 里的提示词（不是版本文件中的任何一个）": [
 "control.js"
@@ -310,6 +311,9 @@
 "status 不对": [
 "wx_ilink_py/control_routes.py"
 ],
+"token · {0} 次调用": [
+"control.js"
+],
 "token：输入 {0}，输出 {1}": [
 "control_flow.js"
 ],
@@ -339,6 +343,9 @@
 ],
 "{0} {1}（{2}）和 {3}（{4}）重叠，共 {5} 次，最早 {6}": [
 "control_schedule.js"
+],
+"{0} · {1} 字": [
+"control_persona.js"
 ],
 "{0} · {1} 字 · {2}": [
 "control.js"
@@ -447,6 +454,9 @@
 "{0} 说：{1}": [
 "control_images.js"
 ],
+"{0} 阶段": [
+"control_persona.js"
+],
 "{0} 项修改还没保存": [
 "control.js"
 ],
@@ -464,6 +474,9 @@
 ],
 "{0}%（{1} token 按缓存价）": [
 "control.js"
+],
+"{0}/{1} 天": [
+"control_persona.js"
 ],
 "{0}:{1} 连接不上（防火墙 / 网络 / 对方服务不在）": [
 "ai/diagnostics.py"
@@ -603,7 +616,8 @@
 "ai/mcp_admin.py"
 ],
 "【你们的关系：{0}】{1}": [
-"ai/persona_templates.py"
+"ai/persona_templates.py",
+"wx_ilink_py/persona_routes.py"
 ],
 "【新】": [
 "control_schedule.js"
@@ -704,6 +718,9 @@
 "上报地址（填到 OneBot 实现里）：{0}{1}": [
 "control_channels.js"
 ],
+"上次主动发送": [
+"control.js"
+],
 "上次安装失败：": [
 "control_channels.js",
 "control_phone.js"
@@ -763,6 +780,9 @@
 "下一页": [
 "control.html"
 ],
+"下次检查：{0}": [
+"control.js"
+],
 "下载": [
 "control_memes.js"
 ],
@@ -813,6 +833,9 @@
 ],
 "不介意被追问": [
 "control.js"
+],
+"不会写入聊天记录、记忆或心情，放心试手感。": [
+"control_persona.js"
 ],
 "不允许": [
 "ai/permissions.py"
@@ -940,6 +963,9 @@
 "不能编造家人、工作、学校这些背景，也不会自称真人，这两条是固定的。": [
 "control_persona.js"
 ],
+"不要这样": [
+"control_persona.js"
+],
 "不认识的列“{0}”，已忽略": [
 "ai/schedule/importer.py"
 ],
@@ -1047,6 +1073,9 @@
 "主动消息避开不该提的话题": [
 "ai/control_config.py"
 ],
+"主动状态读取失败：": [
+"control.js"
+],
 "主动联系": [
 "ai/control_config.py",
 "control.html",
@@ -1062,6 +1091,9 @@
 ],
 "主动联系前看一眼手机": [
 "ai/control_config.py"
+],
+"主动联系当前状态": [
+"control.js"
 ],
 "主动联系避开上课": [
 "ai/control_config.py"
@@ -1112,12 +1144,17 @@
 "人设": [
 "ai/persona_templates.py",
 "ai/setup_status.py",
-"control.js"
+"control.js",
+"control_persona.js",
+"wx_ilink_py/persona_routes.py"
 ],
 "人设与生活": [
 "control.html"
 ],
 "人设与生活读取失败：": [
+"control_persona.js"
+],
+"人设列表尚未加载完成": [
 "control_persona.js"
 ],
 "人设动态": [
@@ -1133,10 +1170,16 @@
 "人设是原样搬过来的一整段提示词（如 Eve、大肥鱼）时，只加“诚实”和“格式”两条规则，不再加 Violet 自己的聊天规则（“一句话甚至几个字就够了”“通常一到三条”这些，也不加“提示词版本”里选的 Violet 提示词），说多长、分几条都按人设来。关：和其他人设一样": [
 "ai/control_config.py"
 ],
+"人设模板文件读取失败": [
+"wx_ilink_py/persona_routes.py"
+],
 "人设没有改好：": [
 "wx_ilink_py/control_routes.py"
 ],
 "人设自带关系：{0}。": [
+"control_persona.js"
+],
+"人设试聊预览": [
 "control_persona.js"
 ],
 "人设详情": [
@@ -1164,9 +1207,6 @@
 "今天不在任何进行中的学期里（Violet 会说课表还没开始或已经结束）。如果新学期开始了，请录入新学期。": [
 "control_schedule.js"
 ],
-"今天主动": [
-"control.js"
-],
 "今天和明天的日程": [
 "control_mcp.js"
 ],
@@ -1175,6 +1215,9 @@
 ],
 "今天是第几周": [
 "control_schedule.js"
+],
+"今天暂无调用": [
+"control.js"
 ],
 "今天画了 {0} 张 / 上限 {1}": [
 "control_images.js"
@@ -1191,11 +1234,26 @@
 "今天第 {0} 周（{1}周）": [
 "control_schedule.js"
 ],
+"今天累死了": [
+"control_persona.js"
+],
 "今天还没有模型调用。": [
 "control.js"
 ],
 "今天：做了 {0} 次决定 · 说了 {1} 句": [
 "control_social.js"
+],
+"今日 token 与缓存": [
+"control.js"
+],
+"今日主动联系": [
+"control.js"
+],
+"今日已发 / 上限": [
+"control.js"
+],
+"今日日常素材：{0} 条（未分享 {1} 条）": [
+"control.js"
 ],
 "介绍": [
 "control_persona.js"
@@ -1318,6 +1376,9 @@
 "你希望她怎么聊": [
 "control.html"
 ],
+"你平时都干嘛呀": [
+"control_persona.js"
+],
 "你教她的梗": [
 "control_memes.js"
 ],
@@ -1340,7 +1401,8 @@
 "control_flow.js"
 ],
 "你称呼对方“{0}”（偶尔叫，不要句句带）。": [
-"ai/persona_templates.py"
+"ai/persona_templates.py",
+"wx_ilink_py/persona_routes.py"
 ],
 "你自己写的人设": [
 "control_persona.js"
@@ -1357,6 +1419,9 @@
 "你自己的账号": [
 "control_channels.js"
 ],
+"你要求过不要主动找你": [
+"control.js"
+],
 "你说的话里有梗百科或你教过她的梗时，把意思和用法一起给她看；没把握的新词她可以自己查（本地查，不联网）": [
 "ai/control_config.py"
 ],
@@ -1365,6 +1430,9 @@
 ],
 "你说过不喜欢被追问时，回复仍以提问结尾就重写一次（多一次模型调用）": [
 "ai/control_config.py"
+],
+"你说过在忙（{0}），直到 {1}": [
+"control.js"
 ],
 "你这句话和某条记忆有相同的关键词时，直接让 Chat 看到这条记忆": [
 "ai/control_config.py"
@@ -1462,6 +1530,9 @@
 ],
 "保存录音和文字": [
 "control_voice.js"
+],
+"保存更正": [
+"control_persona.js"
 ],
 "保存模型并测试对话": [
 "control.html"
@@ -1701,6 +1772,9 @@
 "共 {0} 条，第 {1}–{2} 条": [
 "control.js"
 ],
+"共同回忆": [
+"control_persona.js"
+],
 "关": [
 "control.js",
 "control_eve_import.js"
@@ -1721,17 +1795,27 @@
 "关系": [
 "control_persona.js"
 ],
-"关系的阶段（随聊天慢慢推进）": [
-"control_persona.js"
-],
 "关系阶段": [
 "control_persona.js"
 ],
 "关系阶段描述": [
 "ai/control_config.py"
 ],
+"关系阶段路线（共 {0} 阶段，随聊天天数推进）": [
+"control_persona.js"
+],
+"关系阶段进度": [
+"control.js",
+"control_persona.js"
+],
 "关系（你们是什么关系）": [
 "control_persona.js"
+],
+"关系：{0}": [
+"control.js"
+],
+"关系：{0} · 叫你“{1}”": [
+"control.js"
 ],
 "关键字、模块名（例如 channels、mcp）": [
 "control.html"
@@ -1874,6 +1958,12 @@
 "列表是空的": [
 "control_images.js"
 ],
+"刚主动找过你，间隔未到": [
+"control.js"
+],
+"刚吃完饭": [
+"control_persona.js"
+],
 "刚聊过，晚点再说": [
 "control.js"
 ],
@@ -1882,6 +1972,12 @@
 ],
 "创建 Python 环境失败：": [
 "tools/violet_voice.py"
+],
+"初始": [
+"control_persona.js"
+],
+"初始阶段": [
+"control_persona.js"
 ],
 "删掉之前画的 {0} 个套装表情包，重新画整套 {1} 个？每个算一张图片的额度。": [
 "control_stickers.js"
@@ -2010,9 +2106,6 @@
 ],
 "到哪天为止（可选）": [
 "control_schedule.js"
-],
-"到时间了": [
-"control.js"
 ],
 "到期后删除图片文件（对图片的文字描述另算）": [
 "ai/control_config.py"
@@ -2219,6 +2312,12 @@
 "发给模型的对话：{0} 条 · {1} 字": [
 "control_flow.js"
 ],
+"发送": [
+"control_persona.js"
+],
+"发送中": [
+"control.js"
+],
 "发送失败 {0}": [
 "control_channels.js"
 ],
@@ -2254,6 +2353,9 @@
 ],
 "变动类型": [
 "ai/schedule/importer.py"
+],
+"口吻示例": [
+"control_persona.js"
 ],
 "只回群里认识的人": [
 "ai/control_config.py",
@@ -2365,6 +2467,9 @@
 "可以多说一些": [
 "control.js"
 ],
+"可分享": [
+"control.js"
+],
 "可用": [
 "control.js",
 "control_mcp.js"
@@ -2430,6 +2535,9 @@
 ],
 "后台地址：{0}/{1}（没有带安全入口的访问一律显示 404）。": [
 "control.js"
+],
+"后台手动撤回": [
+"control_persona.js"
 ],
 "后台排队": [
 "control_flow.js"
@@ -2510,8 +2618,14 @@
 "周视图": [
 "control.html"
 ],
+"命中 {0}%": [
+"control.js"
+],
 "和 Chat 用同一个模型": [
 "control_images.js"
+],
+"和「{0}」试聊几句": [
+"control_persona.js"
 ],
 "和主设定一样": [
 "control_persona.js"
@@ -2539,6 +2653,9 @@
 ],
 "回到现在的人设": [
 "control.js"
+],
+"回复": [
+"control_persona.js"
 ],
 "回复“同意 {1}”我就去做，回复“不同意 {2}”就算了（{3} 小时内有效）。": [
 "ai/permissions.py"
@@ -2656,6 +2773,9 @@
 ],
 "在同一所学校、住得也近": [
 "ai/persona_templates.py"
+],
+"在吗": [
+"control_persona.js"
 ],
 "在手机“设置 → 远程访问”里填这三项": [
 "control_phone.js"
@@ -3028,6 +3148,12 @@
 "完整检查（含数据库）": [
 "control.html"
 ],
+"定时任务": [
+"control.js"
+],
+"定时检查": [
+"control.js"
+],
 "实时更新": [
 "control.html"
 ],
@@ -3212,6 +3338,9 @@
 "少追问": [
 "ai/control_config.py"
 ],
+"尚未排定下次时间": [
+"control.js"
+],
 "尝试次数太多，请 {0} 分钟后再试": [
 "wx_ilink_py/auth.py"
 ],
@@ -3229,6 +3358,9 @@
 ],
 "展开 / 收起": [
 "control_mcp.js"
+],
+"展示每次检查是发出了消息，还是为什么跳过": [
+"control.js"
 ],
 "工具": [
 "control.html",
@@ -3338,6 +3470,9 @@
 "control_images.js",
 "control_persona.js"
 ],
+"已分享": [
+"control.js"
+],
 "已删除": [
 "control.js",
 "control_channels.js",
@@ -3351,6 +3486,9 @@
 "已删除“{0}”（{1} 行）": [
 "control_schedule.js"
 ],
+"已到检查时间": [
+"control.js"
+],
 "已发": [
 "control_social.js"
 ],
@@ -3359,6 +3497,9 @@
 ],
 "已发生": [
 "control_persona.js"
+],
+"已发送": [
+"control.js"
 ],
 "已取消": [
 "control.js",
@@ -3377,6 +3518,9 @@
 ],
 "已回滚（第": [
 "control.js"
+],
+"已固定在阶段 {0}「{1}」，下一条消息起生效": [
+"control_persona.js"
 ],
 "已填 {0} 项": [
 "ai/setup_status.py"
@@ -3449,6 +3593,18 @@
 ],
 "已恢复上一个 API Key": [
 "control.js"
+],
+"已恢复按聊天天数自动推进": [
+"control_persona.js"
+],
+"已手动固定": [
+"control_persona.js"
+],
+"已手动固定 · 累计已聊 {0} 天": [
+"control.js"
+],
+"已手动固定在此阶段（累计已聊 {0} 天）· 点上方任意阶段可切换": [
+"control_persona.js"
 ],
 "已扫码": [
 "control_channels.js"
@@ -3554,6 +3710,12 @@
 "control.js",
 "control_social.js"
 ],
+"已聊 {0} 天 · 已到最终阶段": [
+"control.js"
+],
+"已聊 {0} 天 · 距「{1}」还差 {2} 天": [
+"control.js"
+],
 "已被新的取代": [
 "control.js"
 ],
@@ -3594,6 +3756,12 @@
 "已调走": [
 "control_schedule.js"
 ],
+"已跳过": [
+"control.js"
+],
+"已达今日主动上限": [
+"control.js"
+],
 "已过期": [
 "control.js"
 ],
@@ -3633,6 +3801,10 @@
 ],
 "平常回复也看手机": [
 "ai/control_config.py"
+],
+"平静": [
+"control.js",
+"wx_ilink_py/control_routes.py"
 ],
 "年级": [
 "control_persona.js"
@@ -3750,6 +3922,12 @@
 "归档“{0}”？归档后 Violet 查课表时不再用这个学期（数据保留，可以取消归档）。": [
 "control_schedule.js"
 ],
+"当前": [
+"control_persona.js"
+],
+"当前人设与阶段": [
+"control.js"
+],
 "当前密码不正确": [
 "wx_ilink_py/auth.py"
 ],
@@ -3761,6 +3939,9 @@
 ],
 "当前密码（确认身份）": [
 "control.html"
+],
+"当前心情": [
+"control.js"
 ],
 "当前版本 {0}。{1}。服务器连不上 GitHub 时，可以在下面的“版本更新 → 下载来源”换成加速站。": [
 "control_setup.js"
@@ -3774,8 +3955,17 @@
 "当前版本 {0}，最新版本 {1}{2}。{3}": [
 "control_setup.js"
 ],
+"当前状态": [
+"control.js"
+],
 "当前选中的学期": [
 "control.html"
+],
+"当前阶段「{0}」神态参考：「{1}」": [
+"control_persona.js"
+],
+"当前阶段：{0}": [
+"control_persona.js"
 ],
 "录音太大了（最多 10 MB，3–20 秒最合适）": [
 "control_voice.js"
@@ -3801,6 +3991,9 @@
 "彻底删除（{0}），共 {1} 行，原内容不保留": [
 "control_schedule.js"
 ],
+"待发送": [
+"control.js"
+],
 "待处理": [
 "control_persona.js"
 ],
@@ -3820,8 +4013,14 @@
 "待确认：“{0}”已被纠正为“{1}”": [
 "control.js"
 ],
+"很不高兴，有点委屈": [
+"control.js"
+],
 "很久没有进度了：服务器上的任务可能已经中断，可以再试一次": [
 "ai/root_tasks.py"
+],
+"很开心": [
+"control.js"
 ],
 "微信": [
 "control_channels.js",
@@ -3837,9 +4036,6 @@
 "微信收消息线程": [
 "control.js"
 ],
-"微信未使用": [
-"control.js"
-],
 "微信登录二维码": [
 "control_channels.js"
 ],
@@ -3849,8 +4045,14 @@
 "微信：在后台扫码登录": [
 "ai/diagnostics.py"
 ],
+"心情不错": [
+"control.js"
+],
 "心情平复的半衰期（小时）": [
 "ai/control_config.py"
+],
+"心情系统当前未开启": [
+"control.js"
 ],
 "必应地址": [
 "ai/control_config.py"
@@ -3875,6 +4077,9 @@
 ],
 "必需的设置都完成了，Violet 可以正常聊天。下面的可选项可以随时调整，点一项直接过去。": [
 "control_setup.js"
+],
+"怎么不理我了": [
+"control_persona.js"
 ],
 "性别": [
 "control_persona.js"
@@ -3907,6 +4112,12 @@
 "wx_ilink_py/control_routes.py"
 ],
 "恢复失败：": [
+"control.js"
+],
+"恢复自动推进": [
+"control_persona.js"
+],
+"情绪平稳，会随聊天氛围自然起伏": [
 "control.js"
 ],
 "意思、来历、怎么接": [
@@ -3967,6 +4178,9 @@
 "ai/control_config.py",
 "control_setup.js"
 ],
+"手动测试": [
+"control.js"
+],
 "手动输入…": [
 "control_images.js",
 "control_model.js"
@@ -3997,6 +4211,9 @@
 ],
 "手机提供的工具": [
 "control_phone.js"
+],
+"手机时机": [
+"control.js"
 ],
 "手机时间": [
 "control_mcp.js"
@@ -4045,6 +4262,9 @@
 ],
 "找不到空闲端口": [
 "tools/violet_voice.py"
+],
+"承诺提醒": [
+"control.js"
 ],
 "把 API Key 恢复成上一个值？": [
 "control.js"
@@ -4180,6 +4400,9 @@
 "control_diag.js",
 "control_mcp.js"
 ],
+"提示词 {0} 字": [
+"control_persona.js"
+],
 "提示词版本": [
 "ai/control_config.py"
 ],
@@ -4249,9 +4472,6 @@
 "ai/control_config.py"
 ],
 "撤回": [
-"control_persona.js"
-],
-"撤回原因（这件事就当没发生过）": [
 "control_persona.js"
 ],
 "撤销": [
@@ -4580,6 +4800,9 @@
 "暂停只停止虚拟生活往前推进，不影响聊天和主动消息；彻底关闭用下面的“生活引擎”开关。": [
 "control.html"
 ],
+"暂无记录": [
+"control.js"
+],
 "曲": [
 "ai/persona_templates.py"
 ],
@@ -4628,10 +4851,16 @@
 "更正原因": [
 "control_persona.js"
 ],
+"更正原因（必填）": [
+"control_persona.js"
+],
+"更正后的内容": [
+"control_persona.js"
+],
 "更正后的内容（只改 Violet 的虚拟经历）": [
 "control_persona.js"
 ],
-"更正失败：": [
+"更正生活事件": [
 "control_persona.js"
 ],
 "更长的结果会截断后再给模型": [
@@ -4674,6 +4903,9 @@
 ],
 "最新的在最上面。密钥、令牌和密码在离开服务器之前都会被替换成 <redacted>。": [
 "control.html"
+],
+"最近 15 次主动决策记录": [
+"control.js"
 ],
 "最近 20 轮：你的消息、主动联系、QQ 群聊和别人的私聊。点一轮看每一步收到了什么、给出了什么，还有这一轮的日志。重启后清空。": [
 "control.html"
@@ -4725,6 +4957,9 @@
 ],
 "有新版本": [
 "control_setup.js"
+],
+"有点不高兴": [
+"control.js"
 ],
 "有结果的搜索引擎：": [
 "control.js"
@@ -4958,6 +5193,9 @@
 "检查间隔（秒）": [
 "control_channels.js"
 ],
+"检测到手机时机": [
+"control.js"
+],
 "概览": [
 "control.html"
 ],
@@ -5051,6 +5289,9 @@
 "模板（不用模型）": [
 "ai/control_config.py"
 ],
+"次": [
+"control.js"
+],
 "次修改）": [
 "control.js"
 ],
@@ -5068,6 +5309,9 @@
 ],
 "正在上传… {0} / {1} MB": [
 "control_memes.js"
+],
+"正在上课或考试，暂不打扰": [
+"control.js"
 ],
 "正在下载": [
 "control_memes.js"
@@ -5155,6 +5399,9 @@
 "正常：{0} 个工具可用（授权给 {1}）": [
 "ai/mcp_admin.py"
 ],
+"此阶段神态参考": [
+"control_persona.js"
+],
 "每 25 分钟左右，每个冷场的群有多大概率让她想一想（0–1）；越大她越常主动说话": [
 "ai/control_config.py"
 ],
@@ -5230,6 +5477,9 @@
 "每次都带上的长期事实（条）": [
 "ai/control_config.py"
 ],
+"每轮对话平均 {0} token": [
+"control.js"
+],
 "比如：微信上是“Violet + 恋人”，QQ 上是“AI + 开发者”。人设不同就是不同的人：聊天记录、记忆、提醒、生活和心情各是各的（聊天记录、记忆页上方和本页下面可以选看谁的）；课表共用。第一次给一个渠道选自己的人设时，这个渠道以前的聊天会跟着过去。QQ 群里也按 QQ 这一行的设定。导入 Eve 时选的人设也显示在这里。": [
 "control_persona.js"
 ],
@@ -5241,6 +5491,9 @@
 ],
 "沉稳理性、话不多但很靠谱": [
 "persona/templates/calm.json"
+],
+"沙盒 · 不留记录": [
+"control_persona.js"
 ],
 "沙箱环境（机器人还没审核上线时勾选）": [
 "control_channels.js"
@@ -5390,7 +5643,8 @@
 "wx_ilink_py/qq_routes.py"
 ],
 "没有这个人设模板": [
-"ai/persona_templates.py"
+"ai/persona_templates.py",
+"wx_ilink_py/persona_routes.py"
 ],
 "没有这个会话": [
 "wx_ilink_py/control_routes.py",
@@ -5508,6 +5762,9 @@
 "测试模式": [
 "control_persona.js"
 ],
+"测试模式中暂停主动联系": [
+"control.js"
+],
 "测试模式已关闭": [
 "control_persona.js"
 ],
@@ -5587,6 +5844,9 @@
 "清空安全入口后，任何人都能打开登录页。确定？": [
 "control.js"
 ],
+"清空对话": [
+"control_persona.js"
+],
 "清除全部记忆": [
 "control.js"
 ],
@@ -5651,6 +5911,9 @@
 "control.js",
 "control_model.js"
 ],
+"温度留空时使用各 Agent 的默认值（Chat 默认 0.85 更有活人感，Memory / Proactive 默认 0.2 更稳）。": [
+"control.html"
+],
 "温柔、软萌、慢热，熟了以后很黏人的女孩": [
 "persona/templates/violet.json"
 ],
@@ -5674,6 +5937,9 @@
 ],
 "点击位置不对": [
 "wx_ilink_py/qq_routes.py"
+],
+"点击固定在「{0}」": [
+"control_persona.js"
 ],
 "点击放大": [
 "control_channels.js"
@@ -5727,6 +5993,9 @@
 ],
 "现在升级到最新版本？会先备份，升级期间 Violet 停止大约一两分钟；新版本起不来会自动退回旧版本。": [
 "control_setup.js"
+],
+"现在是 {0}（试聊预览，不保存记录）。": [
+"wx_ilink_py/persona_routes.py"
 ],
 "现在用 Chat 的模型：{0}": [
 "control_images.js"
@@ -5857,6 +6126,9 @@
 ],
 "用微信扫一扫": [
 "control_channels.js"
+],
+"用户": [
+"control_persona.js"
 ],
 "用户名": [
 "control.html",
@@ -6089,6 +6361,9 @@
 "确定{0}？这一步不能在页面上撤销。": [
 "control.js"
 ],
+"确定撤回这条生活事件？撤回后这件事就当没发生过。": [
+"control_persona.js"
+],
 "确定清除全部记忆？她会忘记你和以前的一切（服务器上会保留一份备份文件）。": [
 "control_persona.js"
 ],
@@ -6146,6 +6421,12 @@
 "第 {0} 周（{1}）": [
 "control_schedule.js"
 ],
+"第 {0} 天": [
+"control_persona.js"
+],
+"第 {0} 天起": [
+"control_persona.js"
+],
 "第 {0} 次 · {1} · {2}": [
 "control.js"
 ],
@@ -6193,6 +6474,9 @@
 "等待接口回应超时": [
 "ai/setup_status.py"
 ],
+"等待第一轮对话统计": [
+"control.js"
+],
 "等群里安静几秒再决定": [
 "ai/control_config.py"
 ],
@@ -6204,6 +6488,9 @@
 ],
 "简体中文": [
 "ai/control_config.py"
+],
+"管理 ›": [
+"control.js"
 ],
 "管理令牌：{0}。禁用或更换令牌请在本机运行 python -m tools.violet_admin token-disable / token-rotate": [
 "control.js"
@@ -6239,8 +6526,17 @@
 "control.html",
 "control.js"
 ],
+"系统提示": [
+"control_persona.js"
+],
 "系统版本细节": [
 "control_mcp.js"
+],
+"累计已聊 {0} 天 · 已到达最终阶段": [
+"control_persona.js"
+],
+"累计已聊 {0} 天 · 距下一阶段「{1}」还差 {2} 天": [
+"control_persona.js"
 ],
 "繁體中文": [
 "ai/control_config.py"
@@ -6299,6 +6595,9 @@
 ],
 "维护": [
 "control.html"
+],
+"缓存 {0}%": [
+"control_persona.js"
 ],
 "缓存命中": [
 "control.js"
@@ -6526,6 +6825,9 @@
 "自主探索：没有允许（在下面的设置里打开“允许自主探索”）": [
 "control.js"
 ],
+"自动推进": [
+"control_persona.js"
+],
 "自动更新": [
 "ai/control_config.py",
 "control_setup.js"
@@ -6607,6 +6909,9 @@
 ],
 "节日祝福": [
 "ai/control_config.py"
+],
+"节日问候": [
+"control.js"
 ],
 "节次": [
 "ai/schedule/importer.py",
@@ -6887,8 +7192,27 @@
 "试听：想让她说的话": [
 "control_voice.js"
 ],
+"试聊人设": [
+"control_persona.js"
+],
+"试聊当前阶段": [
+"control_persona.js"
+],
+"试聊调用失败（{0}）": [
+"wx_ilink_py/persona_routes.py"
+],
+"试聊阶段": [
+"control_persona.js"
+],
+"试聊预览": [
+"control.html",
+"control_persona.js"
+],
 "试试查一个梗": [
 "control_memes.js"
+],
+"详情 ›": [
+"control.js"
 ],
 "详细信息（{0} 行）": [
 "control_logs.js"
@@ -6958,6 +7282,9 @@
 "请填写加速站的地址，例如 https://gh.example.com/（不是 github.com 本身）": [
 "ai/control_config.py"
 ],
+"请填写更正后的内容和原因": [
+"control_persona.js"
+],
 "请填数字": [
 "ai/control_config.py"
 ],
@@ -6982,6 +7309,9 @@
 "请至少选一项": [
 "control.js",
 "wx_ilink_py/control_routes.py"
+],
+"请输入试聊消息（1 到 1000 字）": [
+"wx_ilink_py/persona_routes.py"
 ],
 "请选择导出的起止日期": [
 "control.js"
@@ -7161,6 +7491,9 @@
 "输入“{0}”确认": [
 "control_schedule.js"
 ],
+"输入一句话试试她的语气，回车发送…": [
+"control_persona.js"
+],
 "输入学期名称“{0}”确认": [
 "control_schedule.js"
 ],
@@ -7225,7 +7558,7 @@
 "还没分类（不给她用）": [
 "control_mcp.js"
 ],
-"还没到时间": [
+"还没到下次检查时间": [
 "control.js"
 ],
 "还没到时间的 {0} 条，下面也列出最近已经结束的": [
@@ -7243,8 +7576,14 @@
 "还没有中继": [
 "control_phone.js"
 ],
+"还没有主动联系记录": [
+"control.js"
+],
 "还没有人在这个渠道上发过消息。": [
 "control_channels.js"
+],
+"还没有保存过自定义人设": [
+"wx_ilink_py/persona_routes.py"
 ],
 "还没有修改记录": [
 "control.js",
@@ -7328,6 +7667,9 @@
 "还没有设置密码（现在用的是管理令牌）": [
 "ai/setup_status.py"
 ],
+"还没有设置模型服务的 API Key（请先在模型服务页配置）": [
+"wx_ilink_py/persona_routes.py"
+],
 "还没有请你批准过什么。": [
 "control.js"
 ],
@@ -7364,6 +7706,10 @@
 ],
 "这一轮的日志": [
 "control_flow.js"
+],
+"这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{0}」": [
+"ai/persona_templates.py",
+"wx_ilink_py/persona_routes.py"
 ],
 "这个 Key 没有权限使用该模型（接口返回 403）": [
 "ai/setup_status.py"
@@ -7558,6 +7904,12 @@
 "连接超时（秒）": [
 "ai/control_config.py"
 ],
+"连续 {0} 次未回": [
+"control.js"
+],
+"连续 {0} 次未回复，等你先开口": [
+"control.js"
+],
 "连续几次没回就先等对方": [
 "ai/control_config.py"
 ],
@@ -7708,8 +8060,18 @@
 "control_mcp.js",
 "control_schedule.js"
 ],
+"阶段": [
+"control_persona.js"
+],
+"阶段 {0}/{1} · {2}": [
+"control.js",
+"control_persona.js"
+],
 "阶段 {0}/{1}“{2}”": [
 "control_persona.js"
+],
+"阶段编号不对": [
+"wx_ilink_py/persona_routes.py"
 ],
 "阶段：自动推进": [
 "control_persona.js"
@@ -7787,7 +8149,8 @@
 "control_model.js"
 ],
 "默认 {0}": [
-"control.js"
+"control.js",
+"control_model.js"
 ],
 "默认：{0}": [
 "control_mcp.js"
@@ -7840,6 +8203,9 @@
 "（新学期）": [
 "control_schedule.js"
 ],
+"（无回复）": [
+"control_persona.js"
+],
 "（最近 60 件）": [
 "control.html"
 ],
@@ -7858,6 +8224,9 @@
 "（空）": [
 "control.js",
 "control_flow.js"
+],
+"（第 {0} 天）": [
+"control_persona.js"
 ],
 "（缓慢变化，需要你批准）": [
 "control.html"

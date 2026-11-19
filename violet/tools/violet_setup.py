@@ -25,7 +25,9 @@ import secrets
 import string
 import sys
 
-DEFAULT_PROMPTS = {"prompt.chat": "v1", "prompt.proactive": "v1"}     # the stable versions (docs: decisions T23)
+# 2026-11-18: empty so fresh installs use each agent's own default_prompt_file (chat.v4 / proactive.v4) and persona
+# overrides (ai_prompt / own_persona_prompt) instead of locking CHAT_LLM_PROMPT to the legacy v1 identity prompt.
+DEFAULT_PROMPTS: dict[str, str] = {}
 
 
 def generate_password(length: int = 20) -> str:
@@ -71,6 +73,7 @@ def init(reset_admin: bool = False) -> dict:
 
     from ai.control_config import ControlStore, prompt_versions
     control = ControlStore(data_dir)
+    control.migrate_installer_v1_prompts()
     values = control.values()
     seed = {}
     for key, version in DEFAULT_PROMPTS.items():

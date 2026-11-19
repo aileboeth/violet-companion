@@ -17,12 +17,12 @@ TOOL_NAMES = {"qq_recall", "qq_like"}
 SCHEMAS = [
     {"type": "function", "function": {
         "name": "qq_recall",
-        "description": "撤回你刚才在 QQ 上发给对方的消息（只能撤回两分钟之内的）。对方让你撤回、或者你发错了 / 发重了时用。",
+        "description": "撤回两分钟内在 QQ 发给对方的消息（对方要求或发错/发重时用）。",
         "parameters": {"type": "object", "properties": {
             "count": {"type": "integer", "description": "撤回最近几条，默认 1，最多 5"}}}}},
     {"type": "function", "function": {
         "name": "qq_like",
-        "description": "给对方的 QQ 名片点个赞。对方让你给他点赞时用。",
+        "description": "给对方 QQ 名片点赞（对方要求时用）。",
         "parameters": {"type": "object", "properties": {}}}},
 ]
 

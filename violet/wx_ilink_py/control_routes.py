@@ -171,15 +171,7 @@ def register_control_routes(app: Flask, violetdb, client=None, proactive_schedul
                 wechat = {"logged_in": bool(status.get("logged_in")), "login_in_progress": bool(status.get("login_in_progress"))}
             except Exception:
                 wechat = None
-        proactive = None
-        if proactive_scheduler is not None:
-            try:
-                snap = proactive_scheduler.status_snapshot()
-                proactive = {k: snap.get(k) for k in ("enabled", "is_due", "due_reason", "next_proactive_at",
-                                                      "daily_sent_count", "daily_message_limit", "cold_streak",
-                                                      "last_proactive_sent_at")}
-            except Exception as exc:
-                proactive = {"error": exc.__class__.__name__}
+        proactive = _proactive_status_summary()
         life = None
         try:
             from ai.life_scheduler import LifeControl
@@ -217,13 +209,113 @@ def register_control_routes(app: Flask, violetdb, client=None, proactive_schedul
                 channels = []
         totals = {r["role"]: int(r["n"]) for r in violetdb.fetch_all(
             "SELECT role, COUNT(*) AS n FROM messages GROUP BY role")}
+        persona_info = None
+        mood_info = None
+        try:
+            from ai import memory_scope, mood, persona_templates as pt
+            with memory_scope.use(memory_scope.MAIN):
+                persona_info = pt.in_effect(None, violetdb)
+                cur_mood = mood.current(violetdb)
+                val = float(cur_mood.get("value") or 0.0)
+                active_mood = abs(val) >= mood.THRESHOLD
+                mood_info = {
+                    "enabled": mood.enabled(),
+                    "value": val,
+                    "label": mood._words(val) if active_mood else "平静",
+                    "cause": cur_mood.get("cause") if active_mood else None,
+                    "state": "ok" if val >= mood.THRESHOLD else ("warn" if val <= -mood.THRESHOLD else ""),
+                }
+        except Exception:
+            pass
         return ok({"agents": agents, "service": health, "wechat": wechat, "proactive": proactive, "life": life,
+                   "persona": persona_info, "mood": mood_info,
                    "channels": channels,
                    "message_totals": {"received": totals.get("user", 0), "sent": totals.get("assistant", 0)},
                    "aux_calls_24h": aux, "messages": violetdb.get_message_stats(), "errors": errors[:12],
                    "settings_revision": store().revision(),
                    "usage": _usage_summary(),
                    "notes": {"model_calls": ""}})
+
+    def _proactive_status_summary() -> dict[str, Any]:
+        if proactive_scheduler is not None:
+            try:
+                snap = proactive_scheduler.status_snapshot()
+                return {k: snap.get(k) for k in (
+                    "enabled", "is_due", "due_reason", "next_proactive_at", "daily_sent_count",
+                    "daily_message_limit", "cold_streak", "last_proactive_sent_at",
+                    "minutes_since_user_message", "minutes_since_last_proactive",
+                )}
+            except Exception as exc:
+                return {"error": exc.__class__.__name__}
+        cfg = _proactive_config() or {}
+        today_prefix = violetdb.now()[:10]
+        try:
+            sent_today = violetdb.count_proactive_events_since(
+                f"{today_prefix}T00:00:00", status="sent",
+                exclude_event_types=("commitment_reminder", "holiday_greeting"),
+            )
+        except Exception:
+            sent_today = 0
+        next_at = violetdb.get_proactive_setting("next_proactive_at")
+        return {
+            "enabled": cfg.get("enabled", True),
+            "is_due": False,
+            "due_reason": "not due yet" if next_at else "next proactive time initialized",
+            "next_proactive_at": next_at,
+            "daily_sent_count": sent_today,
+            "daily_message_limit": cfg.get("daily_message_limit", 3),
+            "cold_streak": 0,
+            "last_proactive_sent_at": violetdb.get_latest_proactive_event_at(status="sent"),
+        }
+
+    @app.get("/api/control/proactive/recent")
+    def control_proactive_recent():
+        """Status summary, today's daily-life material count, and the last 15 proactive decisions."""
+        status_data = _proactive_status_summary()
+        today_prefix = violetdb.now()[:10]
+        daily_rows = violetdb.fetch_all(
+            "SELECT id, content, share_count, occurred_at FROM life_events "
+            "WHERE source = 'life_daily' AND status = 'happened' AND occurred_at >= ? ORDER BY id DESC LIMIT 10",
+            (f"{today_prefix}T00:00:00",),
+        ) if _has_table("life_events") else []
+        today_daily = {
+            "total": len(daily_rows),
+            "unshared": sum(1 for r in daily_rows if int(r.get("share_count") or 0) == 0),
+            "items": [{"content": str(r.get("content") or "")[:60], "shared": int(r.get("share_count") or 0) > 0}
+                      for r in daily_rows[:3]],
+        }
+        raw_rows = violetdb.fetch_all(
+            "SELECT id, event_type, status, action_type, reason, decision, sent_messages, created_at "
+            "FROM proactive_events ORDER BY created_at DESC, id DESC LIMIT 15"
+        ) if _has_table("proactive_events") else []
+        events = []
+        for r in raw_rows:
+            dec = None
+            try:
+                dec = json.loads(r["decision"]) if r.get("decision") else None
+            except Exception:
+                dec = None
+            sent_list = []
+            try:
+                parsed = json.loads(r["sent_messages"]) if r.get("sent_messages") else []
+                if isinstance(parsed, list):
+                    sent_list = [str(x) for x in parsed if x]
+            except Exception:
+                sent_list = []
+            dec_dict = dec if isinstance(dec, dict) else {}
+            events.append({
+                "id": r["id"],
+                "created_at": r.get("created_at"),
+                "event_type": r.get("event_type"),
+                "status": r.get("status"),
+                "action_type": r.get("action_type") or dec_dict.get("action_type"),
+                "task_name": dec_dict.get("task_name"),
+                "reason": r.get("reason") or "",
+                "decision_reason": str(dec_dict.get("reason") or "")[:120],
+                "topic": str(dec_dict.get("topic") or dec_dict.get("topic_key") or "")[:60],
+                "sent_preview": (" / ".join(sent_list))[:90] if sent_list else "",
+            })
+        return ok({"status": status_data, "today_daily": today_daily, "events": events})
 
     # 2026-10-30: what she may do by herself, and what waits for the owner's approval (ai/permissions.py)
     @app.get("/api/control/permissions")
@@ -943,7 +1035,7 @@ def register_control_routes(app: Flask, violetdb, client=None, proactive_schedul
         if _known_server(name) is None:
             return bad("not found", 404)
         body = request.get_json(silent=True) or {}
-        changes = {k: body[k] for k in ("enabled", "agents", "connect_timeout", "call_timeout", "offer") if k in body}
+        changes = {k: body[k] for k in ("enabled", "agents", "connect_timeout", "call_timeout") if k in body}
         if not changes:
             return bad("没有要保存的修改")
         try:

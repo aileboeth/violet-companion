@@ -259,11 +259,33 @@ function lifeText(life) {
   return life.last_run_key ? `${mode}（上次 ${life.last_run_key}：${fmt(life.last_outcome)}）` : mode;
 }
 // 0.7.5: the scheduler's reasons are internal English codes
-const DUE = { "not due yet": "还没到时间", "next proactive time initialized": "已排好下次时间", "quiet hours": "免打扰时段",
-  "no user message yet": "还没聊过天", "too soon after user message": "刚聊过，晚点再说", "due": "到时间了" };
+const DUE = {
+  "not due yet": "还没到下次检查时间",
+  "next proactive time initialized": "已排好下次时间",
+  "quiet hours": "免打扰时段",
+  "no user message yet": "还没聊过天",
+  "too soon after user message": "刚聊过，晚点再说",
+  "too soon after proactive message": "刚主动找过你，间隔未到",
+  "the user asked Violet not to start conversations": "你要求过不要主动找你",
+  "daily proactive limit reached": "已达今日主动上限",
+  "test mode": "测试模式中暂停主动联系",
+  "due": "已到检查时间",
+  "phone moment": "检测到手机时机",
+};
+function translateDue(reason) {
+  if (!reason) return "—";
+  if (DUE[reason]) return DUE[reason];
+  const s = String(reason);
+  const cold = s.match(/^waiting for the user to re-engage \(cold streak (\d+)\)$/);
+  if (cold) return `连续 ${cold[1]} 次未回复，等你先开口`;
+  const busy = s.match(/^the user said they are busy \((.+)\) until (.+)$/);
+  if (busy) return `你说过在忙（${busy[1]}），直到 ${busy[2]}`;
+  if (s.includes("class") || s.includes("exam")) return "正在上课或考试，暂不打扰";
+  return s;
+}
 function proactiveText(p) {
-  if (p.enabled === false) return "已关闭";
-  const reason = DUE[p.due_reason] || p.due_reason || "—";
+  if (!p || p.enabled === false) return "已关闭";
+  const reason = translateDue(p.due_reason);
   const next = p.next_proactive_at ? String(p.next_proactive_at).replace("T", " ").slice(5, 16) : "";
   return p.due_reason === "not due yet" && next ? `${reason}（下次 ${next}）` : reason;
 }
@@ -275,26 +297,108 @@ function channelsStat(d) {
   if (!rows.length && d.wechat) return stat("聊天渠道", d.wechat.logged_in ? "微信已登录" : "还没有可用的渠道", d.wechat.logged_in ? "ok" : "warn");
   return stat("聊天渠道", rows.length ? "都没有连上" : "还没有可用的渠道", "warn");
 }
+function renderOverviewHero(d) {
+  const box = $("#ov-hero");
+  if (!box) return;
+  const p = d.proactive || {}, u = d.usage || {}, per = d.persona || null, mood = d.mood || null;
+  const cards = [];
+  // 1. Persona & Stage
+  if (per) {
+    const st = per.stage || null;
+    const stepBar = st && st.total ? h("div", { class: "mini-steps", "aria-label": "关系阶段进度" },
+      ...Array.from({ length: st.total }, (_, i) => h("span", {
+        class: "mini-step " + (i < st.index ? "done" : i === st.index ? "current" : "future"),
+        title: (st.labels || [])[i] || "",
+      }))) : null;
+    const sub = st
+      ? (st.auto
+        ? (st.days_to_next !== null && st.next_label
+          ? `已聊 ${st.days} 天 · 距「${st.next_label}」还差 ${st.days_to_next} 天`
+          : `已聊 ${st.days} 天 · 已到最终阶段`)
+        : `已手动固定 · 累计已聊 ${st.days} 天`)
+      : (per.call ? `关系：${per.label} · 叫你“${per.call}”` : `关系：${per.label}`);
+    const c1 = h("div", {
+      class: "hero-card clickable", tabindex: "0", role: "button",
+      onclick: () => goTo("persona", st ? "pl-stage" : "pl-who"),
+      onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); goTo("persona", st ? "pl-stage" : "pl-who"); } },
+    },
+      h("div", { class: "hero-top" }, h("span", { class: "hero-k", text: "当前人设与阶段" }), h("span", { class: "hero-go", text: "管理 ›" })),
+      h("div", { class: "hero-v" }, h("span", { text: per.persona || "Violet" }),
+        st ? pill(`阶段 ${st.index + 1}/${st.total} · ${st.label}`, "ok") : pill(per.label || "—")),
+      stepBar,
+      h("div", { class: "hero-sub", text: sub }));
+    cards.push(c1);
+  }
+  // 2. Today's Proactive Contact
+  const hasPro = p.daily_sent_count !== undefined && p.daily_sent_count !== null;
+  const sent = Number(p.daily_sent_count ?? 0);
+  const limit = Number(p.daily_message_limit ?? 0);
+  const proPct = hasPro && limit > 0 ? Math.min(100, Math.round((sent / limit) * 100)) : 0;
+  const c2 = h("div", {
+    class: "hero-card clickable", tabindex: "0", role: "button",
+    onclick: () => goTo("proactive"),
+    onkeydown: (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); goTo("proactive"); } },
+  },
+    h("div", { class: "hero-top" }, h("span", { class: "hero-k", text: "今日主动联系" }), h("span", { class: "hero-go", text: "详情 ›" })),
+    h("div", { class: "hero-v" },
+      h("span", { text: hasPro ? `${sent} / ${limit || "—"}` : "—" }),
+      hasPro ? h("span", { class: "hero-unit", text: "次" }) : null,
+      p.enabled === false ? pill("已关闭") : null),
+    h("div", { class: "mbar" }, h("div", { class: "mbar-fill" + (hasPro && sent >= limit && limit > 0 ? " ok" : ""), style: `width:${proPct}%` })),
+    h("div", { class: "hero-sub", text: proactiveText(p) }));
+  cards.push(c2);
+  // 3. Current Mood
+  const MOOD_WORDS = { "平静": "平静", "很开心": "很开心", "心情不错": "心情不错", "有点不高兴": "有点不高兴", "很不高兴，有点委屈": "很不高兴，有点委屈" };
+  if (mood) {
+    const moodText = mood.enabled === false ? "已关闭" : (MOOD_WORDS[mood.label] || mood.label || "平静");
+    const moodSubEl = mood.enabled === false
+      ? h("div", { class: "hero-sub", text: "心情系统当前未开启" })
+      : (mood.cause
+        ? h("div", { class: "hero-sub" }, h("span", { text: "原因：" }), " ", h("span", { text: mood.cause, translate: "no" }))
+        : h("div", { class: "hero-sub", text: "情绪平稳，会随聊天氛围自然起伏" }));
+    cards.push(h("div", { class: "hero-card" },
+      h("div", { class: "hero-top" }, h("span", { class: "hero-k", text: "当前心情" }),
+        mood.enabled !== false && Math.abs(Number(mood.value || 0)) >= 0.3
+          ? pill(Number(mood.value) > 0 ? `+${Number(mood.value).toFixed(2)}` : Number(mood.value).toFixed(2), mood.state || "")
+          : null),
+      h("div", { class: "hero-v mood-row" },
+        h("span", { class: "mood-orb " + (mood.state || ""), "aria-hidden": "true" }),
+        h("span", { text: moodText })),
+      moodSubEl));
+  }
+  // 4. Today's Tokens & Cache Hit Rate
+  const k = (n) => (n >= 10000 ? (n / 10000).toFixed(1) + " 万" : String(n || 0));
+  const rate = u && u.cache_rate !== null && u.cache_rate !== undefined ? Math.round(u.cache_rate * 100) : null;
+  cards.push(h("div", { class: "hero-card" },
+    h("div", { class: "hero-top" }, h("span", { class: "hero-k", text: "今日 token 与缓存" }),
+      rate !== null ? pill(`命中 ${rate}%`, rate >= 50 ? "ok" : "warn") : null),
+    h("div", { class: "hero-v" },
+      h("span", { text: u && u.calls ? k(u.total) : "0" }),
+      h("span", { class: "hero-unit", text: u && u.calls ? `token · ${u.calls} 次调用` : "今天暂无调用" })),
+    rate !== null ? h("div", { class: "mbar" },
+      h("div", { class: "mbar-fill " + (rate >= 50 ? "ok" : "warn"), style: `width:${Math.min(100, rate)}%` })) : null,
+    h("div", { class: "hero-sub", text: u && u.per_turn ? `每轮对话平均 ${k(u.per_turn)} token` : "等待第一轮对话统计" })));
+  box.replaceChildren(...cards);
+}
 loaders.overview = async () => {
   try {
     const d = await api("GET", "/api/control/overview");
-    const s = d.service || {}, p = d.proactive || {}, life = d.life || {};
+    renderOverviewHero(d);
+    const s = d.service || {}, life = d.life || {};
     const alive = (x) => (x ? "ok" : "bad");
     const totals = d.message_totals ? `收 ${d.message_totals.received} · 发 ${d.message_totals.sent}` : messageCount(d.messages);
-    const cards = $("#ov-cards"); cards.replaceChildren(
+    const wechatDisabled = (d.channels || []).some((c) => c.type === "wechat_ilink" && c.state === "disabled");
+    const tiles = [
       channelsStat(d),
-      // 0.7.6: this thread is WeChat's -- not red when WeChat is switched off and another channel is used
-      (d.channels || []).some((c) => c.type === "wechat_ilink" && c.state === "disabled")
-        ? stat("微信收消息线程", "微信未使用")
-        : stat("微信收消息线程", s.poll_thread_alive ? "运行中" : "未运行", alive(s.poll_thread_alive)),
+      wechatDisabled ? null : stat("微信收消息线程", s.poll_thread_alive ? "运行中" : "未运行", alive(s.poll_thread_alive)),
       stat("回复线程", s.worker_thread_alive ? "运行中" : "未运行", alive(s.worker_thread_alive)),
       stat("记忆线程", s.memory_worker_alive ? "运行中" : "未运行", alive(s.memory_worker_alive)),
       stat("排队中的对话", s.queued_turns ?? 0),
-      stat("主动联系", proactiveText(p)),
-      stat("今天主动", p.daily_sent_count === undefined ? "—" : `${p.daily_sent_count} / ${fmt(p.daily_message_limit)}`),
       stat("生活引擎", lifeText(life), life.mode === "on" ? "ok" : (life.mode ? "warn" : "")),
       stat("消息总数", totals),
-      stat("设置修改次数", d.settings_revision ?? 0));
+      stat("设置修改次数", d.settings_revision ?? 0),
+    ].filter(Boolean);
+    $("#ov-cards").replaceChildren(...tiles);
     const agents = $("#ov-agents");
     agents.replaceChildren(h("tr", {}, h("th", { text: "Agent" }), h("th", { text: "模型" }), h("th", { text: "备用模型" }), h("th", { text: "温度" })),
       ...(d.agents || []).map((a) => h("tr", {}, h("td", { text: a.agent }), h("td", { text: fmt(a.model) }), h("td", { text: fmt(a.fallback_model) }), h("td", { text: fmt(a.temperature) }))));
@@ -308,6 +412,71 @@ loaders.overview = async () => {
     watchOverview(d.channels || []);
   } catch (e) { toast("概览读取失败：" + e.message, false); }
 };
+
+// ---------------------------------------------------------------- proactive status & decision log
+const PRO_STATUS = {
+  sent: ["已发送", "ok"], skipped: ["已跳过", ""], failed: ["失败", "bad"],
+  pending: ["待发送", "warn"], sending: ["发送中", "warn"], cancelled: ["已取消", ""],
+};
+const PRO_KIND = {
+  scheduled_check: "定时检查", scheduled: "定时检查", commitment_reminder: "承诺提醒",
+  holiday_greeting: "节日问候", phone_moment: "手机时机", fixed_task: "定时任务",
+  manual_proactive_test: "手动测试",
+};
+loaders.proactive = async () => {
+  const box = $("#pro-panel");
+  if (!box) return;
+  try {
+    const d = await api("GET", "/api/control/proactive/recent");
+    const st = d.status || {}, daily = d.today_daily || {}, events = d.events || [];
+    const sent = Number(st.daily_sent_count ?? 0);
+    const limit = Number(st.daily_message_limit ?? 0);
+    const pct = limit > 0 ? Math.min(100, Math.round((sent / limit) * 100)) : 0;
+    const summaryCard = h("div", { class: "card pro-summary" },
+      h("div", { class: "row" },
+        h("strong", { text: "主动联系当前状态" }),
+        st.enabled === false ? pill("已关闭") : pill("运行中", "ok"),
+        st.cold_streak ? pill(`连续 ${st.cold_streak} 次未回`, "warn") : null),
+      h("div", { class: "pro-kpis" },
+        h("div", { class: "pro-kpi" },
+          h("span", { class: "k", text: "今日已发 / 上限" }),
+          h("span", { class: "v", text: `${sent} / ${limit || "—"}` }),
+          h("div", { class: "mbar" }, h("div", { class: "mbar-fill" + (sent >= limit && limit > 0 ? " ok" : ""), style: `width:${pct}%` }))),
+        h("div", { class: "pro-kpi" },
+          h("span", { class: "k", text: "当前状态" }),
+          h("span", { class: "v", text: translateDue(st.due_reason) }),
+          h("span", { class: "note", text: st.next_proactive_at ? `下次检查：${when(st.next_proactive_at)}` : "尚未排定下次时间" })),
+        h("div", { class: "pro-kpi" },
+          h("span", { class: "k", text: "上次主动发送" }),
+          h("span", { class: "v", text: st.last_proactive_sent_at ? when(st.last_proactive_sent_at) : "暂无记录" }),
+          h("span", { class: "note", text: `今日日常素材：${daily.total || 0} 条（未分享 ${daily.unshared || 0} 条）` }))),
+      (daily.items || []).length ? h("div", { class: "pro-daily-list" },
+        ...daily.items.map((item) => h("span", { class: "pro-daily-chip" + (item.shared ? " shared" : "") },
+          h("span", { text: item.shared ? "已分享" : "可分享" }), " · ", h("span", { text: item.content, translate: "no" })))) : null);
+
+    const historyCard = h("div", { class: "card pro-history" },
+      h("div", { class: "row" }, h("strong", { text: "最近 15 次主动决策记录" }),
+        h("span", { class: "note", text: "展示每次检查是发出了消息，还是为什么跳过" })),
+      h("div", { class: "pro-list" }, ...(events.length ? events.map((ev) => {
+        const [label, kind] = PRO_STATUS[ev.status] || [fmt(ev.status), ""];
+        const etype = PRO_KIND[ev.event_type] || ev.event_type || "定时检查";
+        const detail = ev.decision_reason || ev.reason || "";
+        return h("div", { class: "pro-item " + (ev.status || "") },
+          h("div", { class: "pro-item-head" },
+            pill(label, kind),
+            h("span", { class: "pill", text: etype }),
+            ev.topic ? h("strong", { text: ev.topic, translate: "no" }) : null,
+            h("span", { class: "pro-item-time", text: when(ev.created_at) })),
+          ev.sent_preview ? h("div", { class: "pro-item-msg", text: ev.sent_preview, translate: "no" }) : null,
+          detail ? h("div", { class: "pro-item-reason" }, h("span", { text: "原因：" }), " ", h("span", { text: detail, translate: "no" })) : null);
+      }) : [h("p", { class: "note", text: "还没有主动联系记录" })])));
+    box.replaceChildren(summaryCard, historyCard);
+  } catch (e) {
+    box.replaceChildren(h("p", { class: "err", text: "主动状态读取失败：" + e.message }));
+  }
+};
+const proRefreshBtn = $("#pro-refresh");
+if (proRefreshBtn) proRefreshBtn.addEventListener("click", () => loaders.proactive());
 // 2026-10-30: today's tokens (ai/usage.py): totals, per conversation turn, cache hits, and which part used them
 function renderUsage(u) {
   const box = $("#ov-usage");

@@ -238,7 +238,6 @@ def web_world(make_world, monkeypatch, web):
         from ai.chat import violetdb
         return mcp_server.build_server(WebService(violetdb, fetcher=make_fetcher(web), provider=provider))
     monkeypatch.setattr(mcp_server, "build_default_server", factory)
-    monkeypatch.delenv("VIOLET_WEB_OFFER", raising=False)
     w = make_world(VIOLET_WEB_ENABLED="1")
     w.llm.responders["fake-memory"] = lambda kw: json.dumps({"should_save": False, "reason": "t"})
     w.provider = provider

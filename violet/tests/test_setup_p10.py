@@ -151,7 +151,7 @@ def test_init_creates_the_database_a_one_time_password_and_selects_the_tuned_pro
     password = first["admin"]["password"]
     assert first["admin"]["created"] and first["admin"]["must_change"] and len(password) == 20
     assert (tmp_path / "data" / "violet.db").exists()
-    assert first["prompts_selected"] == {"prompt.chat": "v1", "prompt.proactive": "v1"}
+    assert first["prompts_selected"] == {}
     store = AdminStore(env_guard)
     assert store.verify_password(password) and store.must_change()
     assert password not in (env_guard / "control" / "admin.json").read_text(encoding="utf-8")

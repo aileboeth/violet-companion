@@ -53,8 +53,8 @@ LEGACY_CORE_LABELS = {
     "user_preferences": "对方的长期喜好", "preference": "对方的长期喜好", "user_profile": "对方的基本情况",
     "proactive_style": "你主动找对方时，对方喜欢的方式",
 }
-LEGACY_CORE_HEADER = ("【你和对方以前（旧系统里）就定下的相处习惯和长期记忆——优先遵守。“用户”就是对方；没写主语的称呼、语气、"
-                      "做法，说的都是你怎么对对方。对方最近明确说了不一样的，以对方最近说的为准】")
+LEGACY_CORE_HEADER = ("【你和对方以前（旧系统里）就定下的相处习惯和长期记忆——优先遵守。“用户”指对方，没写主语的称呼和做法指你怎么对对方；"
+                      "对方最近改口以最近为准】")
 
 
 def legacy_core_label(key: str | None, category: str | None) -> str:
@@ -69,10 +69,7 @@ def legacy_core_label(key: str | None, category: str | None) -> str:
     return LEGACY_CORE_LABELS.get((category or "").strip().lower(), "")
 
 
-RESTRICTED_HEADER = (
-    "以下话题现在不适合由你主动提起（事件进展未知或已结束，或你最近已主动提过而对方反应平淡）。"
-    "除非对方这一轮主动说起，否则不要提起，也不要换个说法追问："
-)
+RESTRICTED_HEADER = "以下话题现在别由你主动提起（除非对方这轮主动说起，别换说法追问）："
 PREF_GUIDANCE = {
     ("follow_up_questions", "no"): "平常的分享直接接话或说说你的想法，不用反问；对方问你问题、或者明显想聊下去时照常回应",
     ("follow_up_questions", "less"): "别一句接一句地问；普通分享直接接话就好，真想知道时最多问一句",
@@ -238,9 +235,8 @@ class ContextEngine:
             lines.append(f"- {spec.label}：{fact['value']}{until}{hint}")
         footer = ""
         if any(f["fact_key"] in ("residence.usual", "routine.schedule") for f in facts):
-            footer = ("说明：以上是平时的情况，不代表对方此刻在哪里或正在做什么；"
-                      "此刻的状态只看『当前情境』，没有记录就当作不知道。")
-        return _Section("profile", 2, "【你了解的对方（是情况，不是要求）】", lines, footer), facts
+            footer = "说明：以上是平时的情况，不代表对方此刻在哪里或正在做什么（此刻看『当前情境』，没记录就是不知道）。"
+        return _Section("profile", 2, "【你了解的对方】", lines, footer), facts
 
     def _situation_section(self, text: str = "", facts: list[dict[str, Any]] | None = None,
                            question: str = "") -> tuple[_Section, list[dict[str, Any]]]:
@@ -277,8 +273,7 @@ class ContextEngine:
         except Exception:
             return None
 
-    COMMITMENT_HEADER = ("【提醒（系统的记录：提醒是系统到点自动发的，发没发以这里为准——没写“已经提醒过”的就还没发，"
-                         "不要说成已经叫过、提醒过）】")
+    COMMITMENT_HEADER = "【提醒（系统到点自动发，发没发以这里为准——没写“已经提醒过”就是还没发，别说成叫过了）】"
 
     def _commitment_section(self) -> _Section:
         """2026-11-12 (virtual test: at 7:52 she said "叫了，七点半叫的" while the 7:30 reminder had not gone out -- the
@@ -339,17 +334,28 @@ class ContextEngine:
              be human. Groups and other people have their own rule (ai/social/prompts.py)."""
         try:
             from ai.channels.context import current
-            from ai.persona_templates import persona_data, relationship_text, together
+            from ai.persona_templates import _fill, persona_data, relationship_text, stage, together
             channel = current().channel
             rel, text = relationship_text(channel, self.db)
             data = persona_data(channel)
+            now_stage = stage(channel, self.db) if rel["kind"] == "close" else None
         except Exception:                                   # noqa: BLE001
             logger.exception("relationship unavailable")
-            rel, text, data = {"kind": "close", "call": ""}, "", {}
+            rel, text, data, now_stage = {"kind": "close", "call": ""}, "", {}, None
             together = lambda _d: None                      # noqa: E731
+            _fill = lambda t, _d, _c=None: t                # noqa: E731
         lines: list[str] = []
         if rel["kind"] == "close":
-            lines += self._closeness_lines()
+            if now_stage and not now_stage["auto"] and now_stage["index"] >= 1:
+                lines += self._records_lines()
+            else:
+                lines += self._closeness_lines()
+            if now_stage:
+                sample_hint = (f"这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{_fill(now_stage['sample'], data, rel['call'])}」"
+                               if now_stage.get("sample") else "")
+                lines.append(f"- 你们现在的阶段（{now_stage['index'] + 1}/{len(now_stage['labels'])}，{now_stage['label']}）："
+                             f"{_fill(now_stage['text'], data, rel['call'])}{sample_hint}"
+                             "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
             if rel["call"]:
                 lines.append(f"- 你称呼对方“{rel['call']}”（偶尔叫，不要句句带）。")
         else:
@@ -435,10 +441,10 @@ class ContextEngine:
         if not usable:
             return _Section("recall", self.RECALL_PRIORITY, "", [])
         text = format_recalled_memories(usable)
-        lines = text.splitlines()
+        lines = [re.sub(r"^- id=[^;]*;\s*", "- ", l) for l in text.splitlines()]
         return _Section("recall", self.RECALL_PRIORITY, lines[0], lines[1:-1], lines[-1])
 
-    STANDING_HEADER = "【对方告诉过你的（一直记着；和手机状态或你的印象对不上时，以这里为准；不用主动提）】"
+    STANDING_HEADER = "【对方告诉过你的（和手机状态或印象不一致时以这里为准，不用主动提）】"
 
     def standing_memories(self, hint: str = "") -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """(facts, upcoming): what the owner told her about themselves and their plans of the next hours.
@@ -754,7 +760,7 @@ class ContextEngine:
         return _Section("external_info", 5, header, lines)
 
     def _life_section(self, mode: str, user_message: str, call_context: dict[str, Any], store) -> _Section:
-        header = "【你的生活状态（虚拟生活记录；只有标为『已发生』的才是你做过的事。对方在说自己的事时先回应对方，不用硬提你的生活）】"
+        header = "【你的生活状态（只有标为『已发生』的才是你做过的事；对方说自己的事时先回应对方）】"
         if mode == "decision":
             return _Section("violet_life", 4, header, [])        # candidates come through conversation_state
         if mode == "chat":

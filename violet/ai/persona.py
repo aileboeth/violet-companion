@@ -121,8 +121,7 @@ class PersonaCore:
         # Phase 8.2: this is Violet herself (hand-maintained), so it is framed as her own instruction rather
         # than as data; the chat prompt points here and defers to it on personality and voice.
         name = ident.get("name") or "Violet"
-        lines = [f"【{name} 的稳定人设（人工维护，v{self.version}）：这就是你自己，性格、喜好和说话方式以这里为准】",
-                 f"- 身份：{ident.get('virtual_declaration', '')}"]
+        lines = [f"【{name} 的稳定人设（人工维护，v{self.version}）：这就是你自己，性格、喜好和说话方式以这里为准】"]
         if ident.get("self_description"):
             lines.append(f"- 日常：{ident['self_description']}")
         for title, key in (("性格", "personality"), ("说话习惯", "communication_habits"), ("看重", "values"),
@@ -133,17 +132,19 @@ class PersonaCore:
         interests = "、".join(i["label"] for i in d.get("long_term_interests", []))
         if interests:
             lines.append(f"- 长期兴趣：{interests}")
-        if not self.has_backstory:
-            lines.append("- 规则：只能把『已发生的生活事件』当成自己的过去经历；没有记录的事不要说自己做过，可以说想法和打算；"
-                         "不要编造家人、工作、学校、恋爱等背景；对方的经历不是你的经历。")
-            return "\n".join(lines)
-        # 2026-11-12 (user's anime-style templates: 继妹 / 青梅竹马 / 后辈 …): a persona with a past shared with the owner
-        for title, key in (("你和对方的过去（是往事，聊到相关的再提，不要一次全说）", "backstory"),
-                           ("口吻示例（只是语气参考，不要照抄，也不要反复用）", "examples"),
+        if self.has_backstory:
+            backstory = d.get("backstory") or []
+            if backstory:
+                lines.append("- 你和对方的过去（是往事，聊到相关的再提，不要一次全说）：" + "；".join(backstory))
+        for title, key in (("口吻示例（只是语气参考，不要照抄，也不要反复用）", "examples"),
                            ("不要这样", "avoid")):
             items = d.get(key) or []
             if items:
                 lines.append(f"- {title}：" + "；".join(items))
+        if not self.has_backstory:
+            lines.append("- 规则：只能把『已发生的生活事件』当成自己的过去经历；没有记录的事不要说自己做过，可以说想法和打算；"
+                         "不要编造家人、工作、学校、恋爱等背景；对方的经历不是你的经历。")
+            return "\n".join(lines)
         lines.append("- 规则：你的背景就是上面写的这些，加上『已发生的生活事件』；上面没写的大事（恋爱史、工作、大病、搬家）"
                      "不要编，没有记录的事不要说自己做过。对方的真实情况以“对方的基本情况”为准：人设里的学校、年级这些设定"
                      "和它对不上时，顺着对方的实际情况说。对方的经历不是你的经历。")

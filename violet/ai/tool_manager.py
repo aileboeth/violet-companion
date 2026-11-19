@@ -8,9 +8,8 @@ adds what was missing:
   * what one turn of the owner's chat gets (direct_tools): every available tool assigned to Chat, on every turn --
     she decides herself what to look up or do. What she cannot do right now is said in abilities_note.
   * the Control Center's settings (data/control/tools.json, secrets in mcp_secrets.json): a server or a single tool
-    switched off, which agents may use a server, timeouts, whether Chat gets a server's tools on every turn
-    ("always") or only on a turn that needs them ("on_demand", the default), a replaced credential header. They are
-    applied every time the server list is read (apply_tool_settings), so they act at once and survive a restart.
+    switched off, which agents may use a server, timeouts, and a replaced credential header. They are applied every
+    time the server list is read (apply_tool_settings), so they act at once and survive a restart.
 
 Violet's internal tools (memory, tasks, images) stay where they are -- nothing is moved into MCP.
 """
@@ -32,7 +31,6 @@ from typing import Any
 logger = logging.getLogger("violet.tools")
 
 AGENTS = ("chat", "proactive")
-OFFER_MODES = ("on_demand", "always")
 SECRET_HEADER_RE = re.compile(r"^(authorization|x-[a-z0-9-]{1,40})$", re.I)
 
 
@@ -354,10 +352,6 @@ def validate_server_changes(changes: dict[str, Any]) -> dict[str, Any]:
                     if not 1 <= value <= limit:
                         problems[key] = f"范围 1–{limit} 秒"
             out[key] = value
-        elif key == "offer":
-            if value is not None and value not in OFFER_MODES:
-                problems[key] = "只能是 on_demand 或 always"
-            out[key] = value
         else:
             problems[key] = "这一项不能在后台修改"
     if problems:
@@ -392,7 +386,7 @@ def apply_tool_settings(servers: list[dict[str, Any]]) -> list[dict[str, Any]]:
         name = str(server.get("name") or "")
         merged = dict(server)
         for key, value in (overrides.get(name) or {}).items():
-            if key in ("enabled", "agents", "connect_timeout", "call_timeout", "offer"):
+            if key in ("enabled", "agents", "connect_timeout", "call_timeout"):
                 merged[key] = value
             elif key == "disabled_tools":
                 merged["disabled_tools"] = sorted(set(merged.get("disabled_tools") or []) | set(value or []))
@@ -554,9 +548,8 @@ def direct_note(names: list[str]) -> str | None:
     """The rule that goes with them (the tool descriptions themselves come with the tool schemas)."""
     if not names:
         return None
-    return ("【工具怎么用】这一轮你可以自己决定调用工具，不用等对方明说：需要实时信息、你不知道的外部资料、对方自己的数据，"
-            "或者对方想让你做一件工具能做的事，就直接调用合适的工具，可以连着用几个，再按结果回答。闲聊、情绪、你们自己聊过的事不用查。"
-            "会改动东西的操作，结果说要主人同意时就照它说的问主人。查不到或出错就照实说，绝不编造；工具名和错误代码不要说给对方听。")
+    return ("【工具怎么用】需要实时信息、外部资料、对方的数据或工具能做的事时直接调用（可连用几个），闲聊不用查。"
+            "提示要主人同意的操作照说明问主人；查不到或出错就照实说，绝不编造，也别报内部工具名和错误码。")
 
 
 def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
@@ -564,7 +557,7 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
     the code from the real switches and connections, of what she can do in this chat, how, and what not (and why).
     Facts only -- no style."""
     from ai.settings import env_bool, env_str
-    lines = ["【你现在能做的事】（系统按现在的设置和连接情况列出；没列出的就是做不到，不要说做了）"]
+    lines = ["【你现在能做的事】（按当前设置列出；没列出的做不到，别说做了）"]
     try:
         from ai import stickers
         from ai.chat import violetdb
@@ -573,15 +566,14 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
             bare = violetdb.fetch_one("SELECT COUNT(*) AS n FROM stickers WHERE enabled = 1 AND "
                                       "(description IS NULL OR description = '')")["n"]
             lines.append(f"- 表情包：收藏里有 {total} 个" + (f"（其中 {bare} 个还没有说明）" if bare else "")
-                         + "。想发就在回复里单独一行写 [[表情:编号]]（想找常用之外的先 find_stickers）；对方让你收藏、"
-                           "或你喜欢对方发的表情包，调用 save_sticker，调用成功才算收藏了。")
+                         + "；发就单独一行写 [[表情:编号]]（找别的用 find_stickers），收藏对方发的用 save_sticker")
         else:
             lines.append("- 表情包：功能关着，发不了也收藏不了")
     except Exception:                                        # noqa: BLE001 -- an old database without the table
         logger.debug("sticker counts unavailable", exc_info=True)
     if env_bool("VIOLET_IMAGE_ENABLED", False):
         if env_str("VIOLET_IMAGE_GEN_MODEL", "").strip():
-            lines.append("- 画图：可以，调用 create_image（每次回复最多一张）；对方发来的图可以 edit_image / look_at_image")
+            lines.append("- 画图：可以，create_image（每轮最多一张）；收到的图可 edit_image / look_at_image")
         else:
             lines.append("- 画图：图片功能开着，但还没有设置画图模型，现在画不了")
     else:
@@ -603,28 +595,24 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
         lines.append("- 主人关掉的工具：" + "、".join(sorted(catalog.disabled)[:12]))
     try:                                                     # 2026-11-01: it was missing, and "unlisted = cannot"
         from ai import voice
-        lines.append("- 语音：可以，把要说的话放进 <voice></voice>（只发语音，不会再发一遍文字；要等一会儿才录好）" if voice.ready()
+        lines.append("- 语音：可以，放进 <voice></voice>（只发语音不重复发字）" if voice.ready()
                      else "- 语音：还没装好或没有参考录音，发不了语音")
     except Exception:                                        # noqa: BLE001
         logger.debug("voice state unavailable", exc_info=True)
-    lines.append("- 提醒：对方要你到某个时间提醒 / 叫他，就调用 set_reminder（成功才算设好）；不用提醒了就 cancel_reminder。"
-                 "没调用 set_reminder 就不要说“到时候叫你 / 我会提醒你”。没说几点就按你们以前定过的时间设好并说出来，"
-                 "从没定过才问。提醒只有你这里能设，后面没有别人帮你补")
-    lines.append("- 记忆：聊过的事系统会自己记；想查以前聊过的某件事用 query_memory")
+    lines.append("- 提醒：对方要你到点提醒、叫他起床或喊他一声（哪怕在道晚安时顺口说“明早记得叫我一声”），必须先调用 set_reminder"
+                 "（光嘴上答应系统不会发消息；没说几点先按聊天记录或提醒里以前定过的时间设好并说出来，从没定过才问；提醒只有你这里能设），"
+                 "取消用 cancel_reminder")
+    lines.append("- 记忆：系统自动记；查以前聊过的事用 query_memory")
     from ai import memes                                     # 2026-11-12
     if memes.enabled():
-        lines.append("- 梗：对方说的梗词库里有的，资料会出现在〔背景〕里；没把握的新词 / 缩写用 look_up_meme 查"
+        lines.append("- 梗：拿不准的新词用 look_up_meme 查"
                      + ("" if memes.wiki_available() else "（梗百科还没下载，只能查对方教过你的）")
-                     + "；对方给你讲明白一个梗或你们之间的梗，用 remember_meme 记下")
+                     + "；对方讲明白的梗用 remember_meme 记下")
     from ai import mood
     if mood.enabled():
-        lines.append("- 心情：对方刚说的话让你真的开心了（被真心夸、被感谢、被哄）或真的难受了（被认真地骂、嫌弃、赶走），"
-                     "先调用 note_feeling 记一下，再回复；玩笑和打情骂俏不用记")
-    # 2026-11-13 (virtual test 0.7.72: "明早有没有雨你晚点再帮我瞅一眼" -> "行，晚点我再瞅一眼"; her later messages of
-    # her own have no tools, so twice she wrote "天气又翻了一遍，还是没查到" without any search). What she can do
-    # LATER is part of what she can do: only reminders reach the future.
-    lines.append("- 以后：上面这些只有在回复对方的这一刻能用；你自己主动发消息时什么工具都用不了。所以对方让你“晚点 / 等会儿"
-                 "帮我查、帮我看看”，现在就查好告诉对方，不要答应以后再查；只有用 set_reminder 设好的提醒会到点发出去")
+        lines.append("- 心情：对方的话让你真心开心、被哄好或难受时调用 note_feeling（玩笑互损不用）")
+    lines.append("- 以后：你自己主动发消息时什么工具都用不了；对方让你“晚点 / 等会儿帮我查”，现在就查好告诉对方，不要答应以后再查"
+                 "（只有 set_reminder 设好的提醒会到点发）")
     return "\n".join(lines)
 
 
@@ -697,7 +685,6 @@ def describe(catalog: Catalog | None = None) -> list[dict[str, Any]]:
             "url": redact_url(server.get("url")) if server.get("url") else None,
             "command": "（本地子进程）" if server.get("transport") == "stdio" else None,
             "enabled": server.get("enabled", True) is not False, "agents": _agents_of({**server, "enabled": True}),
-            "offer": server.get("offer") or "on_demand",
             "connect_timeout": server.get("connect_timeout"), "call_timeout": server.get("call_timeout"),
             "status": status, "last_error_code": (unavailable or {}).get("error_code") or h.get("last_error_code"),
             "last_error": h.get("last_error"), "circuit_open": h.get("circuit_open", False),

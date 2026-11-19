@@ -218,7 +218,6 @@ def searx_world(make_world, monkeypatch, searx):
         fetcher = make_fetcher(searx)
         return mcp_server.build_server(WebService(violetdb, fetcher=fetcher, provider=make_provider(fetcher)))
     monkeypatch.setattr(mcp_server, "build_default_server", factory)
-    monkeypatch.delenv("VIOLET_WEB_OFFER", raising=False)
     w = make_world(VIOLET_WEB_ENABLED="1", VIOLET_WEB_SEARXNG_URL=f"http://127.0.0.1:{searx.port}")
     w.llm.responders["fake-memory"] = lambda kw: json.dumps({"should_save": False, "reason": "t"})
     w.web, w.chats = searx, []

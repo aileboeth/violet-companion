@@ -66,13 +66,13 @@ def test_settings_persist_apply_at_once_and_never_show_a_credential(tmp_path):
         store.save_server("phone", {"url": "http://evil.example/mcp"})          # address / command: .env only
     with pytest.raises(ValueError):
         store.save_server("phone", {"agents": ["memory"]})
-    store.save_server("phone", {"enabled": False, "call_timeout": 12, "offer": "always"})
+    store.save_server("phone", {"enabled": False, "call_timeout": 12})
     store.set_tool("phone", "battery", False)
     result = store.replace_secret("phone", "Authorization", "Bearer new-secret-token-123")
     assert "new-secret" not in json.dumps(result) and result["is_set"] and len(result["fingerprint"]) == 8
     servers = apply_tool_settings([{"name": "phone", "url": "http://127.0.0.1:8787/mcp",
                                     "headers": {"Authorization": "Bearer old"}}, {"name": "other", "url": "x"}])
-    assert servers[0]["enabled"] is False and servers[0]["call_timeout"] == 12 and servers[0]["offer"] == "always"
+    assert servers[0]["enabled"] is False and servers[0]["call_timeout"] == 12
     assert servers[0]["disabled_tools"] == ["battery"] and servers[0]["headers"]["Authorization"] == "Bearer new-secret-token-123"
     assert servers[1] == {"name": "other", "url": "x"}
     again = ToolSettingsStore(tmp_path / "data")                                 # "after a restart"

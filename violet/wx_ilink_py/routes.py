@@ -220,7 +220,7 @@ def create_app(
         from .profile_routes import register_profile_routes
         register_profile_routes(app, violetdb)
         from .persona_routes import register_persona_routes
-        register_persona_routes(app, violetdb)
+        register_persona_routes(app, violetdb, all_agents=all_agents)
         from .web_routes import register_web_routes
         register_web_routes(app, violetdb)
         from .image_routes import register_image_routes

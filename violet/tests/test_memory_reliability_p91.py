@@ -67,7 +67,7 @@ def test_open_event_reaches_chat_when_intent_did_not_search(make_world):
     seen = []
     w.llm.responders["fake-chat"] = lambda kw: seen.append(system_text(kw)) or "恭喜呀"
     say(w, "面试结束啦，感觉还行")
-    assert any(f"id={target['id']};" in s and "实习面试" in s for s in seen)
+    assert any("相关记忆" in s and "实习面试" in s for s in seen)
 
 
 def test_word_recall_shows_a_plan_whose_time_passed_today_as_unknown(violetdb):

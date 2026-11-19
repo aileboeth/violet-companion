@@ -37,9 +37,7 @@ def web_world(make_world, monkeypatch, web, provider):
         from ai.chat import violetdb
         return mcp_server.build_server(WebService(violetdb, fetcher=make_fetcher(web), provider=provider))
     monkeypatch.setattr(mcp_server, "build_default_server", factory)
-    # phase 9.3: the default is now offer "on_demand" (Intent plans the web tools; tests/test_web_p93.py). These
-    # phase 5B tests are about the bridge, the guard and the findings, so they keep the tools on every turn.
-    w = make_world(VIOLET_WEB_ENABLED="1", VIOLET_WEB_OFFER="always")
+    w = make_world(VIOLET_WEB_ENABLED="1")
     w.llm.responders["fake-memory"] = lambda kw: json.dumps({"should_save": False, "reason": "t"})
     return w
 

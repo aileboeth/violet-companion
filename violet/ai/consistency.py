@@ -63,9 +63,13 @@ _HEDGE = (r"(没|不|别|想|打算|准备|要不要|要是|如果|会不会|可
 # words that only make sense after something said before them
 _LEANING_START_RE = re.compile(r"^(不过|但是|可是|只是|而且|所以|然后|另外|再说)[，,、\s]*")
 _HEARSAY_RE = re.compile(r"(名字|这名|书名|片名|听说|有人说|都说|据说|人提|提起|说起|听人)")
-_VERB_FORMS = (r"(看了一下|看了看|想了想|看了你|听了你|吃了一惊|"
-               # a reaction, not an experience: "我听了好难过", "看了都想哭"
-               r"(?:听|看)了[^，,。！!？?]{0,3}(?:难过|开心|心疼|感动|生气|高兴|难受|激动|担心|羡慕|好笑|想哭|想笑))")
+_VERB_FORMS = (
+    r"(看了一下|看了看|看了一眼|看了眼|想了想|想了一下|看了你|听了你|吃了一惊|吃了亏|吃了一嘴|"
+    r"做了个(?:梦|鬼脸|深呼吸)|拍了(?:拍|一下|下)(?:桌子|大腿|脑门|胸口|脸|头)|"
+    r"喝了(?:一?口水)?[^，,。！!？?]{0,6}(?:呛|喷)|"
+    # a reaction, not an experience: "我听了好难过", "看了都想哭", "听了差点笑出声"
+    r"(?:听|看)了[^，,。！!？?]{0,5}(?:难过|开心|心疼|感动|生气|高兴|难受|激动|担心|羡慕|好笑|想哭|想笑|笑出|愣|呆|困|饿|馋))"
+)
 NOT_A_CLAIM_RE = re.compile(_HEDGE[:-1] + "|" + _VERB_FORMS[1:])
 _HEDGE_RE, _VERB_FORMS_RE = re.compile(_HEDGE), re.compile(_VERB_FORMS)
 _QUESTION_END_RE = re.compile(r"(吗|么|[?？])\s*$")
@@ -108,6 +112,7 @@ CAMERA_CLAIM_RE = re.compile(
     r"(我的?自拍|我(?:刚|刚刚|刚才|今天|昨天)?(?:用手机)?(?:拍|照)(?:的|了|下|给你)|(?:用|我的)摄像头|实拍|"
     r"这是(?:一张)?真实的?照片|真人照片|现拍|原图直出|手机拍的)")
 CAMERA_NEGATED_RE = re.compile(r"(不是|并非|不算|没有|没|不能算)[^，,。！!？?]{0,6}(自拍|拍|照片|摄像头|实拍)")
+_PAT_GESTURE_RE = re.compile(r"拍(?:了(?:拍|一下|下)|拍)(?:桌子|大腿|脑门|胸口|脸|头|肩|肩膀|手|你)")
 CLAUSE_SPLIT_RE = re.compile(r"[，,。！!？?；;~～…]+")
 # Phase 9.4 (real run cys-p94-sched-1 #4, "我们英语老师要是也这样就好了"): the persona's school / work patterns only see
 # "我们老师", "我们的同学"; a word between the possessive and the role ("我们英语老师", "我的数学同学", "我们这边公司")
@@ -353,6 +358,20 @@ class ConsistencyGuard:
         facts = self.db.fetch_all("SELECT value FROM user_profile_facts WHERE status = 'active'")
         return [r["content"] for r in rows] + [f["value"] for f in facts]
 
+    def _backstory_lines(self) -> list[str]:
+        """2026-11-18: shared past lines from a persona template's 'backstory' back her claims about those memories."""
+        raw = [str(x) for x in (self.core.data.get("backstory") or []) if x]
+        if not raw:
+            return []
+        call = _owner_call() or "对方"
+        out: list[str] = []
+        for item in raw:
+            filled = item.replace("{call}", call)
+            out.append(filled)
+            if "对方" in filled:
+                out.append(filled.replace("对方", "你"))
+        return out
+
     # ------------------------------------------------------------------
     # 1. Life event proposals
     # ------------------------------------------------------------------
@@ -445,6 +464,7 @@ class ConsistencyGuard:
         from ai.daily_life import life_terms
         reading_terms = [t for r in self.db.fetch_all("SELECT title FROM life_threads WHERE status = 'active'")
                          for t in life_terms(r["title"], self.config)]
+        backstory = self._backstory_lines()
         experiences = self._user_experiences()
         # phase 5B: what web pages say is never Violet's own experience
         finding_titles = [r["title"] for r in self.db.fetch_all(
@@ -462,7 +482,7 @@ class ConsistencyGuard:
             for persona in self._persona_violations(line):
                 persona.line = line
                 violations.append(persona)
-            if CAMERA_CLAIM_RE.search(line) and not CAMERA_NEGATED_RE.search(line):
+            if CAMERA_CLAIM_RE.search(line) and not CAMERA_NEGATED_RE.search(line) and not _PAT_GESTURE_RE.search(line):
                 violations.append(Violation("camera_claim", "an AI-generated picture told as a photo", line))
             if promised_lookup(line, self.turn_used_web):
                 violations.append(Violation("promised_later_lookup", "a lookup promised for later", line))
@@ -487,6 +507,8 @@ class ConsistencyGuard:
             # a progress event ("读了《边城》的一部分") does not back a claim of finishing it
             if any(backs(as_done, e["content"]) and (not claims_completion or COMPLETION_RE.search(e["content"]))
                    for e in recent):
+                continue
+            if backstory and any(backs(as_done, b) for b in backstory):
                 continue
             if STATE_CLAIM_RE.search(line) and _state_backed(line, recent, parse_time(now)):
                 continue

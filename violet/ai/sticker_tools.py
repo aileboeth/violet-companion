@@ -26,15 +26,15 @@ TOOL_NAMES = {"find_stickers", "save_sticker"}
 SCHEMAS = [
     {"type": "function", "function": {
         "name": "find_stickers",
-        "description": "翻一下你收藏的表情包（全部，包括还没写说明的）。想发表情包、常用的那几个里又没有合适的时用它；query 可以写情绪或画面，比如“开心”“猫”。找到后在回复里单独一行写 [[表情:编号]] 就发出去了。",
+        "description": "翻全部收藏的表情包（常用列表里没找到合适的时用）；找到后在回复里单独一行写 [[表情:编号]] 发送。",
         "parameters": {"type": "object", "properties": {
             "query": {"type": "string", "description": "可选：想找的情绪、画面或文字"}}}}},
     {"type": "function", "function": {
         "name": "save_sticker",
-        "description": "把对方最近发来的图片或表情包收藏起来，以后可以发。对方让你收藏、或你自己很喜欢时用。",
+        "description": "收藏对方最近发来的图片或表情包（对方让你收或你喜欢时用）。",
         "parameters": {"type": "object", "properties": {
-            "image_number": {"type": "integer", "description": "可选：消息里写的图片编号；不填就是最近一张"},
-            "meaning": {"type": "string", "description": "可选：这个表情包适合什么时候用，20 字以内"}}}}},
+            "image_number": {"type": "integer", "description": "可选：图片编号，不填取最近一张"},
+            "meaning": {"type": "string", "description": "可选：适合什么时候用（20 字以内）"}}}}},
 ]
 
 

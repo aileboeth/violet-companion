@@ -57,9 +57,33 @@ SAD = re.compile(r"(难过|伤心|好累|崩溃|想哭|哭了|失眠|好烦啊|�
 THRESHOLD = 0.3
 
 
+# 2026-11-18 (grok-4.6 QQ group eval: "甲方这需求真是合法但有病" triggered "路人甲对你说了「有病」"):
+# venting about a third party / object / meme ("合法但有病", "这破游戏太垃圾", "那老板有病吧") is not scolding her.
+_DIRECT_SCOLD = re.compile(r"^(?:滚|闭嘴|别吵|闭麦|shut up|你(?:好|真|很|太)?烦|烦死你|讨厌你)$", re.I)
+_THIRD_PARTY_SUBJECT = re.compile(
+    r"(?:合法但|甲方|乙方|老板|领导|同事|老师|导师|教授|室友|舍友|队友|同学|策划|官方|运营|客服|商家|店家|物业|快递|外卖|司机|产品|"
+    r"对方|别人|那人|这人|他们|她们|他|她|它|"
+    r"这(?:个|破|坨|玩意|需求|操作|东西|游戏|课|题|作业|天气|软件|系统|代码|电影|剧|饭|菜)|"
+    r"那(?:个|破|家|种|需求|操作|游戏|老板|人))"
+)
+_CLAUSE_BREAK = re.compile(r"[，。！？,.!?\n;；:：]")
+
+
+def _is_third_party_vent(text: str, match: re.Match[str]) -> bool:
+    word = match.group(0)
+    if _DIRECT_SCOLD.fullmatch(word):
+        return False
+    prefix = text[:match.start()]
+    clause = _CLAUSE_BREAK.split(prefix)[-1][-18:]
+    if "你" in clause:
+        return False
+    return bool(_THIRD_PARTY_SUBJECT.search(clause))
+
+
 def scold_strength(text: str) -> float:
     """How much a message scolds her: 0 (not at all) .. 1 (a hard insult, said in earnest)."""
-    found = [m.group(0) for m in SCOLD.finditer(text or "")]
+    text = text or ""
+    found = [m.group(0) for m in SCOLD.finditer(text) if not _is_third_party_vent(text, m)]
     if not found:
         return 0.0
     affectionate = bool(AFFECTION.search(text))
@@ -70,8 +94,11 @@ def scold_strength(text: str) -> float:
 
 def _quoted(text: str) -> str:
     """The scolding words themselves, for the cause line ("主人说你「笨蛋」")."""
+    text = text or ""
     words = []
-    for m in SCOLD.finditer(text or ""):
+    for m in SCOLD.finditer(text):
+        if _is_third_party_vent(text, m):
+            continue
         if m.group(0) not in words:
             words.append(m.group(0))
     return "、".join(f"「{w}」" for w in words[:2])
@@ -154,13 +181,12 @@ def note(db) -> str:
     if value > 0:
         how = "说话可以更轻快、更爱开玩笑一点，也更愿意配个表情包。"
     else:
-        # 2026-11-03 (user: 被凶了情绪起伏不应该更大，语言不应该更多吗): an upset girl says MORE, not less
-        how = ("情绪要明显地表现出来，话也会比平时多：委屈地抱怨、气鼓鼓地怼回去、嘴硬、碎碎念为什么不开心，"
-               "可以连发几条；按你自己的性格来。但不攻击任何人、不说伤人的话，不冷着对方、不装没事，该帮的忙照样帮；"
-               "对方哄你或道歉，就嘴硬一会儿再慢慢好起来。"
-               # 2026-11-09 (real chat: "我气还没消呢" in reply after reply for twenty minutes, about a teasing 笨蛋)
-               "那句话要是听得出是玩笑、撒娇或打情骂俏，就别当真生气，用玩笑回过去；"
-               "同一句抱怨（比如“气还没消”）说过了就别每次回复都再说。")
+        # 2026-11-03 (user: 被凶了情绪起伏不应该更大，语言不应该更多吗): an upset girl says MORE, not less --
+        # 2026-11-18 (grok-4.6 vt-quiet): respect quiet personas & stop-boundaries, and step down once comforted
+        how = ("情绪要按你自己的性格表现出来（外向或爱撒娇时话也会比平时多，委屈抱怨或嘴硬几句；安静内敛时只轻声流露一点失落，不纠缠）。"
+               "但不攻击任何人、不说伤人的话，不冷着对方，该帮的忙照样帮；若人设要求对方喊停就停下，绝不反复解释委屈让对方内疚。"
+               "对方已经在哄你、打圆场或叫你别多想时，顺台阶翻篇好起来（可调 note_feeling 恢复），同一句抱怨别每次回复都再说；"
+               "听得出是玩笑或打情骂俏就别当真生气。")
     return f"【你现在的心情】{_words(value)}{why}。{how}心情会自己慢慢平复，不用一直提。"
 
 

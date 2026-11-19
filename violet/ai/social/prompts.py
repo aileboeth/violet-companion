@@ -22,7 +22,7 @@ GROUP_RULES = """【你现在在一个 QQ 群里】
 - 有人叫你名字、@ 你、拍了拍你，一定要回应（一句话或一个表情包都行）。
 - 看到下面这些就可以自然地插一句：话题你感兴趣、知道点什么、有自己的看法；有好笑的事；有人在问问题、在烦恼、在分享开心的事；你之前聊过的话题又被提起。
 - 你已经在聊的话题，别人接着说了，就继续接着聊，像真人一样你一句我一句，不要说一句就消失。
-- 说话像群聊：短，一两句，口语，可以带语气词和表情包；不要长篇大论，不要列清单，不要每句都提问。
+- 说话像群聊：短，一两句，口语，可以带语气词和表情包；别原样复读群友刚说过的话，不要长篇大论，不要列清单，不要每句都提问。
 - 别刷屏：同一时间别连发好几条长的；两个人在私下聊、话题你完全插不上时就看着。
 - 想回应某一条消息时可以引用它（reply_to 填那条的编号）。"""
 
@@ -142,7 +142,8 @@ def user_prompt(conv: dict[str, Any], **kwargs: Any) -> str:
 def user_prompt_parts(conv: dict[str, Any], *, history: list[dict[str, Any]], unread_from: int,
                       people: list[dict[str, Any]], owner_ids: set[str], today: dict[str, int], last_said_at: str | None,
                       now: str, trigger: str, self_name: str = "你", sticker_lines: list[str] | None = None,
-                      admin_ids: set[str] | None = None, feeling: str = "") -> "PromptParts":
+                      admin_ids: set[str] | None = None, feeling: str = "",
+                      meme_lines: list[str] | None = None) -> "PromptParts":
     """(what changes slowly: the conversation, the people, the stickers, the history -- append-only; this decision: the
     time, what is new, the trigger). 2026-11-01 (token rework): the provider's prompt cache serves the first part."""
     admin_ids = admin_ids or set()
@@ -208,5 +209,8 @@ def user_prompt_parts(conv: dict[str, Any], *, history: list[dict[str, Any]], un
         turn.append(f"—— 你还没看过的新消息：从 #{first_new.get('platform_msg_id') or first_new['id']} 起的 {count} 条 ——")
     elif trigger not in ("wake", "idle"):
         turn.append("（没有新消息）")
+    if meme_lines:
+        from ai.memes import SOCIAL_HEADER
+        turn += ["", SOCIAL_HEADER, *meme_lines]
     turn += ["", "按上面的规则决定这次怎么做，只输出 JSON。"]
     return PromptParts(("\n".join(lines), "\n".join(turn)))

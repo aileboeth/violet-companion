@@ -55,9 +55,7 @@ def test_each_switch_alone_keeps_chat_working(make_world, tmp_path, monkeypatch,
     monkeypatch.setenv("VIOLET_IMAGE_PROVIDERS_FILE", str(write(only(image_config(), "mockA/img-1"), tmp_path / "ip.json")))
     env = {k: v[0] for k, v in FLAGS.items()}
     env[flag] = FLAGS[flag][1]
-    # phase 9.3: web tools are "on_demand" by default (Intent plans them); this test is about the switches, so the
-    # web tools are offered on every turn as in phase 5B
-    w = make_world(**env, VIOLET_WEB_OFFER="always")
+    w = make_world(**env)
     w.llm.responders["fake-memory"] = QUIET_MEMORY
     w.llm.responders["fake-chat"] = lambda kw: "好呀"
     say(w, "帮我画一只猫，顺便查查今天的新闻")
@@ -89,7 +87,7 @@ def test_one_turn_touches_every_subsystem_once(make_world, tmp_path, monkeypatch
                                                                    fetcher=make_fetcher(web), provider=MockSearchProvider())))
     monkeypatch.setenv("VIOLET_IMAGE_PROVIDERS_FILE", str(write(only(image_config(), "mockA/img-1"), tmp_path / "ip.json")))
     try:
-        w = make_world(VIOLET_WEB_ENABLED="1", VIOLET_IMAGE_ENABLED="1", VIOLET_WEB_OFFER="always")   # phase 9.3: see above
+        w = make_world(VIOLET_WEB_ENABLED="1", VIOLET_IMAGE_ENABLED="1")
         store = LifeStore(w.db)
         happened(store, "又往后读了几章《边城》", hours_ago=3, thread=new_thread(store))
         w.llm.responders["fake-memory"] = script(

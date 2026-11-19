@@ -292,12 +292,12 @@ def own_delete(db, meme_id: int) -> bool:
 
 
 # ---------------------------------------------------------------------------------------------- finding them
-def scan(db, text: str, limit: int = MAX_SHOWN) -> list[dict[str, Any]]:
-    """The memes a message uses: yours first, then the wiki's. [{kind, title, ...}]"""
+def scan(db, text: str, limit: int = MAX_SHOWN, *, wiki_only: bool = False) -> list[dict[str, Any]]:
+    """The memes a message uses: yours first (unless wiki_only), then the wiki's. [{kind, title, ...}]"""
     if not enabled() or not (text or "").strip():
         return []
     out: list[dict[str, Any]] = []
-    own = {_norm(r["phrase"]): r for r in own_list(db) if _norm(r["phrase"])}
+    own = {} if wiki_only or db is None else {_norm(r["phrase"]): r for r in own_list(db) if _norm(r["phrase"])}
     if own:
         first: dict[str, list[str]] = {}
         for key in sorted(own, key=len, reverse=True):
@@ -395,20 +395,30 @@ def context_lines(db, text: str) -> list[str]:
         return []
 
 
+SOCIAL_HEADER = "【新消息里可能用了梗（梗百科资料，不是群友说的；也可能只是字面意思，看懂了自然接，别背资料）】"
+
+
+def social_lines(text: str, limit: int = MAX_SHOWN) -> list[str]:
+    """For QQ groups and non-owner private chats: wiki memes ONLY (never owner_memes)."""
+    try:
+        return ["- " + describe(e) for e in scan(None, text, limit=limit, wiki_only=True)]
+    except Exception:                                  # noqa: BLE001
+        logger.exception("social meme scan failed")
+        return []
+
+
 # ---------------------------------------------------------------------------------------------- her tools
 SCHEMAS = [
     {"type": "function", "function": {
         "name": "look_up_meme",
-        "description": "查一个网络梗、黑话、缩写，或你们之间的梗是什么意思、怎么接（本地词库，不联网，很快）。对方说了你没把握的新词、"
-                       "奇怪的说法或缩写时先查，别硬猜、别编。",
+        "description": "查网络梗、黑话、缩写或对方教过的说法（本地词库，不联网；遇到拿不准的新词先查别硬猜）。",
         "parameters": {"type": "object", "properties": {
-            "query": {"type": "string", "description": "要查的词或那句话里的梗"}}, "required": ["query"]}}},
+            "query": {"type": "string", "description": "要查的词或梗"}}, "required": ["query"]}}},
     {"type": "function", "function": {
         "name": "remember_meme",
-        "description": "对方告诉你一个梗、口头禅或他自己圈子里的说法是什么意思（或者纠正你理解错了）时，把它记下来，以后对方再说你就懂了。"
-                       "只记对方自己讲明白的；你猜的、对方只含糊附和一句“差不多”的不记。meaning 里写清楚这是谁和谁之间的说法。",
+        "description": "记下对方讲明白的梗、口头禅或圈内说法（只记对方明确解释的，meaning 写清是谁和谁之间的说法）。",
         "parameters": {"type": "object", "properties": {
-            "phrase": {"type": "string", "description": "梗本身：对方平时会怎么说（40 字以内）"},
+            "phrase": {"type": "string", "description": "梗本身（40 字以内）"},
             "meaning": {"type": "string", "description": "意思、来历和怎么接（300 字以内）"}}, "required": ["phrase", "meaning"]}}},
 ]
 

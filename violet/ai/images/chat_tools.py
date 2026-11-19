@@ -43,34 +43,30 @@ IMAGE_TOOLS = {"create_image", "edit_image", "look_at_image"}
 SCHEMAS = [
     {"type": "function", "function": {
         "name": "create_image",
-        "description": ("画一张图发给对方：对方想看图，或者你觉得这时候配一张图很合适时用（一次最多一张）。subject=violet：画 Violet 自己，scene 用 current（此刻，按已记录的生活）、"
-                        "life_event（已发生的生活事件，需 life_event_id）或 hypothetical（用户想象的画面，会标为想象）；"
-                        "subject=other：画用户要的其他东西。"
-                        "画你自己时 shot 选拍法：selfie（自拍）、candid（像别人顺手拍的你）、scene（只拍你眼前的东西，不出现你）；"
-                        "prompt 只写具体、真实的情境：在哪里、在做什么、身边有什么（时间和季节程序会补上）；"
-                        "不要写长相、发色、画风（anime / illustration 之类），这些由系统按设定统一。"
-                        "结果是 AI 生成的图片，不是真的拍的。"),
+        "description": ("生成 AI 图片发给对方（每轮最多一张）。subject=violet 画你自己：scene 选 current（此刻已记录的生活）、"
+                        "life_event（需 life_event_id）或 hypothetical（想象画面）；shot 选 selfie/candid/scene；"
+                        "prompt 只写具体情境（在哪、做什么、身边有什么），别写外貌画风。subject=other 画其他内容。"),
         "parameters": {"type": "object", "properties": {
             "subject": {"type": "string", "enum": ["violet", "other"]},
             "scene": {"type": "string", "enum": ["current", "life_event", "hypothetical"]},
             "shot": {"type": "string", "enum": ["selfie", "candid", "scene"]},
             "life_event_id": {"type": "integer"},
             "imagined": {"type": "string", "description": "hypothetical 场景的简短描述"},
-            "prompt": {"type": "string", "description": "subject=other 时要画的内容；subject=violet 时可选的补充"},
+            "prompt": {"type": "string", "description": "subject=other 要画的内容，或 subject=violet 的补充"},
             "aspect": {"type": "string", "description": "可选，如 1:1、3:4"},
-            "model": {"type": "string", "description": "仅当用户明确点名某个模型时填写"}},
+            "model": {"type": "string", "description": "仅当用户明确点名模型时填写"}},
             "required": ["subject"]}}},
     {"type": "function", "function": {
         "name": "edit_image",
-        "description": "按用户要求编辑用户刚发来的图片（原图不会被改动，结果是新图片）。",
+        "description": "按要求编辑对方最近发来的图片（生成新图，不改原图）。",
         "parameters": {"type": "object", "properties": {
-            "image_number": {"type": "integer", "description": "消息里写的图片编号"},
+            "image_number": {"type": "integer", "description": "消息里的图片编号"},
             "instruction": {"type": "string"},
-            "model": {"type": "string", "description": "仅当用户明确点名某个模型时填写"}},
+            "model": {"type": "string", "description": "仅当用户明确点名模型时填写"}},
             "required": ["image_number", "instruction"]}}},
     {"type": "function", "function": {
         "name": "look_at_image",
-        "description": "对用户最近发来的图片再看一眼、回答具体问题。",
+        "description": "再仔细看一眼对方最近发来的图片并回答具体问题。",
         "parameters": {"type": "object", "properties": {
             "image_number": {"type": "integer"}, "question": {"type": "string"}},
             "required": ["image_number", "question"]}}},

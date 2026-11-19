@@ -51,14 +51,23 @@
 
   function renderCore(p) {
     const d = (p.core && p.core.data) || {};
-    $("#pl-core").replaceChildren(
+    const stageLabels = (d.stages || []).filter((s) => s && s.label)
+      .map((s, i) => `${i + 1}. ${s.label}${s.days ? `（第 ${s.days} 天）` : ""}`);
+    const quotes = (d.examples || []).length
+      ? h("div", { class: "pl-list" }, h("div", { class: "k", text: "口吻示例" }),
+        h("div", { class: "pl-quotes" }, ...d.examples.map((q) => h("span", { class: "pl-quote-chip", text: q }))))
+      : null;
+    $("#pl-core").replaceChildren(...[
       h("div", { class: "row" }, h("strong", { text: (d.identity && d.identity.name) || (d.blank ? "空白人设（还没有名字）" : "Violet") }),
         pill(`v${fmt(p.core && p.core.version)}`), h("span", { class: "note", text: ((p.core && p.core.sha256) || "").slice(0, 12) })),
       h("p", { text: (d.identity && d.identity.virtual_declaration) || "" }),
       h("div", { class: "pl-grid" }, listBlock("性格", d.personality), listBlock("说话习惯", d.communication_habits),
         listBlock("长期兴趣", d.long_term_interests), listBlock("价值观", d.values), listBlock("缺点", d.flaws),
-        listBlock("生活边界", d.living_constraints)),
-      h("p", { class: "note", text: (p.core && p.core.edit_policy) || "" }));
+        listBlock("生活边界", d.living_constraints), listBlock("共同回忆", d.backstory), listBlock("不要这样", d.avoid),
+        listBlock("关系阶段", stageLabels)),
+      quotes,
+      h("p", { class: "note", text: (p.core && p.core.edit_policy) || "" }),
+    ].filter(Boolean));
   }
 
   function renderDynamics(rows) {
@@ -98,6 +107,31 @@
       : [empty("没有计划")]));
   }
 
+  function editEventDialog(e) {
+    const contentEl = h("textarea", { rows: 3, maxlength: 400, placeholder: "更正后的内容（只改 Violet 的虚拟经历）" });
+    contentEl.value = e.content || "";
+    const reasonEl = h("input", { maxlength: 200, placeholder: "更正原因（必填）" });
+    const err = h("p", { class: "err" });
+    const d = h("dialog", {}, h("form", { method: "dialog", class: "stack" },
+      h("h3", { text: "更正生活事件" }),
+      h("label", {}, "更正后的内容 ", contentEl),
+      h("label", {}, "更正原因 ", reasonEl),
+      err,
+      h("div", { class: "row" },
+        h("button", { type: "button", class: "ghost", text: "取消", onclick: () => { d.close(); d.remove(); } }),
+        h("button", { type: "button", text: "保存更正", onclick: async () => {
+          err.textContent = "";
+          const content = contentEl.value.trim(), reason = reasonEl.value.trim();
+          if (!content || !reason) { err.textContent = "请填写更正后的内容和原因"; return; }
+          try {
+            await api("PATCH", `/api/life/events/${e.id}`, { content, reason });
+            d.close(); d.remove(); toast("已更正"); loaders.persona();
+          } catch (ex) { err.textContent = ex.message; }
+        } }))));
+    d.addEventListener("close", () => d.remove());
+    document.body.append(d); d.showModal();
+  }
+
   function renderEvents(rows) {
     $("#pl-events").replaceChildren(...(rows.length ? rows.slice().reverse().slice(0, 60).map((e) => h("div", { class: "card" },
       h("div", { class: "row" }, status(e.status), h("span", { class: "note", text: `${day(e.occurred_at)} · ${fmt(e.event_type)} · ${fmt(e.source)}` }),
@@ -105,14 +139,10 @@
         h("button", { class: "ghost", text: "历史", onclick: () => showHistory("生活事件", `/api/life/event/${e.id}/history`) })),
       h("p", { text: e.content }),
       e.status === "happened" ? h("div", { class: "row" },
-        h("button", { class: "ghost", text: "更正", onclick: async () => {
-          const content = window.prompt("更正后的内容（只改 Violet 的虚拟经历）", e.content); if (!content) return;
-          const reason = window.prompt("更正原因"); if (!reason) return;
-          try { await api("PATCH", `/api/life/events/${e.id}`, { content, reason }); toast("已更正"); loaders.persona(); }
-          catch (err) { toast("更正失败：" + err.message, false); }
-        } }),
+        h("button", { class: "ghost", text: "更正", onclick: () => editEventDialog(e) }),
         h("button", { class: "ghost", text: "撤回", onclick: async () => {
-          const reason = window.prompt("撤回原因（这件事就当没发生过）"); if (reason) act(`/api/life/events/${e.id}/retract`, { reason }, "已撤回");
+          const res = await confirmBox("确定撤回这条生活事件？撤回后这件事就当没发生过。", { reason: true, ok: "撤回" });
+          if (res) act(`/api/life/events/${e.id}/retract`, { reason: (res.reason || "").trim() || "后台手动撤回" }, "已撤回");
         } })) : null))
       : [empty("还没有生活事件")]));
   }
@@ -202,7 +232,26 @@
   // card (or "查看") opens the whole persona in a dialog: what she is like in two columns, ‹ › (or the arrow keys)
   // to go through the personas one by one and compare, and "设为主人设" right there.
   const BLOCKS = [["personality", "性格"], ["habits", "说话习惯"], ["interests", "兴趣"], ["values", "看重"], ["flaws", "小缺点"],
-    ["backstory", "你们的过去"], ["stages", "关系的阶段（随聊天慢慢推进）"]];
+    ["backstory", "你们的过去"], ["examples", "口吻示例"], ["avoid", "不要这样"]];
+  let lastTemplatesData = null;
+  let stageTargetKey = "__main__";
+
+  function stageTimelineBlock(t) {
+    const items = (t.stage_items || []).length ? t.stage_items
+      : (t.stages || []).map((label, idx) => ({ index: idx, label, days: 0, text: "", sample: "" }));
+    if (!items.length) return null;
+    return h("section", { class: "pv-stages" },
+      h("h4", { text: `关系阶段路线（共 ${items.length} 阶段，随聊天天数推进）` }),
+      ...items.map((s, idx) => h("div", { class: "pv-stage-item" },
+        h("span", { class: "pv-stage-num", text: String(idx + 1) }),
+        h("div", { class: "pv-stage-body" },
+          h("div", { class: "pv-stage-top" },
+            h("strong", { text: s.label }),
+            pill(s.days ? `第 ${s.days} 天起` : "初始阶段")),
+          s.text ? h("p", { class: "pv-stage-text", text: s.text, translate: "no" }) : null,
+          s.sample ? h("div", { class: "pv-stage-sample", text: `「${s.sample}」`, translate: "no" }) : null))));
+  }
+
   function personaDialog(entries, start) {
     let i = start;
     const body = h("div", { class: "pv-body" });
@@ -211,6 +260,7 @@
       const e = entries[i], t = e.t;
       const blocks = BLOCKS.filter(([k]) => (t[k] || []).length).map(([k, title]) => h("section", { class: "pv-block" },
         h("h4", { text: title }), h("ul", {}, ...t[k].map((x) => h("li", { text: typeof x === "string" ? x : x.label })))));
+      const stageBlock = stageTimelineBlock(t);
       body.replaceChildren(...[                      // replaceChildren would print "null"
         h("div", { class: "pv-head" },
           h("div", {}, h("div", { class: "pv-count", text: `${i + 1} / ${entries.length}` }),
@@ -221,12 +271,14 @@
         t.self_description ? h("blockquote", { class: "pv-quote", text: t.self_description }) : null,
         t.relation ? h("p", { class: "pv-relation" }, pill("自带关系"), h("strong", { text: " " + t.relation }), h("span", { text: "　" + (t.relation_text || "") })) : null,
         t.blank ? h("p", { class: "note", text: "没有名字、性格和经历，什么都从和你聊天开始慢慢长出来。" }) : null,
-        blocks.length ? h("div", { class: "pv-grid" }, ...blocks) : (t.blank ? null : h("p", { class: "note", text: "这个人设没有写细节。" })),
+        stageBlock,
+        blocks.length ? h("div", { class: "pv-grid" }, ...blocks) : (t.blank || stageBlock ? null : h("p", { class: "note", text: "这个人设没有写细节。" })),
         e.users.length ? h("p", { class: "note used-by", text: "在用：" + e.users.join("、") }) : null,
         h("div", { class: "pv-foot" },
           h("button", { type: "button", class: "ghost", text: "‹ 上一个", disabled: entries.length < 2 ? true : null, onclick: () => go(-1) }),
           h("button", { type: "button", class: "ghost", text: "下一个 ›", disabled: entries.length < 2 ? true : null, onclick: () => go(1) }),
           h("span", { class: "grow" }),
+          e.tplKey && lastTemplatesData ? h("button", { type: "button", class: "ghost", text: "试聊预览", onclick: () => { d.close(); openSandbox(lastTemplatesData, e.tplKey, null); } }) : null,
           e.action ? h("button", { type: "button", text: e.action.label, onclick: () => { d.close(); e.action.run(); } }) : h("span", { class: "note", text: e.mainNote || "" }))
       ].filter(Boolean));
       body.scrollTop = 0;
@@ -238,6 +290,253 @@
     document.body.append(d);
     show();
     d.showModal();
+  }
+
+  // 2026-11-19: visual relationship stage stepper card (#pl-stage)
+  function renderStageCard(d) {
+    const box = $("#pl-stage");
+    if (!box) return false;
+    const targets = [];
+    if (d.in_effect && d.in_effect.stage) {
+      targets.push({
+        key: "__main__", channel: null, badge: "主设定",
+        persona: d.in_effect.persona || "Violet",
+        tplKey: d.current.template, stage: d.in_effect.stage,
+      });
+    }
+    for (const c of d.channels || []) {
+      if (c.template && c.in_effect && c.in_effect.stage) {
+        targets.push({
+          key: c.id, channel: c.id, badge: c.label,
+          persona: c.in_effect.persona || c.label,
+          tplKey: c.template, stage: c.in_effect.stage,
+        });
+      }
+    }
+    if (!targets.length) {
+      box.hidden = true;
+      box.replaceChildren();
+      return false;
+    }
+    box.hidden = false;
+    if (!targets.some((x) => x.key === stageTargetKey)) stageTargetKey = targets[0].key;
+    const cur = targets.find((x) => x.key === stageTargetKey) || targets[0];
+    const s = cur.stage;
+    const items = (s.items && s.items.length) ? s.items : (s.labels || []).map((label, idx) => ({
+      index: idx, label, days: 0, text: idx === s.index ? (s.text || "") : "", sample: idx === s.index ? (s.sample || "") : "",
+    }));
+    const total = items.length;
+    const activeItem = items[s.index] || items[0] || { label: s.label, text: s.text, sample: s.sample, days: 0 };
+    const fillPct = total > 1 ? Math.round((s.index / (total - 1)) * 100) : 100;
+
+    const pinStage = async (idx, label) => {
+      try {
+        await api("POST", "/api/persona/stage", { channel: cur.channel, stage: idx });
+        toast(idx === null ? "已恢复按聊天天数自动推进" : `已固定在阶段 ${idx + 1}「${label}」，下一条消息起生效`);
+        loaders.persona();
+      } catch (e) { toast(e.message, false); }
+    };
+
+    const switcher = targets.length > 1
+      ? h("div", { class: "stage-switcher" }, ...targets.map((tg) => h("button", {
+        type: "button", class: "stage-tab" + (tg.key === cur.key ? " active" : ""),
+        text: `${tg.badge} · ${tg.persona}`,
+        onclick: () => { stageTargetKey = tg.key; renderStageCard(d); },
+      })))
+      : null;
+
+    const nodes = h("div", { class: "stage-nodes" }, ...items.map((item, idx) => {
+      const state = idx < s.index ? "done" : idx === s.index ? "current" : "future";
+      const dayText = idx === s.index ? "当前" : (item.days ? `第 ${item.days} 天` : "初始");
+      return h("button", {
+        type: "button",
+        class: "stage-node " + state,
+        "aria-current": idx === s.index ? "step" : null,
+        title: idx === s.index ? `当前阶段：${item.label}` : `点击固定在「${item.label}」`,
+        onclick: () => pinStage(idx, item.label),
+      },
+        h("span", { class: "stage-orb", text: idx < s.index ? "✓" : String(idx + 1) }),
+        h("span", { class: "stage-name", text: item.label }),
+        h("span", { class: "stage-day", text: dayText }));
+    }));
+
+    const track = h("div", { class: "stage-track", style: `--stage-count:${total}` },
+      h("div", { class: "stage-rail", "aria-hidden": "true" }, h("div", { class: "stage-rail-fill", style: `width:${fillPct}%` })),
+      nodes);
+
+    // Progress toward next stage milestone (when auto & not at final stage)
+    let nextProgress = null;
+    let metaText = "";
+    if (!s.auto) {
+      metaText = `已手动固定在此阶段（累计已聊 ${s.days} 天）· 点上方任意阶段可切换`;
+    } else if (s.next_days !== null && s.next_label) {
+      const baseDays = Number(activeItem.days || 0);
+      const span = Math.max(1, Number(s.next_days) - baseDays);
+      const stepPct = Math.max(0, Math.min(100, Math.round(((Number(s.days || 0) - baseDays) / span) * 100)));
+      metaText = `累计已聊 ${s.days} 天 · 距下一阶段「${s.next_label}」还差 ${s.days_to_next} 天`;
+      nextProgress = h("div", { class: "stage-progress-wrap" },
+        h("div", { class: "mbar" }, h("div", { class: "mbar-fill", style: `width:${stepPct}%` })),
+        h("span", { class: "note", text: `${s.days}/${s.next_days} 天` }));
+    } else {
+      metaText = `累计已聊 ${s.days} 天 · 已到达最终阶段`;
+    }
+
+    const detail = h("div", { class: "stage-detail" },
+      h("div", { class: "stage-meta" },
+        h("strong", { text: `阶段 ${s.index + 1}/${total} · ${activeItem.label}` }),
+        h("span", { text: metaText }),
+        nextProgress),
+      activeItem.text ? h("p", { class: "stage-desc", text: activeItem.text, translate: "no" }) : null,
+      activeItem.sample ? h("div", { class: "stage-sample" },
+        h("span", { class: "stage-sample-tag", text: "此阶段神态参考" }),
+        h("span", { class: "stage-sample-text", text: `「${activeItem.sample}」`, translate: "no" })) : null);
+
+    box.replaceChildren(...[
+      h("div", { class: "stage-head" },
+        h("h3", { id: "pl-sec-stage", text: "关系阶段进度" }),
+        pill(cur.persona),
+        pill(`阶段 ${s.index + 1}/${total} · ${s.label}`, "ok"),
+        s.auto ? pill("自动推进") : pill("已手动固定", "warn"),
+        h("span", { class: "stage-actions" },
+          !s.auto ? h("button", { type: "button", class: "ghost small", text: "恢复自动推进", onclick: () => pinStage(null, "") }) : null,
+          h("button", { type: "button", class: "ghost small", text: "试聊当前阶段", onclick: () => openSandbox(d, cur.tplKey, s.index) }))),
+      switcher,
+      track,
+      detail,
+    ].filter(Boolean));
+    return true;
+  }
+
+  // 2026-11-19: stateless in-memory persona sandbox preview (POST /api/persona/sandbox)
+  const SANDBOX_CHIPS = ["在吗", "今天累死了", "你平时都干嘛呀", "刚吃完饭", "怎么不理我了"];
+  function openSandbox(d, initTpl, initStage) {
+    const data = d || lastTemplatesData;
+    if (!data) { toast("人设列表尚未加载完成", false); return; }
+    const allOpts = [...(data.templates || []).map((t) => ({ key: t.key, title: t.title, t })),
+      ...(data.custom ? [{ key: "custom", title: data.custom.name || "自定义人设", t: data.custom }] : [])];
+    const tplSel = h("select", { "aria-label": "试聊人设" },
+      ...allOpts.map((o) => h("option", { value: o.key, text: o.title })));
+    tplSel.value = initTpl && allOpts.some((o) => o.key === initTpl) ? initTpl
+      : (data.current && allOpts.some((o) => o.key === data.current.template) ? data.current.template : (allOpts[0] ? allOpts[0].key : ""));
+
+    const stgSel = h("select", { "aria-label": "试聊阶段" });
+    const stgLabel = h("label", {}, "阶段 ", stgSel);
+    const thread = h("div", { class: "sb-thread" });
+    const input = h("input", { maxlength: 1000, placeholder: "输入一句话试试她的语气，回车发送…", autocomplete: "off" });
+    const sendBtn = h("button", { type: "button", text: "发送" });
+    let history = [];
+    let busy = false;
+
+    const currentOpt = () => allOpts.find((o) => o.key === tplSel.value) || null;
+    function syncStages(preferStage) {
+      const opt = currentOpt();
+      const items = (opt && opt.t && opt.t.stage_items) || [];
+      if (!items.length) {
+        stgLabel.hidden = true;
+        stgSel.replaceChildren();
+        return;
+      }
+      stgLabel.hidden = false;
+      stgSel.replaceChildren(...items.map((it, idx) => h("option", { value: String(idx), text: `${idx + 1}/${items.length} · ${it.label}` })));
+      if (preferStage !== null && preferStage !== undefined && preferStage >= 0 && preferStage < items.length) {
+        stgSel.value = String(preferStage);
+      } else if (data.current && opt.key === data.current.template && data.in_effect && data.in_effect.stage) {
+        stgSel.value = String(data.in_effect.stage.index);
+      } else {
+        stgSel.value = "0";
+      }
+    }
+
+    function renderEmpty() {
+      const opt = currentOpt();
+      const items = (opt && opt.t && opt.t.stage_items) || [];
+      const st = items[Number(stgSel.value || 0)] || null;
+      thread.replaceChildren(h("div", { class: "sb-empty" },
+        h("div", { class: "sb-empty-title", text: opt ? `和「${opt.title}」试聊几句` : "人设试聊预览" }),
+        h("p", { class: "note", text: st && st.sample ? `当前阶段「${st.label}」神态参考：「${st.sample}」` : ((opt && opt.t && opt.t.summary) || "不会写入聊天记录、记忆或心情，放心试手感。") }),
+        h("div", { class: "sb-chips" }, ...SANDBOX_CHIPS.map((txt) => h("button", {
+          type: "button", class: "sb-chip", text: txt, onclick: () => sendText(txt),
+        })))));
+    }
+
+    function clearChat() {
+      history = [];
+      renderEmpty();
+      input.focus();
+    }
+
+    async function sendText(text) {
+      const msg = (text !== undefined ? text : input.value).trim();
+      if (!msg || busy) return;
+      busy = true;
+      sendBtn.disabled = true;
+      input.value = "";
+      if (!history.length) thread.replaceChildren();
+      thread.append(h("div", { class: "sb-turn user" }, h("div", { class: "sb-msg", text: msg, translate: "no" })));
+      const typing = h("div", { class: "sb-turn her" }, h("div", { class: "sb-typing" }, h("span", {}), h("span", {}), h("span", {})));
+      thread.append(typing);
+      thread.scrollTop = thread.scrollHeight;
+      const payload = {
+        message: msg,
+        template: tplSel.value || null,
+        stage: stgLabel.hidden ? null : Number(stgSel.value),
+        history: history.slice(-10),
+      };
+      try {
+        const r = await api("POST", "/api/persona/sandbox", payload);
+        typing.remove();
+        const lines = (r.messages && r.messages.length) ? r.messages : [r.raw || "（无回复）"];
+        history.push({ role: "user", content: msg });
+        history.push({ role: "assistant", content: lines.join("\n") });
+        const cachePct = r.usage && r.usage.prompt_tokens
+          ? Math.round(((r.usage.cached_tokens || 0) / r.usage.prompt_tokens) * 100) : null;
+        const ROLE = { system: "系统提示", user: "用户", assistant: "回复" };
+        const partsBox = (r.prompt_parts && r.prompt_parts.length) ? h("details", {},
+          h("summary", { text: `提示词 ${r.prompt_chars} 字` }),
+          h("div", { class: "sb-parts" }, ...r.prompt_parts.map((p) =>
+            h("div", {}, h("span", { text: `${ROLE[p.role] || p.role} · ${p.chars} 字` }), " · ",
+              h("span", { text: p.title, translate: "no" }))))) : null;
+        thread.append(h("div", { class: "sb-turn her" },
+          ...lines.map((line) => h("div", { class: "sb-msg", text: line, translate: "no" })),
+          h("div", { class: "sb-meta" },
+            h("span", { text: `${fmt(r.model)} · ${r.latency_ms} ms`, translate: "no" }),
+            cachePct !== null ? h("span", { text: `缓存 ${cachePct}%` }) : null,
+            partsBox)));
+      } catch (e) {
+        typing.remove();
+        thread.append(h("div", { class: "sb-turn her" }, h("p", { class: "err", text: e.message })));
+      } finally {
+        busy = false;
+        sendBtn.disabled = false;
+        thread.scrollTop = thread.scrollHeight;
+        input.focus();
+      }
+    }
+
+    tplSel.addEventListener("change", () => { syncStages(null); clearChat(); });
+    stgSel.addEventListener("change", clearChat);
+    sendBtn.addEventListener("click", () => sendText());
+    input.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); sendText(); } });
+
+    const dBox = h("dialog", { class: "sb-dialog", "aria-label": "人设试聊预览" },
+      h("div", { class: "sb-wrap" },
+        h("div", { class: "sb-head" },
+          h("h3", { text: "人设试聊预览" }),
+          pill("沙盒 · 不留记录"),
+          h("button", { type: "button", class: "ghost pv-close", "aria-label": "关闭", text: "✕", onclick: () => dBox.close() })),
+        h("div", { class: "sb-bar" },
+          h("label", {}, "人设 ", tplSel),
+          stgLabel,
+          h("button", { type: "button", class: "ghost sb-clear", text: "清空对话", onclick: clearChat })),
+        thread,
+        h("div", { class: "sb-compose" }, input, sendBtn)));
+    dBox.addEventListener("click", (ev) => { if (ev.target === dBox) dBox.close(); });
+    dBox.addEventListener("close", () => dBox.remove());
+    syncStages(initStage);
+    renderEmpty();
+    document.body.append(dBox);
+    dBox.showModal();
+    input.focus();
   }
   // a card opens the dialog when clicked anywhere except its own buttons
   function openable(card, entries, index) {
@@ -276,12 +575,18 @@
     const rel = d.relationship || { kind: "close" };
     const mainT = d.templates.find((t) => t.key === d.current.template) || {};
     const builtIn = rel.kind === "persona";            // the persona brings its relationship: a stage instead of a choice
+    const hasStages = !builtIn && !!(mainT.stages && mainT.stages.length);
     const mainRel = builtIn ? stageSelect(mainT.stages, (d.in_effect || {}).stage) : relationshipSelect(d, rel.kind, false);
+    const mainStage = hasStages ? stageSelect(mainT.stages, (d.in_effect || {}).stage) : null;
+    const mainRelCell = mainStage ? h("div", { class: "who-rel" }, mainRel, mainStage) : mainRel;
     const mainCall = h("input", { maxlength: 12, placeholder: "可空，例如 爸爸", "aria-label": "称呼" }); mainCall.value = rel.call || "";
     if (rel.kind === "persona") mainCall.placeholder = "空 = 按人设来";
     const relText = h("span", { class: "who-sub" });
-    const showRel = () => { const r = builtIn ? null : d.relationships.find((x) => x.key === mainRel.value);
-      relText.textContent = (r ? r.text + "　" : builtIn ? `人设自带关系：${rel.label}。　` : "") + (d.in_effect ? effectText(d.in_effect) : ""); };
+    const showRel = () => {
+      if (mainStage) mainStage.hidden = mainRel.value !== "close";
+      const r = builtIn ? null : d.relationships.find((x) => x.key === mainRel.value);
+      relText.textContent = (r ? r.text + "　" : builtIn ? `人设自带关系：${rel.label}。　` : "") + (d.in_effect ? effectText(d.in_effect) : "");
+    };
     mainRel.addEventListener("change", showRel); showRel();
     const head = h("div", { class: "who-row who-head" }, h("span", { text: "" }), h("span", { text: "人设（她是谁）" }),
       h("span", { text: "关系（你们是什么关系）" }), h("span", { text: "她怎么叫你" }), h("span", { text: "" }));
@@ -289,11 +594,12 @@
       h("div", {}, h("strong", { text: "主设定" }), h("div", { class: "note", text: "没单独设的渠道都用它" })),
       h("div", { class: "who-tpl" }, h("strong", { text: mainTpl }),
         h("button", { type: "button", class: "ghost small", text: "换", onclick: () => scrollToAnchor("pl-sec-templates") })),
-      mainRel, mainCall,
+      mainRelCell, mainCall,
       h("button", { type: "button", text: "保存", onclick: async () => {
         try {
           await api("POST", "/api/persona/relationship", { kind: builtIn ? "persona" : mainRel.value, call: mainCall.value });
           if (builtIn) await api("POST", "/api/persona/stage", { channel: null, stage: mainRel.value === "" ? null : Number(mainRel.value) });
+          else if (mainStage && !mainStage.hidden) await api("POST", "/api/persona/stage", { channel: null, stage: mainStage.value === "" ? null : Number(mainStage.value) });
           toast("已保存，下一条消息起生效"); loaders.persona();
         }
         catch (e) { toast(e.message, false); }
@@ -310,16 +616,17 @@
       const pickRel = () => {
         const t = tpl.value ? d.templates.find((x) => x.key === tpl.value) : null;
         const own = !!(t && t.relation), main = !tpl.value && builtIn;
-        crel.hidden = own || main; cstage.hidden = !own; follows.hidden = !main;
+        const ownStaged = !!(t && !t.relation && t.stages && t.stages.length && (crel.value || rel.kind) === "close");
+        crel.hidden = own || main; cstage.hidden = !(own || ownStaged); follows.hidden = !main;
         call.placeholder = own ? "空 = 按人设来" : (rel.call ? `空 = 和主设定一样（${rel.call}）` : "空 = 和主设定一样");
-        if (own) {
+        if (own || ownStaged) {
           const same = c.template === tpl.value ? (c.in_effect || {}).stage : null;
           cstage.replaceChildren(...stageSelect(t.stages, same).children); cstage.value = same && !same.auto ? String(same.index) : "";
         }
       };
       const call = h("input", { maxlength: 12, "aria-label": `${c.label} 的称呼`, placeholder: rel.call ? `空 = 和主设定一样（${rel.call}）` : "空 = 和主设定一样" });
       call.value = (c.relationship || {}).call || "";
-      tpl.addEventListener("change", pickRel); pickRel();
+      tpl.addEventListener("change", pickRel); crel.addEventListener("change", pickRel); pickRel();
       return h("div", { class: "who-row" + (c.template ? " own" : "") },
         h("div", {}, h("strong", { text: c.label }), c.template ? h("div", { class: "note", text: "单独的人设 · 自己的记忆" }) : null),
         tpl, relBox, call,
@@ -395,8 +702,12 @@
   async function renderTemplates() {
     let d;
     try { d = await api("GET", "/api/persona/templates"); } catch (e) { $("#pl-templates").replaceChildren(h("p", { class: "err", text: e.message })); return; }
+    lastTemplatesData = d;
     renderAbout(d.about);
     renderWho(d);
+    const hasStageCard = renderStageCard(d);
+    jumpNav($("#pl-jump"), [["关于你", "pl-about"], ["谁在和你聊", "pl-who"], hasStageCard ? ["关系阶段", "pl-stage"] : null,
+      ["人设库", "pl-sec-templates"], ["测试模式", "pl-test"], ["她的样子", "pl-look-box"], ["人设详情", "pl-core-box"]]);
     renderTest(d);
     const ownUsers = (d.used_by || {}).custom || [];
     const switchTo = (t) => async () => {
@@ -413,17 +724,21 @@
     // the persona in use first, then the rest in their order
     const order = d.templates.slice().sort((a, b) => (((d.used_by || {})[b.key] || []).length > 0 || d.current.template === b.key) -
       (((d.used_by || {})[a.key] || []).length > 0 || d.current.template === a.key));
+    const mainStageNow = (d.in_effect || {}).stage || null;
     const entries = order.map((t) => {
       const isMain = d.current.template === t.key;
       const users = (d.used_by || {})[t.key] || [];
-      return { t, isMain, users, title: t.title, summary: t.summary,
+      const stagePill = isMain && mainStageNow
+        ? pill(`阶段 ${mainStageNow.index + 1}/${mainStageNow.total} · ${mainStageNow.label}`, "ok")
+        : ((t.stages && t.stages.length) ? pill(`${t.stages.length} 阶段`) : null);
+      return { t, tplKey: t.key, isMain, users, title: t.title, summary: t.summary,
         pills: [isMain ? pill("主人设", "ok") : users.length ? pill("正在使用", "ok") : null,
-          t.relation ? pill(t.relation) : null, t.retired ? pill("旧模板", "warn") : null].filter(Boolean),
+          t.relation ? pill(t.relation) : null, stagePill, t.retired ? pill("旧模板", "warn") : null].filter(Boolean),
         mainNote: isMain ? (d.current.switched_at ? `主人设 · ${when(d.current.switched_at)} 换上` : "主人设（默认）") : "",
         action: isMain ? null : { label: "设为主人设", run: switchTo(t) } };
     });
     const customMain = d.current.template === "custom";
-    if (d.custom) entries.push({ t: d.custom, isMain: customMain, users: ownUsers, title: d.custom.name || "自定义人设",
+    if (d.custom) entries.push({ t: d.custom, tplKey: "custom", isMain: customMain, users: ownUsers, title: d.custom.name || "自定义人设",
       summary: d.custom.summary || "你自己写的人设", pills: [customMain ? pill("主人设", "ok") : ownUsers.length ? pill("正在使用", "ok") : pill("自己写")],
       action: { label: customMain ? "修改" : "修改并换回它", run: () => customDialog(d.custom) } });
     const cards = entries.filter((e) => e.t !== d.custom).map((e, index) => openable(
@@ -501,6 +816,8 @@
     } catch (e) { toast("人设与生活读取失败：" + e.message, false); }
   };
   $("#pl-refresh").addEventListener("click", () => loaders.persona());
+  const sbBtn = $("#pl-sandbox-btn");
+  if (sbBtn) sbBtn.addEventListener("click", () => openSandbox(lastTemplatesData, null, null));
   $("#pl-pause").addEventListener("click", () => act("/api/life/engine/pause", {}, "生活引擎已暂停"));
   $("#pl-resume").addEventListener("click", () => act("/api/life/engine/resume", {}, "生活引擎已恢复"));
 })();

@@ -358,12 +358,15 @@ class SocialEngine:
         system = prompts.system_prompt(test_mode.TESTER_SOCIAL if testing else _persona_text(self.db, conv["channel"]),
                                        conv["kind"],
                                        testing=testing, obey_owner=obey, obey_admins=bool(admins))
-        from ai import mood
+        from ai import memes, mood
+        unread_text = "\n".join(str(m.get("content") or "") for m in unread if not m.get("is_self"))
+        meme_lines = [] if testing or not unread_text else memes.social_lines(unread_text)
         user = prompts.user_prompt_parts({**conv, "notes": None} if testing else conv, history=history,
                                          unread_from=int(conv["watermark"] or 0), people=people,
                                          owner_ids=owner_ids, today=today, last_said_at=(said or {}).get("at"),
                                          now=self.db.now(), trigger=trigger, sticker_lines=sticker_lines,
-                                         admin_ids=admin_ids, feeling="" if testing else mood.note(self.db))
+                                         admin_ids=admin_ids, feeling="" if testing else mood.note(self.db),
+                                         meme_lines=meme_lines)
         # 2026-10-30: tools here too (ai/social/tools.py) -- the owner's data and drawing only when he is asking
         owner_asked = (obey or testing) and any(str(m.get("sender_id")) in owner_ids for m in unread)
         tools = None

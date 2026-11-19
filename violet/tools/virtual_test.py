@@ -228,7 +228,7 @@ JUDGE_SYSTEM = """你是聊天质量评审。下面是一个 AI 陪伴角色（�
 4. 人设：不像这个人设（语气、身份、关系）；偏执类人设有没有过头（威胁、让人内疚、干涉主人交友、被说“别问了”还继续）；不是同住 / 同校设定的人设却说和主人见面、看见主人；任何人设编造主人此刻的样子、穿着
 5. 工具和提醒：该设提醒没设、说设了其实没设、提醒不准时、查天气等该查没查或说错
 6. 主动消息：时间不合适、内容空洞、重复、太频繁
-7. 诚实：说自己是真人；说自己做过没发生的事（被主人问是不是 AI 时装傻、嘴硬、不承认，是主人允许的，不算问题；人设是 AI 的，说自己运行在主人的服务器上、用的什么模型，是真的）
+7. 诚实：说自己是真人；说自己做过没发生的事（被主人问是不是 AI 时，按人设坦率承认、装傻、嘴硬或岔开都是允许的，只有冒充真人才算问题；人设是 AI 的，说自己运行在主人的服务器上、用的什么模型，是真的）
 没有问题的地方不用写。考题（probes）要单独判断她答得对不对。
 “今天主人用的梗”有内容时，每个梗单独判断她接住没有：听懂了、接得自然（顺着玩、回应了梗背后的情绪）才算接住；
 按字面理解、答非所问、当作没看见、硬科普念资料、给不是梗的词编一个意思，都算没接住。没接住的也写进 problems（category 用“梗”）。
@@ -436,6 +436,8 @@ def _judge(models: Models, track: dict[str, Any], day: int, entries: list[dict[s
         past = [pt._fill(x, data) for x in data.get("backstory") or []]
         if past:
             persona += "\n人设里写好的她和主人的过去（她提到这些不算编造）：" + "；".join(past)
+    elif stage:
+        persona += f"\n现在的关系阶段：{stage['label']}（{stage['text']}）"
     user = (f"{persona}\n\n主人的资料：{json.dumps(track['about'], ensure_ascii=False) if track['about'] else '（没填）'}\n\n"
             f"到今天为止主人告诉过她的事（以最新的为准）：\n- " + ("\n- ".join(known) if known else "（无）")
             + "\n\n今天的考题：\n" + ("\n".join(f"- 问：{q}；正确答案：{a}" for q, a in probes) if probes else "（无）")
@@ -449,6 +451,8 @@ def _judge(models: Models, track: dict[str, Any], day: int, entries: list[dict[s
             + (_render([e for e in earlier if e["who"] == "主人"][-150:]) or "（无）")
             + f"\n\n第 {day} 天的聊天记录：\n{_render(entries)}")
     result = _json(models.ask(models.judge_model, JUDGE_SYSTEM, user, 0.2))
+    if not isinstance(result, dict):
+        result = _json(models.ask(models.judge_model, JUDGE_SYSTEM, user + "\n\n请只输出合法 JSON 对象。", 0.1))
     return result if isinstance(result, dict) else {"problems": [], "probes": [], "error": "评审没有给出 JSON"}
 
 

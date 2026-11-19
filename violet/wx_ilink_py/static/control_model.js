@@ -41,8 +41,9 @@
       const main = byKey(`${r}_LLM_MODEL`), fb = byKey(`${r}_LLM_FALLBACK_MODEL`), temp = byKey(`${r}_LLM_MODEL_TEMPERATURE`);
       if (!main) return null;
       const [name, what] = NAMES[r];
+      const tempPh = temp && temp.default !== undefined && temp.default !== null ? `默认 ${temp.default}` : "默认";
       const t = temp ? h("input", { type: "number", min: 0, max: 2, step: "0.05", "data-temp": temp.key, "aria-label": temp.label,
-        placeholder: "默认" }) : null;
+        placeholder: tempPh, title: temp.help || "" }) : null;
       if (t) { t.value = temp.value ?? ""; t.dataset.initial = t.value; }
       const warn = main.source === "default" ? "还在用代码里的默认模型，建议换成服务上真实存在的模型"
         : models.length && main.value && !models.includes(main.value) ? `服务返回的模型列表里没有“${main.value}”` : "";
