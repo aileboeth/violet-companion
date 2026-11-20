@@ -329,6 +329,7 @@ def register_persona_routes(app: Flask, violetdb, all_agents=None) -> None:
                 model=cfg.reply_model,
                 messages=messages,
                 temperature=cfg.reply_temperature,
+                cache_key=f"violet-sandbox-{tpl_key or 'active'}",
             )
         except LLMNotConfigured:
             return bad("还没有设置模型服务的 API Key（请先在模型服务页配置）")
@@ -348,11 +349,12 @@ def register_persona_routes(app: Flask, violetdb, all_agents=None) -> None:
         usage_obj = getattr(resp, "usage", None)
         usage = None
         if usage_obj is not None:
-            details = getattr(usage_obj, "prompt_tokens_details", None)
+            from ai import usage as usage_ledger
+            pt, ct, cached = usage_ledger.numbers(usage_obj)
             usage = {
-                "prompt_tokens": int(getattr(usage_obj, "prompt_tokens", 0) or 0),
-                "completion_tokens": int(getattr(usage_obj, "completion_tokens", 0) or 0),
-                "cached_tokens": int(getattr(details, "cached_tokens", 0) or 0) if details else 0,
+                "prompt_tokens": pt,
+                "completion_tokens": ct,
+                "cached_tokens": cached,
             }
         return ok({
             "messages": out_lines,

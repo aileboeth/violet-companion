@@ -901,6 +901,7 @@ class MemoryAgent(BaseAgent):
         now = parse_time(violetdb.now())
         turn = (f"当前时间：{clock_text(now)}\n日期：{day_words(now)}。写进记忆的日期和星期必须和这里一致；"
                 f"event_date 用 today / tomorrow 时按日历算，凌晨说的“明天”直接写日期\n\n{user_message}")
+        from ai.model_params import CACHE_MARK
         return [
             {"role": "system", "content": self._config.reply_prompt},
             {"role": "system", "content": who_is_who()},
@@ -917,7 +918,7 @@ class MemoryAgent(BaseAgent):
             {"role": "system", "content": f'已有的核心记忆，切勿重复存储：{format_core_memories()}'},
             *({"role": "system", "content": section} for section in profile_sections),
             {"role": "system", "content": self._format_open_events()},
-            {"role": "system", "content": self._format_pending_commitments()},
+            {"role": "system", "content": self._format_pending_commitments(), CACHE_MARK: True},
             # Phase 3: history is reference data for this analysis, not a system instruction.
             {"role": "user", "content": f"【参考资料：最近的聊天记录，只用于理解本轮，不要重复处理旧内容】\n{recent_messages}"},
             *([{"role": "system", "content": self._previous_writes_note()}] if self._call_context.get("previous_writes")

@@ -47,6 +47,8 @@ def numbers(usage: Any) -> tuple[int, int, int]:
     cached = _get(usage, "prompt_cache_hit_tokens")
     if cached is None:
         cached = _get(_get(usage, "prompt_tokens_details"), "cached_tokens")
+    if cached is None:
+        cached = _get(usage, "cache_read_input_tokens")
     return prompt, completion, int(cached or 0)
 
 

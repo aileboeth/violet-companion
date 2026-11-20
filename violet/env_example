@@ -258,8 +258,10 @@ VIOLET_IMAGE_QUALITY=medium
 # 2026-10-31: her voice (optional install: violet voice install)
 VIOLET_VOICE=1
 VIOLET_VOICE_MAX_CHARS=300
-# 2026-11-01: prompt caching -- auto | openai | deepseek | claude | other; the history window keeps its start
+# 2026-11-01: prompt caching -- auto | openai | grok | deepseek | claude | other; the history window keeps its start
 VIOLET_LLM_PROVIDER=auto
+# Optional stable salt for Grok cache routing IDs (leave empty to derive per installation automatically)
+VIOLET_CACHE_INSTANCE_ID=
 # 2026-11-02: the Chat model on one platform (settings tab of that channel); empty = CHAT_LLM_MODEL
 VIOLET_MODEL_WECHAT=
 VIOLET_MODEL_QQ=

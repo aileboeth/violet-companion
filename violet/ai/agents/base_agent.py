@@ -296,12 +296,18 @@ class BaseAgent:
             self._client_config_id = id(cfg)
             return client
 
+    def _cache_key(self) -> str:
+        from ai import memory_scope
+        scope = memory_scope.current()
+        base = f"violet-{self.__class__.__name__}"
+        return f"{base}-{scope}" if scope and scope != memory_scope.MAIN else base
+
     def _create_completion_with_retry(self, client, **kwargs):
         max_attempts = max(1, env_int("LLM_MAX_RETRY_ATTEMPTS", 3))
         base_delay = env_float("LLM_RETRY_BASE_DELAY", 3.0)
         deadline = time.monotonic() + env_float("LLM_TOTAL_TIMEOUT_SECONDS", 180.0)
         from ai.model_params import create as create_with_params
-        kwargs = {"cache_key": f"violet-{self.__class__.__name__}", **kwargs}     # 2026-11-01: provider cache routing
+        kwargs = {"cache_key": self._cache_key(), **kwargs}     # 2026-11-01: provider cache routing
         for attempt in range(1, max_attempts + 1):
             try:
                 return create_with_params(client, kwargs)

@@ -14,8 +14,12 @@ Policy fields (defaults, overridable per model name):
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
+import os
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -92,13 +96,25 @@ def channel_chat_model(default: str, channel_type: str | None = None) -> str:
 
 # "_cache_break" on a message, plus "cache_key" on the request. What is sent depends on VIOLET_LLM_PROVIDER:
 #   openai    prompt_cache_key (routes calls with the same beginning to the same cache)
+#   grok      x-grok-conv-id + session_id headers & prompt_cache_key (xAI node affinity + relay sticky account)
 #   claude    cache_control on the marked messages (at most 4) -- Claude caches only what is marked
 #   deepseek  nothing: its cache is automatic
 #   other     nothing
 # A relay that refuses one of these fields gets it no more (create() retries once without it).
-PROVIDERS = ("auto", "openai", "deepseek", "claude", "other")
+PROVIDERS = ("auto", "openai", "grok", "deepseek", "claude", "other")
 CACHE_MARK = "_cache_break"
+_GROK_NS = uuid.UUID("7f3b5c42-9a18-4d6e-b3c1-2e8a4f09d51c")
 _REFUSED: set[tuple[str, str]] = set()             # (model, field) a relay answered 400 for
+
+
+def _grok_conv_id(key: str) -> str:
+    """Stable UUIDv5 per (installation, cache_key): keeps xAI backend affinity & relay sticky sessions across turns
+    and restarts while preventing collisions between different Violet instances sharing the same relay."""
+    salt = env_str("VIOLET_CACHE_INSTANCE_ID", "").strip()
+    if not salt:
+        seed = f"{os.getenv('LLM_API_KEY', '')}:{os.getenv('VIOLET_DATA_DIR', '')}".encode("utf-8")
+        salt = hmac.new(b"violet-grok-cache-id", seed, hashlib.sha256).hexdigest()[:16]
+    return str(uuid.uuid5(_GROK_NS, f"{salt}:{key}"))
 
 
 def provider(model: str | None) -> str:
@@ -110,6 +126,8 @@ def provider(model: str | None) -> str:
         return "claude"
     if "deepseek" in name:
         return "deepseek"
+    if "grok" in name:
+        return "grok"
     if name.startswith(("gpt", "o1", "o3", "o4", "chatgpt")) or "/gpt" in name:
         return "openai"
     return "other"
@@ -161,6 +179,21 @@ def _cache_hints(out: dict[str, Any]) -> dict[str, Any]:
         out["messages"] = cleaned
     if key and kind == "openai" and (model, "prompt_cache_key") not in _REFUSED:
         out["extra_body"] = {**(out.get("extra_body") or {}), "prompt_cache_key": str(key)[:64]}
+    elif key and kind == "grok":
+        # 2026-11-20 (live probe on sub2api + grok-4.6): x-grok-conv-id alone missed (relay spread across upstream
+        # accounts), prompt_cache_key alone missed (xAI Chat Completions routes backend KV cache by x-grok-conv-id);
+        # sending both raised cache hit rate from 5% (512 global base) to 97-99%. If a direct xAI endpoint rejects
+        # prompt_cache_key in the body, _refused_field drops it and keeps the headers.
+        conv_id = _grok_conv_id(str(key))
+        out["extra_headers"] = {
+            "x-grok-conv-id": conv_id,
+            "session_id": conv_id,
+            "conversation_id": conv_id,
+            "x-session-id": conv_id,
+            **(out.get("extra_headers") or {}),
+        }
+        if (model, "prompt_cache_key") not in _REFUSED:
+            out["extra_body"] = {**(out.get("extra_body") or {}), "prompt_cache_key": conv_id}
     return out
 
 
@@ -170,7 +203,9 @@ def _refused_field(exc: Exception, request: dict[str, Any]) -> str | None:
     if status not in (400, 422):
         return None
     text = str(exc).lower()
-    if "prompt_cache_key" in (request.get("extra_body") or {}) and "prompt_cache_key" in text:
+    if "prompt_cache_key" in (request.get("extra_body") or {}) and (
+        "prompt_cache_key" in text or "extra inputs" in text or "unrecognized" in text or "unknown field" in text
+    ):
         return "prompt_cache_key"
     sent_marks = any(isinstance(m, dict) and isinstance(m.get("content"), list) and
                      any(isinstance(p, dict) and "cache_control" in p for p in m["content"])

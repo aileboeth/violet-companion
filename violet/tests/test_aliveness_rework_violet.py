@@ -54,16 +54,21 @@ def test_chat_agent_uses_085_temperature_and_v4_prompt_by_default(isolated_data,
     assert "抓重点，别面面俱到" in agent._config.reply_prompt
     assert "禁塑料套话" in agent._config.reply_prompt
 
-    # AI persona uses chat.ai.v1.txt when CHAT_LLM_PROMPT is not locked
-    pt.switch(violetdb, "ai", "keep")
-    msgs = agent.build_context_messages("你好")
-    assert "用你自己本来的方式说话" in msgs[0]["content"]
+    from ai.agents.base_agent import _CALL_CONTEXT
+    tok = _CALL_CONTEXT.set({})
+    try:
+        # AI persona uses chat.ai.v1.txt when CHAT_LLM_PROMPT is not locked
+        pt.switch(violetdb, "ai", "keep")
+        msgs = agent.build_context_messages("你好")
+        assert "用你自己本来的方式说话" in msgs[0]["content"]
 
-    # Whole-prompt persona (大肥鱼) uses chat.own.v1.txt
-    pt.switch(violetdb, "dafeiyu", "keep")
-    msgs = agent.build_context_messages("你好")
-    assert "完全按后面“你自己”那一段来" in msgs[0]["content"]
-    pt.switch(violetdb, "violet", "keep")
+        # Whole-prompt persona (大肥鱼) uses chat.own.v1.txt
+        pt.switch(violetdb, "dafeiyu", "keep")
+        msgs = agent.build_context_messages("你好")
+        assert "完全按后面“你自己”那一段来" in msgs[0]["content"]
+        pt.switch(violetdb, "violet", "keep")
+    finally:
+        _CALL_CONTEXT.reset(tok)
 
 
 def test_installer_v1_prompt_is_migrated_while_manual_dashboard_v1_is_kept(isolated_data, monkeypatch, tmp_path):

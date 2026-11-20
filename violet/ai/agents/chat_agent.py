@@ -252,7 +252,13 @@ class ChatAgent(BaseAgent):
 
     def _own_message(self) -> bool:
         """A message she writes on her own: proactive, a due reminder, a notice."""
-        return bool(self._call_context.get("is_proactive") or self._call_context.get("commitment"))
+        from .base_agent import _CALL_CONTEXT
+        ctx = _CALL_CONTEXT.get() or {}
+        return bool(ctx.get("is_proactive") or ctx.get("commitment"))
+
+    def _cache_key(self) -> str:
+        base = super()._cache_key()
+        return f"{base}-proactive" if self._own_message() else base
 
     def _mcp_servers_for_run(self, cfg):
         if self._call_context.get("rewrite"):

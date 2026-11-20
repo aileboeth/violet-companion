@@ -64,6 +64,7 @@ def test_the_abilities_list_names_her_voice(monkeypatch, violetdb):
 # ------------------------------------------------------------------------------------------------ prompt caching
 
 def test_cache_hints_per_provider(monkeypatch):
+    import uuid
     from ai import model_params as mp
     msgs = [{"role": "system", "content": "规则", mp.CACHE_MARK: True}, {"role": "user", "content": "你好"}]
     gpt = mp.apply({"model": "gpt-6-luna", "messages": msgs, "cache_key": "violet-ChatAgent"})
@@ -72,11 +73,108 @@ def test_cache_hints_per_provider(monkeypatch):
     claude = mp.apply({"model": "claude-opus-5-5", "messages": msgs, "cache_key": "k"})
     assert claude["messages"][0]["content"] == [{"type": "text", "text": "规则", "cache_control": {"type": "ephemeral"}}]
     assert "extra_body" not in claude and claude["messages"][1] == {"role": "user", "content": "你好"}
+    grok = mp.apply({"model": "grok-4.6", "messages": msgs, "cache_key": "violet-ChatAgent"})
+    assert "cache_key" not in grok and grok["messages"][0] == {"role": "system", "content": "规则"}
+    cid = grok["extra_headers"]["x-grok-conv-id"]
+    assert uuid.UUID(cid).version == 5
+    assert grok["extra_headers"] == {
+        "x-grok-conv-id": cid, "session_id": cid, "conversation_id": cid, "x-session-id": cid
+    }
+    assert grok["extra_body"] == {"prompt_cache_key": cid}
+    # deterministic across calls, isolated across different installations (API keys)
+    grok_again = mp.apply({"model": "grok-4.6", "messages": msgs, "cache_key": "violet-ChatAgent"})
+    assert grok_again["extra_headers"]["x-grok-conv-id"] == cid
+    grok_other_agent = mp.apply({"model": "grok-4.6", "messages": msgs, "cache_key": "violet-MemoryAgent"})
+    assert grok_other_agent["extra_headers"]["x-grok-conv-id"] != cid
+    monkeypatch.setenv("LLM_API_KEY", "different-install-key")
+    grok_other_install = mp.apply({"model": "grok-4.6", "messages": msgs, "cache_key": "violet-ChatAgent"})
+    assert grok_other_install["extra_headers"]["x-grok-conv-id"] != cid
     for model in ("deepseek-chat", "qwen-max"):
         plain = mp.apply({"model": model, "messages": msgs, "cache_key": "k"})
-        assert "extra_body" not in plain and plain["messages"][0] == {"role": "system", "content": "规则"}
+        assert "extra_body" not in plain and "extra_headers" not in plain
+        assert plain["messages"][0] == {"role": "system", "content": "规则"}
     monkeypatch.setenv("VIOLET_LLM_PROVIDER", "claude")                                # chosen on the page
     assert isinstance(mp.apply({"model": "my-relay-model", "messages": msgs})["messages"][0]["content"], list)
+    monkeypatch.setenv("VIOLET_LLM_PROVIDER", "grok")
+    custom_grok = mp.apply({"model": "my-relay-model", "messages": msgs, "cache_key": "k"})
+    assert "x-grok-conv-id" in custom_grok["extra_headers"] and "prompt_cache_key" in custom_grok["extra_body"]
+
+
+def test_grok_refused_prompt_cache_key_keeps_headers(monkeypatch):
+    """Direct xAI / strict relays that reject prompt_cache_key in the body still keep x-grok-conv-id & session_id."""
+    import httpx
+    import openai
+    from ai import model_params as mp
+    sent = []
+
+    class Client:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kw):
+                    sent.append(kw)
+                    if "extra_body" in kw:
+                        response = httpx.Response(400, request=httpx.Request("POST", "http://127.0.0.1:9/v1"))
+                        raise openai.BadRequestError("Extra inputs are not permitted", response=response, body=None)
+                    return completion("好")
+
+    request = {"model": "grok-strict-endpoint", "messages": [{"role": "user", "content": "hi"}], "cache_key": "violet-ChatAgent"}
+    assert mp.create(Client, request).choices[0].message.content == "好"
+    assert len(sent) == 2
+    assert "extra_body" in sent[0] and "x-grok-conv-id" in sent[0]["extra_headers"]
+    assert "extra_body" not in sent[1] and "x-grok-conv-id" in sent[1]["extra_headers"]
+    mp.create(Client, request)
+    assert len(sent) == 3 and "extra_body" not in sent[2] and "x-grok-conv-id" in sent[2]["extra_headers"]
+
+
+def test_standing_memories_order_stays_stable_across_turns(violetdb, monkeypatch):
+    """Matching a different word in user_message / phone_note must not shuffle the same selected standing facts
+    inside the cached system prompt."""
+    from ai.context_engine import ContextEngine
+    monkeypatch.setenv("VIOLET_MEMORY_STANDING_FACTS", "5")
+    violetdb.add_event_memory("用户喜欢喝冰美式咖啡", kind="fact", importance=3.0)
+    violetdb.add_event_memory("用户养了一只叫团子的橘猫", kind="fact", importance=2.0)
+    violetdb.add_event_memory("用户周末常去打羽毛球", kind="fact", importance=1.0)
+    engine = ContextEngine(violetdb)
+    order_a = [f["content"] for f in engine.standing_memories("今天去打羽毛球")[0]]
+    order_b = [f["content"] for f in engine.standing_memories("刚给橘猫团子喂饭")[0]]
+    order_c = [f["content"] for f in engine.standing_memories("")[0]]
+    assert order_a == order_b == order_c
+
+
+def test_agent_cache_key_scopes_mode_and_persona(violetdb):
+    from ai import memory_scope
+    from ai.agents.base_agent import _CALL_CONTEXT
+    from ai.agents.chat_agent import ChatAgent
+    from ai.agents.memory_agent import MemoryAgent
+    chat = ChatAgent()
+    mem = MemoryAgent()
+    assert chat._cache_key() == "violet-ChatAgent"
+    assert mem._cache_key() == "violet-MemoryAgent"
+    tok = _CALL_CONTEXT.set({"is_proactive": True})
+    try:
+        assert chat._cache_key() == "violet-ChatAgent-proactive"
+    finally:
+        _CALL_CONTEXT.reset(tok)
+    with memory_scope.use("stepsister"):
+        assert chat._cache_key() == "violet-ChatAgent-stepsister"
+        assert mem._cache_key() == "violet-MemoryAgent-stepsister"
+        tok2 = _CALL_CONTEXT.set({"is_proactive": True})
+        try:
+            assert chat._cache_key() == "violet-ChatAgent-stepsister-proactive"
+        finally:
+            _CALL_CONTEXT.reset(tok2)
+    # MemoryAgent marks its final leading system message for Claude cache breakpoints without splitting leading systems
+    tok3 = _CALL_CONTEXT.set({})
+    try:
+        mem_msgs = mem.build_context_messages("今天吃了拉面")
+    finally:
+        _CALL_CONTEXT.reset(tok3)
+    from ai import model_params as mp
+    applied = mp.apply({"model": "claude-opus-5-5", "messages": mem_msgs, "cache_key": "violet-MemoryAgent"})
+    sys_msgs = [m for m in applied["messages"] if m["role"] == "system"]
+    assert len(sys_msgs) >= 5
+    assert isinstance(sys_msgs[-1]["content"], list) and sys_msgs[-1]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
 
 def test_system_messages_after_the_conversation_began_go_as_user(monkeypatch):

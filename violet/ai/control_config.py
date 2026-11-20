@@ -92,10 +92,10 @@ SETTINGS: list[Setting] = [
     Setting("LLM_API_KEY", "API Key", "api", "secret", "now", "只能替换，不能查看；保存后立即用于新的调用"),
     # 2026-11-01 (token rework; user: GPT now, DeepSeek too, maybe Claude later -- "都做吧，可以选")
     Setting("VIOLET_LLM_PROVIDER", "模型服务商（用于缓存）", "api", "choice", "now",
-            "让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，Claude 会标出可缓存的部分，DeepSeek 自动缓存；"
+            "让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，xAI（Grok）会带会话缓存路由头，Claude 会标出可缓存的部分，DeepSeek 自动缓存；"
             "自动识别 = 按模型名判断；中转站不认这些参数时会自动不再发送", "auto",
-            choices=(("auto", "自动识别"), ("openai", "OpenAI（GPT）"), ("deepseek", "DeepSeek"), ("claude", "Claude"),
-                     ("other", "其他"))),
+            choices=(("auto", "自动识别"), ("openai", "OpenAI（GPT）"), ("grok", "xAI（Grok）"), ("deepseek", "DeepSeek"),
+                     ("claude", "Claude"), ("other", "其他"))),
     # 2026-11-02 (user: 支持不同渠道用不同的模型): the Chat model on one platform (its settings tab); empty = the Chat model
     Setting("VIOLET_MODEL_WECHAT", "微信上用的聊天模型", "wechat_model", "model", "now",
             "留空 = 用“模型服务”页的 Chat 模型。在微信上回复你、主动找你时用这个模型（记忆这些后台步骤不变）",

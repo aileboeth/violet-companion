@@ -2258,7 +2258,7 @@
   "让她直接用 {0}？\n\n选“直接用”后她用它不会再问你。只有确定这个工具不会改动任何东西（只是查看）时才这样选。\n（工具如果自己声明会改动或删除东西，Violet 仍会按高风险处理。）": "¿Dejar que use {0} directamente?\n\nTras elegir \"Usar directamente\", ya no te preguntará antes de usarla. Elígelo solo si estás seguro de que la herramienta no cambia nada (solo mira).\n(Si la propia herramienta declara que cambia o borra cosas, Violet la sigue tratando como de alto riesgo.)",
   "让她知道": "Que lo sepa",
   "让她知道你的课表": "Que conozca tu horario",
-  "让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，Claude 会标出可缓存的部分，DeepSeek 自动缓存；自动识别 = 按模型名判断；中转站不认这些参数时会自动不再发送": "Más aciertos de caché de prompts y menos gasto: OpenAI recibe un parámetro de agrupación de caché, Claude marca las partes cacheables y DeepSeek cachea solo; Detección automática = según el nombre del modelo; si un relay de API no acepta estos parámetros, se dejan de enviar automáticamente",
+  "让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，xAI（Grok）会带会话缓存路由头，Claude 会标出可缓存的部分，DeepSeek 自动缓存；自动识别 = 按模型名判断；中转站不认这些参数时会自动不再发送": "Consigue más aciertos de caché de prompts y ahorra dinero: OpenAI incluye un parámetro de agrupación de caché, xAI (Grok) incluye cabeceras de enrutamiento de caché de sesión, Claude marca las partes cacheables y DeepSeek hace caché automáticamente; Detección automática = según el nombre del modelo; si un relay no acepta estos parámetros dejarán de enviarse automáticamente",
   "记": "Nota",
   "记录前 200 字": "Registrar los primeros 200 caracteres",
   "记录完整内容（最多 2000 字）": "Registrar el contenido completo (hasta 2000 caracteres)",

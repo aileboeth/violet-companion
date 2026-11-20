@@ -2258,7 +2258,7 @@
   "让她直接用 {0}？\n\n选“直接用”后她用它不会再问你。只有确定这个工具不会改动任何东西（只是查看）时才这样选。\n（工具如果自己声明会改动或删除东西，Violet 仍会按高风险处理。）": "Sie {0} direkt nutzen lassen?\n\nNach „Direkt nutzen“ fragt sie dich vor der Nutzung nicht mehr. Wähle das nur, wenn du sicher bist, dass das Werkzeug nichts ändert (nur nachschaut).\n(Erklärt das Werkzeug selbst, dass es etwas ändert oder löscht, behandelt Violet es weiter als hohes Risiko.)",
   "让她知道": "Ihr Bescheid geben",
   "让她知道你的课表": "Ihr deinen Stundenplan mitteilen",
-  "让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，Claude 会标出可缓存的部分，DeepSeek 自动缓存；自动识别 = 按模型名判断；中转站不认这些参数时会自动不再发送": "Mehr Prompt-Cache-Treffer und weniger Kosten: OpenAI bekommt einen Cache-Gruppierungsparameter, bei Claude werden cachebare Teile markiert, DeepSeek cacht automatisch; Automatisch erkennen = nach Modellname; akzeptiert ein API-Relay diese Parameter nicht, werden sie automatisch nicht mehr gesendet",
+  "让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，xAI（Grok）会带会话缓存路由头，Claude 会标出可缓存的部分，DeepSeek 自动缓存；自动识别 = 按模型名判断；中转站不认这些参数时会自动不再发送": "Mehr Prompt-Cache-Treffer und geringere Kosten: OpenAI erhält einen Cache-Gruppierungsparameter, xAI (Grok) erhält Sitzungs-Cache-Routing-Header, Claude markiert zwischenspeicherbare Teile und DeepSeek cached automatisch; Automatisch = anhand des Modellnamens; lehnt ein Relay diese Parameter ab, werden sie automatisch nicht mehr gesendet",
   "记": "Notiz",
   "记录前 200 字": "Erste 200 Zeichen protokollieren",
   "记录完整内容（最多 2000 字）": "Vollständigen Inhalt protokollieren (bis 2000 Zeichen)",

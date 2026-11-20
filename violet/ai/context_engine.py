@@ -478,8 +478,12 @@ class ContextEngine:
             return (bool(hint and recall_terms(hint, m["content"])), float(m.get("importance") or 0),
                     int(m.get("mention_count") or 0), m.get("updated_at") or "")
         facts.sort(key=rank, reverse=True)
+        selected = facts[:max(0, facts_limit)]
+        # Keep deterministic order on the chosen facts so matching a different hint word never shuffles the cached prefix.
+        selected.sort(key=lambda m: (float(m.get("importance") or 0), int(m.get("mention_count") or 0),
+                                     m.get("updated_at") or "", int(m.get("id") or 0)), reverse=True)
         upcoming.sort(key=lambda pair: pair[0])
-        return facts[:max(0, facts_limit)], [m for _, m in upcoming[:max(0, events_limit)]]
+        return selected, [m for _, m in upcoming[:max(0, events_limit)]]
 
     def _standing_section(self, call_context: dict[str, Any]) -> tuple[_Section, set[int]]:
         from ai.memory_model import WEEKDAYS, is_date_only, parse_time

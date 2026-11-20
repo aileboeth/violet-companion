@@ -609,17 +609,20 @@ def probe_cache() -> int:
         from openai import DefaultHttpxClient
         extra["http_client"] = DefaultHttpxClient(trust_env=False)
     client = OpenAI(api_key=key, base_url=url, max_retries=1, **extra)
-    rules = (APP / "persona" / "chat_prompt_versions" / "chat.v3.txt").read_text(encoding="utf-8")
+    v4 = APP / "persona" / "chat_prompt_versions" / "chat.v4.txt"
+    v3 = APP / "persona" / "chat_prompt_versions" / "chat.v3.txt"
+    rules = (v4 if v4.is_file() else v3).read_text(encoding="utf-8")
     stable = "\n\n".join([rules] * 4)                                   # well over the 1024-token minimum
     now = lambda: time.strftime("%H:%M:%S")
 
     def ask(label: str, messages: list[dict[str, Any]], key_name: str) -> None:
-        response = create(client, {"model": model, "messages": messages, "max_tokens": 5, "temperature": 0,
+        response = create(client, {"model": model, "messages": messages, "max_tokens": 16, "temperature": 0,
                                    "cache_key": key_name})
         usage = getattr(response, "usage", None)
-        details = getattr(usage, "prompt_tokens_details", None)
-        cached = getattr(details, "cached_tokens", None) or getattr(usage, "prompt_cache_hit_tokens", None) or 0
-        print(f"  {label:<44} 输入 {getattr(usage, 'prompt_tokens', '?'):>5}  缓存 {cached}", flush=True)
+        from ai.usage import numbers as usage_numbers
+        pt, _, cached = usage_numbers(usage)
+        pct = f" ({cached / pt * 100:.1f}%)" if pt else ""
+        print(f"  {label:<44} 输入 {pt or '?':>5}  缓存 {cached}{pct}", flush=True)
     print(f"缓存探测：{model}（每次最多输出 5 个 token）", flush=True)
     shapes = [
         ("A1 一条 system + 一条 user", lambda q: [{"role": "system", "content": stable}, {"role": "user", "content": q}]),
