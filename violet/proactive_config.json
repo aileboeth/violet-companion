@@ -37,11 +37,9 @@
   "unanswered_backoff_factor": 2.0,
   "max_backoff_multiplier": 8,
   "max_cold_streak": 2,
-  "fixed_task_min_gap_minutes": 30,
   "commitments": {
     "enabled": true,
     "max_attempts": 3,
     "retry_minutes": 5
-  },
-  "allowed_tasks": {}
+  }
 }

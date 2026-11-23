@@ -307,7 +307,8 @@ def test_image_tools_need_an_explicit_request_and_never_appear_proactively(iworl
     arm(w)
     w.scheduler.tick()
     proactive = [c for c in w.llm.calls_for("fake-chat")
-                 if any("主动触达" in (m.get("content") or "") for m in c["messages"] if m["role"] == "user")]
+                 if any("主动联系参考" in (m.get("content") or "") or "系统定时唤醒" in (m.get("content") or "")
+                        for m in c["messages"] if m["role"] == "user")]
     assert proactive and all(not set(tools_in(c)) & {"create_image", "edit_image", "look_at_image"} for c in proactive)
     assert w.client.sent_images == []
 

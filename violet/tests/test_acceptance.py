@@ -22,7 +22,7 @@ from tests.fakes import completion
 from tests.image_fixtures import PNG, config as image_config, only, write
 from tests.test_persona_life import day, happened, new_thread
 from tests.test_phase2_scenarios import age_everything, arm, chat, decide, latest_event, make_world, say, script, tool  # noqa: F401
-from tests.test_proactive_policy import _fixed_task_config, world  # noqa: F401
+from tests.test_proactive_policy import world  # noqa: F401
 
 QUIET_MEMORY = lambda kw: json.dumps({"should_save": False, "reason": "t"})  # noqa: E731
 
@@ -300,21 +300,23 @@ def test_https_uses_verified_tls_with_the_real_host_name():
 # Defects found by the audit (expected to fail until fixed)
 # ---------------------------------------------------------------------------
 
-def test_D1_fixed_task_respects_busy_user(world):
+def test_D1_proactive_respects_busy_user(world):
     from ai.profile_store import Profile
-    _fixed_task_config(world)
+    world.db.add_user_message("text", "早", created_at=(datetime.fromisoformat(world.db.now()) - timedelta(hours=3)).isoformat())
+    world.db.set_proactive_setting("next_proactive_at", (datetime.fromisoformat(world.db.now()) - timedelta(minutes=1)).isoformat())
     Profile(world.db).situations.observe("availability", "在开会", "user_stated", evidence="在开会",
                                          user_message="我在开会", until="2h")
     world.scheduler.tick()
-    assert world.llm.calls_for("fake-proactive") == []
+    assert world.llm.calls_for("fake-chat") == []
 
 
-def test_D1_fixed_task_respects_no_proactive_preference(world):
+def test_D1_proactive_respects_no_proactive_preference(world):
     from ai.profile_store import Profile
-    _fixed_task_config(world)
+    world.db.add_user_message("text", "早", created_at=(datetime.fromisoformat(world.db.now()) - timedelta(hours=3)).isoformat())
+    world.db.set_proactive_setting("next_proactive_at", (datetime.fromisoformat(world.db.now()) - timedelta(minutes=1)).isoformat())
     Profile(world.db).preferences.set_explicit("proactive_chat", "no", evidence="别主动找我", source="dashboard")
     world.scheduler.tick()
-    assert world.llm.calls_for("fake-proactive") == []
+    assert world.llm.calls_for("fake-chat") == []
 
 
 def test_D2_proactive_message_cannot_send_images(make_world, tmp_path, monkeypatch):

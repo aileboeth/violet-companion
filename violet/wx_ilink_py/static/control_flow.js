@@ -7,7 +7,7 @@
   const TYPE = { chat: "你的消息", proactive: "主动联系", social: "QQ 群聊 / 别人" };
   const NODE = {
     Chat: ["生成回复", "写出要发的话，需要时查工具和记忆"], Memory: ["整理记忆", "从这一轮里记下该记的"],
-    Proactive: ["主动决策", "要不要主动找你、说什么"], Social: ["群聊决定", "说不说、说什么、发不发表情包"],
+    Social: ["群聊决定", "说不说、说什么、发不发表情包"],
     Act: ["发出去", "发消息、语音、表情包，记下印象"],
   };
   const STATUS = { pending: ["等待", ""], queued: ["后台排队", "warn"], running: ["进行中", "warn"], done: ["完成", "ok"], failed: ["失败", "bad"], skipped: ["跳过", ""] };

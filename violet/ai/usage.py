@@ -27,8 +27,9 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 CREATE INDEX IF NOT EXISTS idx_llm_usage_created ON llm_usage(created_at);
 """
 
-LABELS = {"ChatAgent": "回复", "MemoryAgent": "记忆整理", 
-          "ProactiveAgent": "主动联系", "social": "群聊 / 别人私聊", "vision": "识图", "aux": "辅助（复核、润色等）",
+LABELS = {"ChatAgent": "回复", "MemoryAgent": "记忆整理",
+          "proactive": "主动联系", "ProactiveAgent": "主动联系",
+          "social": "群聊 / 别人私聊", "vision": "识图", "aux": "辅助（复核、润色等）",
           "qzone": "QQ 动态", "explorer": "自主探索"}
 
 

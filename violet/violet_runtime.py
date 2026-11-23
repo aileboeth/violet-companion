@@ -1485,21 +1485,16 @@ class VioletRuntime:
         return lambda: self._has_newer(conversation)
 
     def _before_pipeline(self, text: str, turn_id: str) -> None:
-        """Engagement (topic fatigue), implicit preferences and onboarding refusals for this turn."""
+        """Topic tracking, implicit follow-up preference, and onboarding state for this user turn."""
         last_eve = self.db.get_recent_messages(limit=1)
         violet_asked = bool(last_eve) and last_eve[-1]["role"] == "assistant" and \
             (last_eve[-1].get("content") or "").rstrip().endswith(("?", "？"))
         result = self.tracker.evaluate(text)
         category = result["category"]
-        if any(source == "violet_proactive" for _, source in result["evaluated"]) and category != "neutral":
-            self.profile.preferences.observe("proactive_chat", "welcome" if category == "engaged" else "less",
-                                             "engagement", turn_id)
         if violet_asked and category != "neutral":
             self.profile.preferences.observe("follow_up_questions", "ok" if category == "engaged" else "less",
                                              "engagement", turn_id)
         self.onboarding.note_user_turn(text)
-        if self.proactive_scheduler is not None and hasattr(self.proactive_scheduler, "on_user_engagement"):
-            self.proactive_scheduler.on_user_engagement(category != "disengaged" or result["user_initiated"])
 
     def _answer_approval(self, turn: Turn, combined: str, conversation: tuple[str, str], sender: "MessageSender") -> bool:
         """2026-10-30 (ai/permissions.py): "同意 3" / "不同意 3" from the owner answers an approval -- carried out

@@ -23,6 +23,7 @@
   "Chat agent 没有运行": "El agente Chat no está en marcha",
   "Chat 提示词版本": "Versión del prompt de Chat",
   "ChatAgent（写回复）": "ChatAgent (escribe las respuestas)",
+  "ChatAgent（聊天与主动发消息）": "ChatAgent (chat y mensajes proactivos)",
   "Chat（聊天）": "Chat (conversación)",
   "Control Center 管理后台": "Panel de administración del Control Center",
   "CosyVoice 的依赖": "Dependencias de CosyVoice",
@@ -2155,6 +2156,7 @@
   "考试日期": "Fecha del examen",
   "考试类型": "Tipo de examen",
   "耳机 / 蓝牙": "Auriculares / Bluetooth",
+  "聊天与主动发消息": "Chat y mensajes proactivos",
   "聊天中偶尔自然地问一个关于你的问题（每次最多一个，被拒绝的不再问）": "De vez en cuando, preguntar con naturalidad algo sobre ti en el chat (como mucho una pregunta cada vez; lo rechazado no se vuelve a preguntar)",
   "聊天历史保留几轮": "Rondas de historial de chat que se conservan",
   "聊天方式": "Forma de chatear",
@@ -2675,5 +2677,8 @@
   "；最近错误：{0}": "; último error: {0}",
   "；核心记忆 {0} 条": "; {0} recuerdos centrales",
   "；没有说明的可以点“看一眼”": "; los que no tienen descripción, pulsa \"Echar un vistazo\"",
-  "；系统设置了代理（HTTP_PROXY / HTTPS_PROXY），本机或内网地址需要写进 NO_PROXY": "; el sistema tiene un proxy configurado (HTTP_PROXY / HTTPS_PROXY), así que las direcciones locales o de la intranet deben ir en NO_PROXY"
+  "；系统设置了代理（HTTP_PROXY / HTTPS_PROXY），本机或内网地址需要写进 NO_PROXY": "; el sistema tiene un proxy configurado (HTTP_PROXY / HTTPS_PROXY), así que las direcciones locales o de la intranet deben ir en NO_PROXY",
+  "亲近程度": "Cercanía",
+  "正常相处": "Trato normal",
+  "希望保持一点距离": "Prefiere mantener algo de distancia"
 }

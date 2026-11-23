@@ -14,9 +14,6 @@ DEBOUNCE_EXTRA=15.0
 VIOLET_REPLY_RECHECK=1
 # 2026-11-09: you write again while she is sending a reply line by line -> the lines not sent yet are left out, the next turn answers both
 VIOLET_REPLY_INTERRUPT=1
-# 2026-11-02 (token): the proactive decision sees only the last turns (the message itself is written with the full history)
-VIOLET_DECISION_HISTORY_TURNS=8
-VIOLET_DECISION_HISTORY_MAX_CHARS=1500
 # 2026-11-02 (token): shorter memory tool descriptions (what the memory rules already say); 0 = the full ones
 VIOLET_MEMORY_COMPACT_TOOLS=1
 
@@ -440,9 +437,7 @@ MEMORY_LLM_MODEL_TEMPERATURE=0.2
 MEMORY_LLM_MODEL=gpt-5-mini
 # 提示词默认在 persona/prompts/memory.txt；设置 MEMORY_LLM_PROMPT 会覆盖它
 
-PROACTIVE_LLM_MODEL=gpt-5-mini
-PROACTIVE_LLM_MODEL_TEMPERATURE=0.2
-# 提示词默认是 persona/proactive_prompt_versions/proactive.v4.txt（后台可选其他版本）；设置 PROACTIVE_LLM_PROMPT 会覆盖它
+# 主动联系由 ChatAgent 单步直出（复用 Chat 模型与缓存；旧配置里的 PROACTIVE_LLM_* 会被自动忽略）
 
 # --- Phase 7 B.1: local test tools (python -m tools.violet_test_chat / dialogue_eval / model_compat) ---
 # Shell-only switches for the test tools; Violet itself never reads them. Never put a key in this file.

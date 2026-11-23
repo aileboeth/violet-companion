@@ -204,7 +204,7 @@ def test_a_moment_makes_the_decision_run_now(monkeypatch, violetdb, tmp_path):
                                 "min_minutes_after_user_message": 0, "min_minutes_between_proactive_messages": 0}),
                    encoding="utf-8")
     monkeypatch.setenv("VIOLET_PHONE_EVENTS", "1")
-    s = ProactiveScheduler(None, None, send_messages=lambda m, e=None: None, config_path=cfg)
+    s = ProactiveScheduler(None, send_messages=lambda m, e=None: None, config_path=cfg)
     violetdb.add_user_message("text", "晚安")
     current = now_china()
     s._set_next_proactive_at(current + timedelta(hours=3))

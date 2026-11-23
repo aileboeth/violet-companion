@@ -4,8 +4,8 @@
 // reversible), then tests with one short real request. Built with DOM nodes only.
 "use strict";
 (() => {
-  const ROLES = ["CHAT", "MEMORY", "PROACTIVE"];
-  const NAMES = { CHAT: ["Chat", "写回复"], MEMORY: ["Memory", "整理记忆"], PROACTIVE: ["Proactive", "决定要不要主动找你"] };
+  const ROLES = ["CHAT", "MEMORY"];
+  const NAMES = { CHAT: ["Chat", "聊天与主动发消息"], MEMORY: ["Memory", "整理记忆"] };
   const MANUAL = "__manual__";
   // 2026-11-02 (user: 说了不同厂商缓存不同，但没找到在哪切换): the two cache settings were in the "api" group, which
   // the settings page leaves to this page -- and this page did not show them

@@ -23,6 +23,7 @@
   "Chat agent 没有运行": "The Chat agent is not running",
   "Chat 提示词版本": "Chat prompt version",
   "ChatAgent（写回复）": "ChatAgent (writes replies)",
+  "ChatAgent（聊天与主动发消息）": "ChatAgent (chat & proactive messages)",
   "Chat（聊天）": "Chat (chatting)",
   "Control Center 管理后台": "Control Center admin panel",
   "CosyVoice 的依赖": "CosyVoice dependencies",
@@ -2155,6 +2156,7 @@
   "考试日期": "Exam date",
   "考试类型": "Exam type",
   "耳机 / 蓝牙": "Headphones / Bluetooth",
+  "聊天与主动发消息": "Chat & proactive messages",
   "聊天中偶尔自然地问一个关于你的问题（每次最多一个，被拒绝的不再问）": "Now and then, naturally ask one question about you in chat (at most one each time; declined ones aren't asked again)",
   "聊天历史保留几轮": "Rounds of chat history to keep",
   "聊天方式": "Chat style",
@@ -2675,5 +2677,8 @@
   "；最近错误：{0}": "; recent error: {0}",
   "；核心记忆 {0} 条": "; {0} core memories",
   "；没有说明的可以点“看一眼”": "; for ones without a description, click \"Take a look\"",
-  "；系统设置了代理（HTTP_PROXY / HTTPS_PROXY），本机或内网地址需要写进 NO_PROXY": "; the system has a proxy set (HTTP_PROXY / HTTPS_PROXY), so local or intranet addresses need to go into NO_PROXY"
+  "；系统设置了代理（HTTP_PROXY / HTTPS_PROXY），本机或内网地址需要写进 NO_PROXY": "; the system has a proxy set (HTTP_PROXY / HTTPS_PROXY), so local or intranet addresses need to go into NO_PROXY",
+  "亲近程度": "Closeness",
+  "正常相处": "Normal closeness",
+  "希望保持一点距离": "Prefer keeping some distance"
 }

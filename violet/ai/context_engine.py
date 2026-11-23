@@ -74,6 +74,7 @@ PREF_GUIDANCE = {
     ("follow_up_questions", "no"): "平常的分享直接接话或说说你的想法，不用反问；对方问你问题、或者明显想聊下去时照常回应",
     ("follow_up_questions", "less"): "别一句接一句地问；普通分享直接接话就好，真想知道时最多问一句",
     ("reply_length", "short"): "回复短一点",
+    ("closeness", "distance"): "保持轻松友好的距离，不撒娇、不用亲昵称呼",
     ("advice", "only_when_asked"): "对方没问就不给建议",
     ("advice", "no"): "不主动给建议",
     ("humor", "no"): "少开玩笑",
@@ -765,8 +766,6 @@ class ContextEngine:
 
     def _life_section(self, mode: str, user_message: str, call_context: dict[str, Any], store) -> _Section:
         header = "【你的生活状态（只有标为『已发生』的才是你做过的事；对方说自己的事时先回应对方）】"
-        if mode == "decision":
-            return _Section("violet_life", 4, header, [])        # candidates come through conversation_state
         if mode == "chat":
             # 2026-11-11 (audit R3): shown on every turn. Before, keywords decided ("书", "听", a long message, a
             # question about her) whether she saw her own day at all -- one turn she knew what she had done today,
@@ -876,11 +875,6 @@ class ContextEngine:
         turn_limit = env_int("VIOLET_CONTEXT_HISTORY_TURNS", 24)
         limit = limit or max(env_int("VIOLET_CONTEXT_HISTORY_MESSAGES", 20), turn_limit * 3 if turn_limit > 0 else 0)
         max_chars = env_int("VIOLET_CONTEXT_HISTORY_MAX_CHARS", 4000)
-        if mode == "decision":
-            # 2026-11-02 (token): whether to write now needs how the talk went lately, not the whole window; the message
-            # itself (mode "proactive") is still written with the full history
-            turn_limit = env_int("VIOLET_DECISION_HISTORY_TURNS", 8)
-            max_chars = env_int("VIOLET_DECISION_HISTORY_MAX_CHARS", 1500)
         stepped = env_bool("VIOLET_CONTEXT_STABLE_HISTORY", True) and mode in ("chat", "proactive")
         turns, times, ids, chans, found = [], {}, {}, {}, {}
         from ai import context_cut
@@ -967,8 +961,8 @@ class ContextEngine:
         # what someone was doing belong to the day they were said; said once, at the break into this conversation.
         dated = "说的天气、心情和在做的事，是那时候的"
         if prev is not None and now - prev >= gap:
-            # phase 8.9.8: a proactive message / decision has no new message from the user -- Violet is the one writing
-            news = ("这次是你主动找对方，对方还没有发新消息" if mode in ("proactive", "decision")
+            # phase 8.9.8: a proactive message has no new message from the user -- Violet is the one writing
+            news = ("这次是你主动找对方，对方还没有发新消息" if mode == "proactive"
                     else "对方现在发来的是新消息")
             out.append({"role": "system", "content": (
                 f"【以上是之前的聊天，最后一条在 {_clock(last)}，到现在已经过去{_span(now - prev)}。"
@@ -985,10 +979,10 @@ class ContextEngine:
     # ------------------------------------------------------------------
     def build(self, mode: str, user_message: str = "", call_context: dict[str, Any] | None = None,
               with_history: bool = True) -> ContextPacket:
-        """mode: chat | proactive (Violet writes a proactive message) | decision (ProactiveAgent) | memory."""
+        """mode: chat | proactive (Violet writes a proactive message) | memory."""
         call_context = call_context or {}
         from ai import test_mode
-        if test_mode.active() and mode in ("chat", "proactive", "decision"):
+        if test_mode.active() and mode in ("chat", "proactive"):
             return self._test_build(mode, with_history)
         recalled = call_context.get("recalled_memories") or []
         text = " ".join([user_message or ""] + [m.get("content") or "" for m in recalled])
@@ -998,7 +992,7 @@ class ContextEngine:
         self._turn_message = user_message or ""          # the user's own words (text also holds recalled memories)
         self._relationship = None
         self._is_ai = False                              # set by _persona_sections
-        if mode in ("chat", "proactive", "decision"):
+        if mode in ("chat", "proactive"):
             sections.append(self._about_owner_section())
         profile_section, facts = self._profile_section(mode)
         sections.append(profile_section)
@@ -1009,11 +1003,10 @@ class ContextEngine:
                 situation_section.lines.append(line)
         sections.append(situation_section)
         onboarding_key = None
-        if mode in ("chat", "proactive", "decision"):
-            # the proactive decision too -- whether Violet reaches out depends on how close you are
+        if mode in ("chat", "proactive"):
             sections.append(self._bond_section())                  # 2026-11-12: one section
         standing_ids: set[int] = set()
-        if mode in ("chat", "proactive", "decision"):
+        if mode in ("chat", "proactive"):
             standing_section, standing_ids = self._standing_section(call_context)     # 2026-11-09
             sections.append(standing_section)
         if mode == "chat":
@@ -1023,11 +1016,10 @@ class ContextEngine:
             if rest or not recalled:                     # all found ones already shown above: no "没找到" line
                 sections.append(self._recall_section(rest, user_message))
             sections.append(self._meme_section(user_message))
-        if mode in ("chat", "proactive", "decision") and env_bool("VIOLET_PERSONA_CONTEXT", True):
+        if mode in ("chat", "proactive") and env_bool("VIOLET_PERSONA_CONTEXT", True):
             sections += self._persona_sections(mode, user_message, call_context)
-        if mode in ("chat", "proactive", "decision"):
-            sections.append(self._legacy_section())
         if mode in ("chat", "proactive"):
+            sections.append(self._legacy_section())
             sections.append(self._restricted_section(call_context))
         # 2026-10-30 (user, AI persona: "不太像他底层模型的颜色，感觉是被提示词污染了"): the AI persona speaks in the
         # model's own way -- none of the companion nudges (questions to ask, per-message style notes) are added

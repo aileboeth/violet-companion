@@ -16,7 +16,7 @@ from tests.fakes import completion
 from tests.image_fixtures import PNG, config as image_config, only, write
 from tests.test_persona_life import happened, new_thread
 from tests.test_phase2_scenarios import age_everything, arm, chat, decide, latest_event, make_world, say  # noqa: F401
-from tests.test_proactive_policy import _fixed_task_config, due_commitment, world  # noqa: F401
+from tests.test_proactive_policy import due_commitment, world  # noqa: F401
 
 QUIET_MEMORY = lambda kw: json.dumps({"should_save": False, "reason": "t"})  # noqa: E731
 
@@ -54,22 +54,21 @@ def old(db, hours=1):
 # D1 -- fixed-time greetings follow the user's boundaries; reminders keep their promise
 # ---------------------------------------------------------------------------
 
-def test_D1_busy_or_no_proactive_skips_the_greeting_without_queueing_it(world):
+def test_D1_busy_or_no_proactive_skips_scheduled_outreach(world):
     from ai.profile_store import Profile
-    _fixed_task_config(world)
+    world.db.add_user_message("text", "早", created_at=old(world.db, 3))
+    world.db.set_proactive_setting("next_proactive_at", old(world.db, 0.1))
     Profile(world.db).situations.observe("availability", "在开会", "user_stated", evidence="在开会",
                                          user_message="我在开会", until="2h")
     world.scheduler.tick()
-    assert world.llm.calls_for("fake-proactive") == []
-    day = datetime.fromisoformat(world.db.now()).date().isoformat()
-    assert world.db.get_proactive_setting(f"fixed_check_done_weather_reminder_{day}") is None   # nothing saved up
+    assert world.llm.calls_for("fake-chat") == []
 
 
-def test_D1_fixed_greeting_still_runs_normally_when_allowed(world):
-    _fixed_task_config(world)
+def test_D1_scheduled_outreach_runs_normally_when_allowed(world):
+    world.db.add_user_message("text", "早", created_at=old(world.db, 3))
+    world.db.set_proactive_setting("next_proactive_at", old(world.db, 0.1))
     world.scheduler.tick()
-    world.scheduler.tick()
-    assert len(world.llm.calls_for("fake-proactive")) == 1                                       # once, no duplicate
+    assert len(world.llm.calls_for("fake-chat")) == 1
 
 
 def test_D1_explicit_reminders_are_kept_even_if_busy_or_proactive_chat_is_off(world):

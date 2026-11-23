@@ -57,16 +57,16 @@ def test_stdio_server_budget_survives_restart(tmp_path, monkeypatch, web):
 
 
 def test_only_the_chat_agent_gets_web_or_image_tools(monkeypatch):
-    from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
+    from ai.agents import ChatAgent, MemoryAgent
     from ai.chat import get_mcp_servers
     from ai.mcp import load_tool_policy, server_applies_to_agent
     monkeypatch.setenv("VIOLET_WEB_ENABLED", "1")
     monkeypatch.setenv("VIOLET_IMAGE_ENABLED", "1")
     servers = get_mcp_servers()
-    for agent in (MemoryAgent(), ProactiveAgent()):
-        assert not [s for s in servers if s["name"] == "violet-web" and server_applies_to_agent(s, agent.mcp_agent_name)]
-        names = {t["function"]["name"] for t in agent._tools}
-        assert not names & {"create_image", "edit_image", "look_at_image"}, agent
+    agent = MemoryAgent()
+    assert not [s for s in servers if s["name"] == "violet-web" and server_applies_to_agent(s, agent.mcp_agent_name)]
+    names = {t["function"]["name"] for t in agent._tools}
+    assert not names & {"create_image", "edit_image", "look_at_image"}, agent
     chat = ChatAgent()
     assert {"create_image", "edit_image", "look_at_image"} <= {t["function"]["name"] for t in chat._tools}
     # the web MCP tools are classified read-only; nothing unlisted can be granted

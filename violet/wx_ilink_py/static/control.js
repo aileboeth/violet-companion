@@ -688,13 +688,14 @@ async function loadProfileKind(kind) {
 }
 // 2026-11-03 (user: 记忆太多了找不到有没有“短”): the preferences in words (ai/profile_schema.PREF_LABELS), not reply_length：short
 const PREF_NAME = { reply_length: "回复长短", proactive_chat: "主动找你", follow_up_questions: "追问", advice: "建议",
-  humor: "玩笑", avoid_topic: "不想聊的话题" };
+  humor: "玩笑", closeness: "亲近程度", avoid_topic: "不想聊的话题" };
 const PREF_VALUE = {
   reply_length: { short: "喜欢简短的回复", normal: "回复长短适中", long: "可以多说一些" },
   proactive_chat: { welcome: "欢迎她主动找你聊天", less: "希望她少主动发消息", no: "不希望她主动发消息" },
   follow_up_questions: { ok: "不介意被追问", less: "不喜欢被连续追问", no: "不希望被追问" },
   advice: { welcome: "愿意听建议", only_when_asked: "只在你问的时候才给建议", no: "不想要建议" },
-  humor: { likes: "喜欢开玩笑", neutral: "玩笑适度", no: "不喜欢开玩笑" } };
+  humor: { likes: "喜欢开玩笑", neutral: "玩笑适度", no: "不喜欢开玩笑" },
+  closeness: { normal: "正常相处", distance: "希望保持一点距离" } };
 function prefText(r) {
   return `${PREF_NAME[r.pref_key] || r.pref_key}：${(PREF_VALUE[r.pref_key] || {})[r.value] || r.value}`;
 }
@@ -1146,7 +1147,7 @@ function settingInput(s, ctx = SETTINGS_PAGE) {
 // The model page (api, models), the images page (images) and the 课表 page (schedule) draw their groups themselves.
 // TUNING: numbers nobody changes in normal use (timeouts, retries, caps). They keep working from .env / the saved
 // value; the pages show them only when 系统 → 调参项 is switched on (kept in this browser).
-const TUNING = new Set(["prompt.chat", "prompt.proactive",
+const TUNING = new Set(["prompt.chat",
   "DEBOUNCE_EXTRA", "VIOLET_TYPING_MIN_DELAY_SECONDS", "VIOLET_TYPING_MAX_DELAY_SECONDS", "VIOLET_SEND_MAX_ATTEMPTS",
   "VIOLET_SEND_RETRY_DELAY_SECONDS", "VIOLET_OWN_PERSONA_FRAME", "VIOLET_CONTEXT_HISTORY_TURNS", "VIOLET_PERSONA_CONTEXT",
   "VIOLET_MOOD_HALF_LIFE_HOURS", "VIOLET_CHAT_MAX_TOOL_ROUNDS", "MCP_CONNECT_TIMEOUT_SECONDS", "MCP_CALL_TIMEOUT_SECONDS",

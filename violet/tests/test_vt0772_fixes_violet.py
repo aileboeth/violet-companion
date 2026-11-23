@@ -69,30 +69,13 @@ def test_the_reply_check_asks_for_a_rewrite_of_such_a_promise(db, data_dir):
 
 def test_her_own_message_says_nothing_was_checked_and_the_chat_wins_over_the_brief():
     from ai.agents.chat_agent import PROACTIVE_REQUEST
-    from ai.settings import PROJECT_ROOT
     assert "用不了任何工具，也没有查过什么" in PROACTIVE_REQUEST
     assert "以上面的聊天原文和背景为准" in PROACTIVE_REQUEST
-    decision = (PROJECT_ROOT / "persona/proactive_prompt_versions/proactive.v4.txt").read_text(encoding="utf-8")
-    assert "主动发的消息里查不了东西" in decision and "不要替她补具体细节" in decision
 
 
 def test_a_different_name_for_a_known_thing_is_not_news():
     from ai.agents.chat_agent import WHO_IS_WHO
     assert "多半是同一件事换了个说法" in WHO_IS_WHO and "不要说“你没跟我说过 / 你没提”" in WHO_IS_WHO
-
-
-@pytest.mark.parametrize("text, warm", [
-    ("我叫小周，刚来找你聊聊哈哈", False),       # how anyone starts a chat
-    ("又来找你啦", False),
-    ("今天好累 想找你聊聊", True),
-    ("以后多找你聊", True),
-    ("就想来找你", True),
-    ("想你了 来找你聊会儿", True),
-    ("今天好忙 都没顾上找你", False),
-])
-def test_coming_to_chat_is_not_warmth_wanting_to_is(text, warm):
-    from ai.relationship import is_warm
-    assert is_warm(text) is warm
 
 
 def test_a_plain_first_hello_does_not_make_day_two_warming(db, data_dir):

@@ -16,10 +16,8 @@ from tests.fakes import (
 @pytest.fixture()
 def agents(monkeypatch, violetdb):
     fake = install_fake_llm(monkeypatch, FakeLLM(default_responders()))
-    from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
-    return fake, {
-        "chat": ChatAgent(), "memory": MemoryAgent(),
-        "proactive": ProactiveAgent()}
+    from ai.agents import ChatAgent, MemoryAgent
+    return fake, {"chat": ChatAgent(), "memory": MemoryAgent()}
 
 
 def _run(agents_map, text="今天好累"):
@@ -139,30 +137,22 @@ def test_fallback_model_used_when_primary_fails(monkeypatch, violetdb):
 def _proactive(a, ctx=None):
     from ai.chat import run_proactive_pipeline
     return run_proactive_pipeline(
-        event_context=ctx or {"event_type": "scheduled_proactive_check", "allowed_tasks": {}},
-        proactive_agent=a["proactive"], chat_agent=a["chat"], )
+        event_context=ctx or {"event_type": "scheduled_proactive_check"},
+        chat_agent=a["chat"],
+    )
 
 
-def test_proactive_garbage_json_is_skip(agents, violetdb):
+def test_proactive_no_reply_is_skip(agents, violetdb):
     fake, a = agents
-    fake.responders["fake-proactive"] = lambda kw: "sure! let me think..."
+    fake.responders["fake-chat"] = lambda kw: "[NO_REPLY]"
     result = _proactive(a)
     assert result["should_send"] is False
     assert violetdb.get_proactive_event(result["event_id"])["status"] == "skipped"
 
 
-def test_proactive_agent_exception_records_failed_event(agents, violetdb):
+def test_proactive_chat_exception_records_failed_event(agents, violetdb):
     fake, a = agents
-    fake.responders["fake-proactive"] = lambda kw: (_ for _ in ()).throw(RuntimeError("decision crashed"))
-    result = _proactive(a)
-    assert result["should_send"] is False and result["error"]
-    assert violetdb.get_proactive_event(result["event_id"])["status"] == "failed"
-
-
-def test_proactive_chat_exception_marks_planned_event_failed(agents, violetdb):
-    fake, a = agents
-    fake.responders["fake-proactive"] = lambda kw: json.dumps({"should_act": True, "action_type": "chat", "reason": "t"})
     fake.responders["fake-chat"] = lambda kw: (_ for _ in ()).throw(RuntimeError("chat crashed"))
     result = _proactive(a)
-    assert result["should_send"] is False
+    assert result["should_send"] is False and result["error"]
     assert violetdb.get_proactive_event(result["event_id"])["status"] == "failed"

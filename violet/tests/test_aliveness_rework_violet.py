@@ -85,14 +85,14 @@ def test_installer_v1_prompt_is_migrated_while_manual_dashboard_v1_is_kept(isola
 
     # Simulate a legacy install where installer wrote v1, then admin saved CHAT_LLM_MODEL on dashboard
     store = ControlStore(isolated_data)
-    store.save({"prompt.chat": "v1", "prompt.proactive": "v1"}, "installer", "安装时选择稳定的提示词版本")
+    store.save({"prompt.chat": "v1"}, "installer", "安装时选择稳定的提示词版本")
     store.save({"CHAT_LLM_MODEL": "gemini-2.5-pro"}, "dashboard", "set model")
     assert store.values()["prompt.chat"] == "v1"
 
     env: dict[str, str] = {}
     store.apply_to_environ(env)
-    assert "prompt.chat" not in store.values() and "prompt.proactive" not in store.values()
-    assert "CHAT_LLM_PROMPT" not in env and "PROACTIVE_LLM_PROMPT" not in env
+    assert "prompt.chat" not in store.values()
+    assert "CHAT_LLM_PROMPT" not in env
     assert env["CHAT_LLM_MODEL"] == "gemini-2.5-pro"
     assert store.history(limit=1)[0]["actor"] == "migration"
 
@@ -372,16 +372,13 @@ def test_mood_ignores_third_party_vents_and_memes(isolated_data, violetdb):
 # ---------------------------------------------------------------------------
 
 def test_proactive_daily_life_materialization_and_stage_motive_alignment(isolated_data, violetdb, monkeypatch):
-    from datetime import datetime, timedelta
+    from datetime import datetime
     from ai import persona_templates as pt
     from ai.daily_life import DailyLife
     from ai.proactive_scheduler import ProactiveScheduler
-    from ai.relationship import MISS_AFTER_HOURS, RelationshipView, proactive_motives
+    from ai.relationship import RelationshipView, warmth_level
 
     monkeypatch.setenv("VIOLET_DAILY_LIFE", "1")
-    assert MISS_AFTER_HOURS["warming"] == 8
-    assert MISS_AFTER_HOURS["close"] == 4
-
     pt.switch(violetdb, "stepsister", "keep")
     now = datetime(2026, 11, 19, 20, 30, 0)
     # Materialize today's daily events even without any chat turn today
@@ -406,18 +403,10 @@ def test_proactive_daily_life_materialization_and_stage_motive_alignment(isolate
     assert len(daily_items) == 1
     assert "昨天的旧日常" not in daily_items[0]["content"]
 
-    # Persona stage >= 1 promotes relationship stage to 'warming' -> 12h miss motive + daily_share motive
-    motives = proactive_motives(
-        RelationshipView(stage="new"),
-        hours_since_user=13.0,
-        cold_streak=0,
-        life_events=daily_items,
-        open_plans=[],
-        persona_stage={"index": 1, "label": "慢慢靠近"},
-    )
-    kinds = {m["type"] for m in motives}
-    assert "daily_share" in kinds
-    assert "miss" in kinds
+    # Persona stage directly determines warmth_level (1 -> warming, 2 -> active, 3 -> deep)
+    assert warmth_level(RelationshipView(stage="new"), {"index": 1, "total": 5, "label": "慢慢靠近"}) == 1
+    assert warmth_level(RelationshipView(stage="new"), {"index": 2, "total": 5, "label": "不只是妹妹"}) == 2
+    assert warmth_level(RelationshipView(stage="new"), {"index": 3, "total": 5, "label": "藏不住了"}) == 3
 
     # AI persona skips DailyLife materialization
     pt.switch(violetdb, "ai", "keep")
@@ -546,7 +535,7 @@ def test_stage_scaled_proactive_warmth_pace_and_daily_life(isolated_data, violet
     from ai.daily_life import DailyLife
     from ai.profile_store import Profile
     from ai.proactive_scheduler import ProactiveScheduler
-    from ai.relationship import RelationshipView, proactive_motives, warmth_level
+    from ai.relationship import RelationshipView, warmth_level
 
     monkeypatch.setenv("VIOLET_DAILY_LIFE", "1")
     pt.switch(violetdb, "stepsister", "keep")
@@ -579,17 +568,6 @@ def test_stage_scaled_proactive_warmth_pace_and_daily_life(isolated_data, violet
     # Distance view always drops warmth back to 0
     assert warmth_level(RelationshipView(stage="distance"), {"index": 3, "total": 5}) == 0
 
-    # Stage 2 gets warm_checkin after 2.5h and miss after 4h (even with cold_streak=1 when user DID reply)
-    m_checkin = proactive_motives(RelationshipView(stage="new"), hours_since_user=2.8, cold_streak=0,
-                                  life_events=[], open_plans=[], unanswered=[],
-                                  persona_stage={"index": 2, "total": 5, "label": "不只是妹妹"})
-    assert any(m["type"] == "warm_checkin" for m in m_checkin)
-
-    m_miss = proactive_motives(RelationshipView(stage="new"), hours_since_user=4.5, cold_streak=1,
-                               life_events=[], open_plans=[], unanswered=[],
-                               persona_stage={"index": 2, "total": 5, "label": "不只是妹妹"})
-    assert any(m["type"] == "miss" for m in m_miss)
-
     # DailyLife at Stage 2 never rolls a 0-item quiet day and plans all 3 daily slots
     pt.set_stage(None, 2)
     dl = DailyLife(violetdb)
@@ -598,50 +576,43 @@ def test_stage_scaled_proactive_warmth_pace_and_daily_life(isolated_data, violet
     plan = dl.plan_for(date(2026, 11, 23), tz)
     assert len(plan) == 3
 
+    # Single-call proactive note includes warmth level and non-DND note when VIOLET_SCHEDULE_PROACTIVE=0
+    monkeypatch.setenv("VIOLET_SCHEDULE_PROACTIVE", "0")
+    note, _ = sched._compose_proactive_note(
+        view=RelationshipView(stage="warming", chat_days=10), level=2, since_user=180.0,
+        sent_today=1, daily_limit=5, unanswered=[], life_events=[], upcoming=[], open_plans=[],
+        web_findings=[], schedule_moments=[], recent=[], habit_note=None, class_ok=True,
+    )
+    assert "熟络活跃" in note and "打游戏" in note and "上课都不算勿扰" in note
+
     # Explicit "less" preference disables interval speedup
     sched.profile.preferences.set_explicit("proactive_chat", "less", evidence="少主动发", user_message="以后少主动发消息")
     after_less, between_less, _, _ = sched._effective_intervals()
     assert (after_less, between_less) == (90.0, 180.0)
 
 
-def test_distance_false_positives_auto_decay_and_admin_clear_api(isolated_data, violetdb, monkeypatch):
-    from datetime import datetime, timedelta, timezone
+def test_distance_preference_and_admin_clear_api(isolated_data, violetdb, monkeypatch):
     from ai import persona_templates as pt
     from ai.agents import ChatAgent
-    from ai.relationship import assess, is_close_invite, is_distance_request
+    from ai.profile_store import Profile
+    from ai.relationship import assess
     from tests.fakes import FakeLLM, default_responders, install_fake_llm
     from wx_ilink_py import ILinkClient, create_app
 
-    # 1. Negation, questions & drama quotes do NOT trigger distance
-    for benign in ("我又没让你保持距离", "才不是肉麻", "这台词好肉麻", "这样肉麻吗？", "谁说我们不熟"):
-        assert not is_distance_request(benign), benign
-    for real in ("别撒娇了", "保持点距离吧", "正常点说话", "太黏了"):
-        assert is_distance_request(real), real
-
-    # Expanded close invites work and respect negations
-    assert is_close_invite("抱抱") and is_close_invite("多来找我聊天呀")
-    assert not is_close_invite("别抱抱") and not is_close_invite("不想你了")
-
-    # 2. Active distance lock decays naturally after 3+ days & multi-day chatting (>=4 msgs across >=2 days)
-    tz = timezone(timedelta(hours=8))
-    base = datetime(2026, 11, 20, 0, 15, 0, tzinfo=tz)
-    violetdb.execute("INSERT INTO messages (role, direction, message_type, content, created_at) VALUES ('user', 'incoming', 'text', '别太黏了', ?)", (base.isoformat(),))
-    assert assess(violetdb, now=base + timedelta(hours=12)).stage == "distance"
-
-    for offset_h, txt in ((10, "早呀"), (30, "吃午饭了"), (54, "刚下课"), (74, "晚上好")):
-        violetdb.execute(
-            "INSERT INTO messages (role, direction, message_type, content, created_at) VALUES ('user', 'incoming', 'text', ?, ?)",
-            (txt, (base + timedelta(hours=offset_h)).isoformat()),
-        )
-    assert assess(violetdb, now=base + timedelta(hours=80)).stage != "distance"
-
-    # 3. Fresh distance trigger shows up in /api/persona/templates and clears cleanly via POST /api/persona/distance/clear
     pt.switch(violetdb, "stepsister", "keep")
-    violetdb.execute("DELETE FROM messages")
-    now_iso = violetdb.now()
-    violetdb.execute("INSERT INTO messages (role, direction, message_type, content, created_at) VALUES ('user', 'incoming', 'text', '保持距离吧', ?)", (now_iso,))
+    # 1. Casual / joke messages NEVER trigger regex distance lock anymore
+    violetdb.add_user_message("text", "哈哈别太黏人了，这台词好肉麻")
+    assert assess(violetdb).stage != "distance"
+
+    # 2. Explicit closeness=distance recorded by MemoryAgent activates distance stage cleanly
+    pref_res = Profile(violetdb).preferences.set_explicit(
+        "closeness", "distance", evidence="以后保持点距离，别撒娇了",
+        user_message="我们以后保持点距离，别撒娇了",
+    )
+    assert pref_res["action"] == "set"
     assert assess(violetdb).stage == "distance"
 
+    # 3. Distance status shows up in /api/persona/templates and clears cleanly via POST /api/persona/distance/clear
     token = "test-distance-token"
     headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost"}
     install_fake_llm(monkeypatch, FakeLLM(default_responders("嗯")))

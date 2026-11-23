@@ -20,7 +20,7 @@ def world(monkeypatch, violetdb, tmp_path):
     monkeypatch.setenv("DEBOUNCE_EXTRA", "0.1")
     monkeypatch.setenv("VIOLET_SEND_RETRY_DELAY_SECONDS", "0")
     llm = install_fake_llm(monkeypatch, FakeLLM(default_responders("嗯嗯")))
-    from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
+    from ai.agents import ChatAgent, MemoryAgent
     from ai.proactive_scheduler import ProactiveScheduler
     from violet_runtime import VioletRuntime, MessageSender
     client = FakeILinkClient()
@@ -29,14 +29,14 @@ def world(monkeypatch, violetdb, tmp_path):
 
     def write_config(**overrides):
         base = {"enabled": True, "quiet_hours": far_quiet_hours(), "daily_message_limit": 3, "min_minutes_after_user_message": 90,
-                "min_minutes_between_proactive_messages": 180, "allowed_tasks": {},
+                "min_minutes_between_proactive_messages": 180,
                 "random_delay_minutes": {k: [60, 60] for k in ("morning", "noon", "afternoon", "evening", "night", "other")}}
         base.update(overrides)
         config.write_text(json.dumps(base, ensure_ascii=False), encoding="utf-8")
 
     write_config()
     holder = {}
-    scheduler = ProactiveScheduler(ProactiveAgent(), agents["chat"], send_messages=lambda m, e=None: holder["rt"].send_proactive(m, e), config_path=config)
+    scheduler = ProactiveScheduler(agents["chat"], send_messages=lambda m, e=None: holder["rt"].send_proactive(m, e), config_path=config)
     rt = VioletRuntime(client, violetdb, agents, proactive_scheduler=scheduler,
                     sender=MessageSender(client, violetdb, simulate_typing=False, sleep=lambda s: None))
     holder["rt"] = rt
@@ -99,16 +99,20 @@ def test_proactive_frequency_defaults_are_low():
             shipped["min_minutes_between_proactive_messages"]) == (3, 90, 180)
 
 
-# --- backoff -----------------------------------------------------------------------------------
+# --- backoff (pure unanswered count) -----------------------------------------------------------
 
-def test_engagement_decides_between_normal_interval_and_backoff(world):
+def test_unanswered_proactive_backs_off_and_any_user_reply_resets(world):
     db = world.db
+    db.add_user_message("text", "早", created_at=(now(db) - timedelta(hours=3)).isoformat())
     db.add_proactive_event("scheduled_proactive_check", status="sent", action_type="chat")
-    world.scheduler.on_user_engagement(False)
-    gap = (datetime.fromisoformat(db.get_proactive_setting("next_proactive_at")) - now(db)).total_seconds() / 60
-    assert 118 <= gap <= 121                      # cold streak 1 -> x2
-    world.scheduler.tracker.evaluate_user_turn("刚下课，今天实验做得超顺利")
-    world.scheduler.on_user_engagement(True)
+    assert world.scheduler.unanswered_count() == 1
+    nxt = world.scheduler._backoff_next_time(now(db))
+    gap = (nxt - now(db)).total_seconds() / 60
+    assert 118 <= gap <= 121                      # 1 unanswered -> x2
+    # Any reply (even brief "嗯") resets unanswered count to 0 and restores normal interval
+    db.add_user_message("text", "嗯", created_at=(now(db) + timedelta(seconds=5)).isoformat())
+    assert world.scheduler.unanswered_count() == 0
+    world.scheduler.on_user_message()
     gap = (datetime.fromisoformat(db.get_proactive_setting("next_proactive_at")) - now(db)).total_seconds() / 60
     assert 58 <= gap <= 61
 
@@ -120,27 +124,15 @@ def test_backoff_is_capped(world):
     assert (nxt - now(world.db)).total_seconds() / 60 <= 60 * 8 + 1
 
 
-# --- fixed-time tasks --------------------------------------------------------------------------
-
-def _fixed_task_config(world, **extra):
-    task = {"enabled": True, "description": "天气提醒", "fixed_check_time": hhmm(now(world.db)),
-            "daily_limit": 1, "weekly_limit": 7}
-    world.write_config(allowed_tasks={"weather_reminder": task}, **extra)
-    world.llm.responders["fake-proactive"] = lambda kw: json.dumps({"should_act": False, "action_type": "none", "reason": "t"})
-
-
-def test_fixed_task_skips_quiet_hours(world):
-    current = now(world.db)
-    _fixed_task_config(world, quiet_hours={"start": hhmm(current - timedelta(hours=1)), "end": hhmm(current + timedelta(hours=1))})
+def test_single_call_proactive_no_reply_skips_without_sending(world):
+    db = world.db
+    db.add_user_message("text", "早", created_at=(now(db) - timedelta(hours=3)).isoformat())
+    db.set_proactive_setting("next_proactive_at", (now(db) - timedelta(minutes=1)).isoformat())
+    world.llm.responders["fake-chat"] = lambda kw: "[NO_REPLY]"
     world.scheduler.tick()
-    assert world.llm.calls_for("fake-proactive") == []
-
-
-def test_fixed_task_not_right_after_another_proactive_message(world):
-    _fixed_task_config(world)
-    world.db.add_proactive_event("scheduled_proactive_check", status="sent", action_type="chat")
-    world.scheduler.tick()
-    assert world.llm.calls_for("fake-proactive") == []
+    assert world.client.sent_texts == []
+    ev = db.list_proactive_events()[0]
+    assert ev["status"] == "skipped"
 
 
 # --- commitments -------------------------------------------------------------------------------
@@ -197,16 +189,6 @@ def test_reminder_send_failure_is_retried_then_marked_failed(world):
 
 
 # --- policy units ----------------------------------------------------------------------------------
-
-def test_decision_validation_rules():
-    from ai.chat import validate_proactive_decision
-    state = {"allowed_memories": [{"id": 1, "content": "用户在学吉他"}],
-             "cooling_topics": [{"topic_key": "daily_checkin"}]}
-    assert validate_proactive_decision({"topic_key": "music", "mentioned_memory_ids": [1]}, state) is None
-    assert "may not be raised" in validate_proactive_decision({"topic_key": "x", "mentioned_memory_ids": [2]}, state)
-    assert "cooling" in validate_proactive_decision({"topic_key": "Daily_Checkin"}, state)
-    assert validate_proactive_decision({"topic_key": "x", "mentioned_memory_ids": [2]}, {}) is None   # no state: legacy
-
 
 def test_no_reply_token_means_do_not_send():
     from ai.chat_output import normalize_chat_output

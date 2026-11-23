@@ -181,17 +181,16 @@ def test_out_of_tool_rounds_the_note_is_not_a_system_message(monkeypatch, violet
     assert last[-1]["content"].startswith("〔系统提示｜不是对方说的话〕")
 
 
-def test_the_proactive_decision_has_the_same_shape(monkeypatch, violetdb):
-    from ai.agents import ProactiveAgent
+def test_the_proactive_message_has_the_same_shape(monkeypatch, violetdb):
+    from ai.agents import ChatAgent
     violetdb.add_message("user", "incoming", "text", "今天好累")
     violetdb.add_message("assistant", "outgoing", "text", "早点休息")
-    llm = install_fake_llm(monkeypatch, FakeLLM(default_responders()))
-    event = json.dumps({"event_type": "scheduled_check", "conversation_state": {}}, ensure_ascii=False)
-    ProactiveAgent().run(event)
+    llm = install_fake_llm(monkeypatch, FakeLLM(default_responders("[NO_REPLY]")))
+    ChatAgent().run("[proactive event]", call_context={"is_proactive": True, "proactive_note": "【主动联系参考】测试"})
     request = llm.calls[-1]["messages"]
     assert [m["role"] for m in request] == ["system", "user", "assistant", "user"]
-    assert "action_type 只能是 none 或 chat" in request[0]["content"] and "PerformerAgent" not in request[0]["content"]
-    assert json.loads(request[-1]["content"].splitlines()[-1])["event_type"] == "scheduled_check"
+    assert "PerformerAgent" not in request[0]["content"]
+    assert "【主动联系参考】测试" in request[-1]["content"]
 
 
 # ------------------------------------------------------------------------------------------------ no keyword gates

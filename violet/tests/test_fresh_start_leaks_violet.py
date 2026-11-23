@@ -94,8 +94,7 @@ def test_the_relationship_view_starts_at_the_cut(fresh_start):
 def test_proactive_reasons_do_not_come_from_before_the_cut(fresh_start):
     from ai.proactive_scheduler import ProactiveScheduler
     scheduler = ProactiveScheduler.__new__(ProactiveScheduler)
-    glow = scheduler._afterglow(NOW)
-    assert glow is None or glow["quote"] not in ("晚安", "我今晚通宵")
+    assert scheduler._unanswered_proactive(NOW) == []
 
 
 def test_her_proactive_messages_from_before_the_cut_are_not_shown_again(fresh_start):

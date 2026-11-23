@@ -332,6 +332,10 @@ class BaseAgent:
                 )
                 time.sleep(delay)
 
+    def _usage_agent_name(self) -> str:
+        """Name recorded in llm_usage (subclasses may distinguish proactive vs reply calls)."""
+        return self.__class__.__name__
+
     def _create_completion(self, client, cfg: LLMConfig, **kwargs):
         """Phase 10.6: every model call's outcome goes to the diagnosis (agent, model, error kind -- no content)."""
         from ai import trace
@@ -343,14 +347,14 @@ class BaseAgent:
         except Exception as exc:
             from ai.setup_status import classify_error
             kind = classify_error(exc)[0]
-            record("model", False, agent=self.__class__.__name__, model=kwargs.get("model"), error_kind=kind)
-            trace.step("模型调用", agent=self.__class__.__name__, 模型=kwargs.get("model"), 给的工具=offered or None,
+            record("model", False, agent=self._usage_agent_name(), model=kwargs.get("model"), error_kind=kind)
+            trace.step("模型调用", agent=self._usage_agent_name(), 模型=kwargs.get("model"), 给的工具=offered or None,
                        tool_choice=kwargs.get("tool_choice"), 耗时毫秒=int((time.monotonic() - started) * 1000),
                        结果=f"失败（{kind}：{exc.__class__.__name__}）")
             raise
-        record("model", True, agent=self.__class__.__name__)
+        record("model", True, agent=self._usage_agent_name())
         from ai import usage as usage_ledger
-        usage_ledger.record(self.__class__.__name__, getattr(completion, "model", None) or kwargs.get("model"),
+        usage_ledger.record(self._usage_agent_name(), getattr(completion, "model", None) or kwargs.get("model"),
                             getattr(completion, "usage", None))
         if trace.enabled():
             usage = getattr(completion, "usage", None)
@@ -359,7 +363,7 @@ class BaseAgent:
                 calls = [c.function.name for c in (completion.choices[0].message.tool_calls or [])]
             except (AttributeError, IndexError, TypeError):
                 pass
-            trace.step("模型调用", agent=self.__class__.__name__, 模型=getattr(completion, "model", None) or kwargs.get("model"),
+            trace.step("模型调用", agent=self._usage_agent_name(), 模型=getattr(completion, "model", None) or kwargs.get("model"),
                        给的工具=offered or None, tool_choice=kwargs.get("tool_choice"),
                        耗时毫秒=int((time.monotonic() - started) * 1000),
                        tokens=getattr(usage, "total_tokens", None), 要调用=calls or None, 结果="ok")

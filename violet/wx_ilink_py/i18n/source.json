@@ -68,7 +68,7 @@
 "Chat 提示词版本": [
 "ai/control_config.py"
 ],
-"ChatAgent（写回复）": [
+"ChatAgent（聊天与主动发消息）": [
 "ai/control_config.py"
 ],
 "Chat（聊天）": [
@@ -120,9 +120,6 @@
 "ai/control_config.py"
 ],
 "OpenAI 兼容接口，例如 https://relay.example/v1": [
-"ai/control_config.py"
-],
-"ProactiveAgent（主动联系决策）": [
 "ai/control_config.py"
 ],
 "Proactive（主动消息）": [
@@ -1052,9 +1049,6 @@
 "主人设（默认）": [
 "control_persona.js"
 ],
-"主动决策": [
-"control_flow.js"
-],
 "主动找你": [
 "control.js"
 ],
@@ -1088,9 +1082,6 @@
 ],
 "主动联系你时发到": [
 "control.html"
-],
-"主动联系决策提示词版本": [
-"ai/control_config.py"
 ],
 "主动联系前看一眼手机": [
 "ai/control_config.py"
@@ -1140,6 +1131,9 @@
 ],
 "亲密黏人": [
 "control_persona.js"
+],
+"亲近程度": [
+"control.js"
 ],
 "亲近（默认）": [
 "ai/persona_templates.py"
@@ -1917,9 +1911,6 @@
 "写出要发的话，需要时查工具和记忆": [
 "control_flow.js"
 ],
-"写回复": [
-"control_model.js"
-],
 "冲突": [
 "control_schedule.js"
 ],
@@ -1928,9 +1919,6 @@
 ],
 "决定时给模型看最近多少条消息（包括已经看过的）": [
 "ai/control_config.py"
-],
-"决定要不要主动找你": [
-"control_model.js"
 ],
 "冷场时想说话的频率": [
 "ai/control_config.py"
@@ -3811,6 +3799,9 @@
 "已配置 {0} 个工具服务器": [
 "ai/setup_status.py"
 ],
+"希望保持一点距离": [
+"control.js"
+],
 "希望她少主动发消息": [
 "control.js"
 ],
@@ -5423,6 +5414,9 @@
 "control_diag.js",
 "control_mcp.js"
 ],
+"正常相处": [
+"control.js"
+],
 "正常：{0} 个工具可用（授权给 {1}）": [
 "ai/mcp_admin.py"
 ],
@@ -6274,9 +6268,6 @@
 "留空 = 用 .env 里的 CHAT_LLM_PROMPT；选一个版本 = 用 persona/chat_prompt_versions 里对应的文件": [
 "ai/control_config.py"
 ],
-"留空 = 用 .env 里的 PROACTIVE_LLM_PROMPT": [
-"ai/control_config.py"
-],
 "留空 = 用 Chat 模型。在 QQ 上回复你、主动找你，以及群聊和别人的私聊（没有单独设群聊模型时）都用这个模型": [
 "ai/control_config.py"
 ],
@@ -6750,6 +6741,9 @@
 "耳机 / 蓝牙": [
 "control_mcp.js"
 ],
+"聊天与主动发消息": [
+"control_model.js"
+],
 "聊天中偶尔自然地问一个关于你的问题（每次最多一个，被拒绝的不再问）": [
 "ai/control_config.py"
 ],
@@ -7020,9 +7014,6 @@
 ],
 "装好语音并上传参考录音后，她偶尔会发语音条（你让她说话、念东西，或者她想撒娇、道晚安时）：只发语音，几分钟后到，生成失败就改发文字；关掉就只打字": [
 "ai/control_config.py"
-],
-"要不要主动找你、说什么": [
-"control_flow.js"
 ],
 "要你批准的事、批准后的结果，由她用自己的话告诉你（多一次模型调用；写漏了编号就改发原文）；关：直接发系统写好的原文": [
 "ai/control_config.py"

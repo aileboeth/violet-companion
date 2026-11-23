@@ -1,4 +1,16 @@
-"""Scheduler for Violet's proactive message pipeline."""
+"""Scheduler for Violet's proactive outreach, explicit reminders, and holiday greetings (reworked v0.7.78).
+
+Single-model architecture:
+* Code enforces ONLY the 7 hard safety/rhythm gates (enabled/test mode, quiet hours, user off/busy,
+  optional timetable gate, daily limit, consecutive unanswered count, and stage-scaled spacing).
+* When due, the scheduler prepares a compact proactive note (warmth level, today's fresh daily/life
+  events, optional upcoming user event / open plan / schedule moment / web finding, recent proactive
+  openings, and phone snapshot) and calls ChatAgent ONCE.
+* ChatAgent either writes a short natural message or outputs [NO_REPLY] (skipped, nothing sent).
+* Post-send tracking marks shared life events, upcoming events, web findings, and schedule moments
+  directly from the actual sent text.
+"""
+from __future__ import annotations
 
 import json
 import logging
@@ -9,11 +21,16 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from ai.chat import violetdb, run_commitment_pipeline, run_proactive_pipeline
-from ai.chat_output import normalize_chat_output, strip_images
-from ai.conversation_state import (VIOLET_SOURCES, LIFE_TOPIC, WEB_TOPIC, TopicTracker, life_topic_key, memory_topic_key,
-                                   web_topic_key)
-from ai.memory_model import PROGRESS_LABELS, event_deadline, parse_time
+from ai.chat import note_web_mentions, run_commitment_pipeline, run_proactive_pipeline, violetdb
+from ai.conversation_state import (
+    LIFE_TOPIC,
+    VIOLET_SOURCES,
+    WEB_TOPIC,
+    TopicTracker,
+    life_topic_key,
+    memory_topic_key,
+)
+from ai.memory_model import PROGRESS_LABELS, event_deadline, parse_time, touches_topic
 from ai.profile_schema import BUSY_VALUES_NO_CLASS_RE, BUSY_VALUES_RE
 from ai.profile_store import Profile
 from ai.settings import env_bool
@@ -24,8 +41,6 @@ CHINA_TZ = timezone(timedelta(hours=8))
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "proactive_config.json"
 
-# Defaults for every key; proactive_config.json overrides them. Chat frequency is
-# deliberately low; explicit reminders (commitments) are not limited by it.
 DEFAULT_CONFIG: dict[str, Any] = {
     "enabled": True,
     "check_interval_seconds": 60,
@@ -41,18 +56,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "night": [180, 300],
         "other": [120, 240],
     },
-    # After proactive messages that got no / only a brief reply, wait longer
-    # (interval x factor^cold_streak) and stop generic chat at max_cold_streak
-    # until the user engages again. Reminders are not affected.
+    # Backoff on completely unanswered proactive messages (any user reply resets to 0).
     "unanswered_backoff_factor": 2.0,
     "max_backoff_multiplier": 8,
     "max_cold_streak": 2,
-    # Fixed-time tasks: once per day per task, outside quiet hours, and not
-    # right after another proactive message.
-    "fixed_task_min_gap_minutes": 30,
-    # Phase 3: a planned event the user raised themselves recently may be
-    # mentioned ONCE before it happens (e.g. wishing them luck). Never after it
-    # happened: no "how did it go" follow-ups.
     "event_topics": {
         "enabled": True,
         "lookahead_hours": 24,
@@ -63,19 +70,23 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_attempts": 3,
         "retry_minutes": 5,
     },
-    "allowed_tasks": {},
 }
 
-
-# Phase 8.9.5: the check-in question every real proactive message ended with (8.9.4 A1/A2/A3).
-CHECKIN_RE = re.compile(r"(今天|今晚|今早|最近|这两天|这几天)[^，。！？!?\n]{0,8}(怎么样|怎么过|还好吗|还顺|顺不顺|累不累|忙不忙|过得)|"
-                        r"吃(饭)?了(吗|没)|吃得怎么样|在干嘛|在做什么|起床了(吗|没)")
+CHECKIN_RE = re.compile(
+    r"(今天|今晚|今早|最近|这两天|这几天)[^，。！？!?\n]{0,8}(怎么样|怎么过|还好吗|还顺|顺不顺|累不累|忙不忙|过得)|"
+    r"吃(饭)?了(吗|没)|吃得怎么样|在干嘛|在做什么|起床了(吗|没)"
+)
 
 
 def now_china() -> datetime:
     """Current time in the configured zone (VIOLET_TIMEZONE; name kept for compatibility)."""
     from ai.settings import now_local
     return now_local()
+
+
+def _zone():
+    from ai.settings import local_timezone
+    return local_timezone()
 
 
 def parse_iso(value: str | None) -> datetime | None:
@@ -90,11 +101,6 @@ def parse_iso(value: str | None) -> datetime | None:
     return parsed.astimezone(_zone())
 
 
-def _zone():
-    from ai.settings import local_timezone
-    return local_timezone()
-
-
 def time_bucket(current: datetime | None = None) -> str:
     hour = (current or now_china()).hour
     if 5 <= hour < 11:
@@ -105,9 +111,7 @@ def time_bucket(current: datetime | None = None) -> str:
         return "afternoon"
     if 18 <= hour < 23:
         return "evening"
-    if 23 <= hour or hour < 5:
-        return "night"
-    return "other"
+    return "night"
 
 
 def minutes_since(value: str | None, current: datetime | None = None) -> float | None:
@@ -141,27 +145,37 @@ def load_json(path: Path, default: dict[str, Any]) -> dict[str, Any]:
     return deep_merge(default, loaded)
 
 
+def _format_gap(minutes: float | None) -> str:
+    if minutes is None or minutes < 0:
+        return "很久"
+    total = int(minutes)
+    if total < 60:
+        return f"{max(1, total)} 分钟"
+    hours, rem = divmod(total, 60)
+    if hours >= 24:
+        return f"{hours // 24} 天多"
+    return f"{hours} 小时" + (f" {rem} 分钟" if rem >= 10 else "")
+
+
 class ProactiveScheduler:
-    """Background scheduler that triggers the proactive pipeline."""
+    """Background scheduler for Violet's proactive messages, explicit reminders, and holiday greetings."""
+
+    HOLIDAY_ATTEMPTS = 2
 
     def __init__(
         self,
-        proactive_agent,
         chat_agent,
         send_messages: Callable[[list[dict[str, Any]], int], dict[str, Any] | None],
         config_path: str | Path = DEFAULT_CONFIG_PATH,
         is_busy: Callable[[], bool] | None = None,
         pipeline_lock=None,
     ):
-        self.proactive_agent = proactive_agent
         self.chat_agent = chat_agent
         self.send_messages = send_messages
         self.config_path = Path(config_path)
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
-        # Shared with the message runtime so a proactive run never overlaps a
-        # user turn of the same persona scope.
         self._is_busy = is_busy or (lambda *_a: False)
         self._pipeline_lock = pipeline_lock or threading.RLock()
         self._scope_lock: Callable[[str | None], Any] | None = None
@@ -184,27 +198,24 @@ class ProactiveScheduler:
             return bool(self._is_busy())
 
     def _channel_scope(self):
-        """Phase 10: a proactive message is written for the channel it will be sent on."""
         from ai.channels.context import channel_scope
         provider = getattr(self, "_channel_context", None)
         try:
             context = provider() if provider is not None else None
         except Exception:
-            logger.exception("[ProactiveScheduler] channel of the next proactive message unknown; using WeChat")
+            logger.exception("[ProactiveScheduler] channel unknown; using WeChat")
             context = None
         if context is None and provider is not None:
             from ai import memory_scope
             if memory_scope.current() != memory_scope.MAIN:
-                return None                    # 2026-11-02: this persona has no channel to write on
+                return None
         if context is None:
-            # the main persona: WeChat as before, unless WeChat belongs to another persona
             from ai import memory_scope
             if memory_scope.for_channel("wechat") != memory_scope.current():
                 return None
         return channel_scope(context)
 
     def _each_scope(self, work) -> None:
-        """2026-11-02 (ai/memory_scope): every persona has her own rhythm, reminders and channel."""
         from ai import memory_scope
         for scope in memory_scope.all_scopes():
             if self._scope_lock is not None and self._busy_in_scope(scope):
@@ -228,13 +239,13 @@ class ProactiveScheduler:
 
     def load_config(self) -> dict[str, Any]:
         self.config = load_json(self.config_path, DEFAULT_CONFIG)
-        try:                                          # phase 9.0: the Control Center's saved proactive settings
+        try:
             from ai.control_config import store
             overrides = store().proactive_overrides()
             if overrides:
                 self.config = deep_merge(self.config, overrides)
         except Exception:
-            logger.exception("[ProactiveScheduler] control center overrides unavailable; using the config file")
+            logger.exception("[ProactiveScheduler] control center overrides unavailable; using config file")
         return self.config
 
     def reload(self) -> None:
@@ -252,16 +263,10 @@ class ProactiveScheduler:
         self._stop_event.set()
 
     def on_user_message(self) -> None:
+        """Any message from the user resets unanswered backoff and schedules the next check cleanly."""
         with self._lock:
             self.load_config()
             self._set_next_proactive_at(self._random_next_time(now_china()))
-
-    def on_user_engagement(self, engaged: bool) -> None:
-        """Called once a user turn is classified: a brief reply keeps the backoff."""
-        with self._lock:
-            self.load_config()
-            current = now_china()
-            self._set_next_proactive_at(self._random_next_time(current) if engaged else self._backoff_next_time(current))
 
     def _get_next_proactive_at(self) -> datetime | None:
         return parse_iso(violetdb.get_proactive_setting("next_proactive_at"))
@@ -269,8 +274,10 @@ class ProactiveScheduler:
     def _set_next_proactive_at(self, value: datetime) -> None:
         violetdb.set_proactive_setting("next_proactive_at", value.isoformat())
 
+    # ------------------------------------------------------------------
+    # Stage-scaled warmth & spacing
+    # ------------------------------------------------------------------
     def _warmth_profile(self, current: datetime | None = None) -> tuple[Any, dict[str, Any] | None, str | None, int, dict[str, Any]]:
-        """(RelationshipView, persona_stage, rel_kind, warmth_level 0..3, pace dict) for the current scope."""
         from ai.relationship import RelationshipView, assess, proactive_pace, warmth_level
         try:
             view = assess(violetdb, current)
@@ -286,11 +293,10 @@ class ProactiveScheduler:
         return view, persona_stage, rel_kind, level, proactive_pace(level)
 
     def _effective_intervals(self, current: datetime | None = None) -> tuple[float, float, int, dict[str, Any]]:
-        """(min_after_user, min_between, warmth_level, pace) scaled by stage warmth unless user prefers 'less'."""
         from ai.relationship import scaled_minutes
         _, _, _, level, pace = self._warmth_profile(current)
         try:
-            pref = (self.profile.preferences.effective().get("proactive_chat") or {})
+            pref = self.profile.preferences.effective().get("proactive_chat") or {}
         except Exception:                                    # noqa: BLE001
             pref = {}
         less = pref.get("value") == "less"
@@ -316,6 +322,27 @@ class ProactiveScheduler:
         hi = max(lo, int(round(scaled_minutes(float(max_delay), scale, floor=25))))
         return current + timedelta(minutes=random.randint(lo, hi))
 
+    def _preference_multiplier(self) -> float:
+        pref = self.profile.preferences.effective().get("proactive_chat") or {}
+        if pref.get("value") != "less":
+            return 1.0
+        return 2.0 if pref.get("origin") == "explicit" else 1.5
+
+    def _backoff_next_time(self, current: datetime) -> datetime:
+        base = self._random_next_time(current)
+        unanswered = self.unanswered_count(current)
+        factor = float(self.config.get("unanswered_backoff_factor", 2.0))
+        cap = float(self.config.get("max_backoff_multiplier", 8))
+        multiplier = min(cap, factor ** unanswered) * self._preference_multiplier()
+        return current + (base - current) * multiplier
+
+    def unanswered_count(self, current: datetime | None = None) -> int:
+        """Consecutive proactive chat messages sent since the user's latest message (any reply resets to 0)."""
+        return len(self._unanswered_proactive(current or now_china()))
+
+    # ------------------------------------------------------------------
+    # Loop & ticks
+    # ------------------------------------------------------------------
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
             try:
@@ -326,7 +353,6 @@ class ProactiveScheduler:
             self._stop_event.wait(max(5, interval))
 
     def tick(self) -> None:
-        # Per-scope mode (attached to VioletRuntime): one persona's slow turn never blocks another persona's tick.
         if self._scope_lock is not None:
             if not self._busy_in_scope("main"):
                 main_lock = self._scope_lock("main")
@@ -337,7 +363,6 @@ class ProactiveScheduler:
                         main_lock.release()
             self._each_scope(self._tick_locked)
             return
-        # Standalone / legacy mode: single shared is_busy + pipeline_lock
         if self._is_busy():
             return
         if not self._pipeline_lock.acquire(blocking=False):
@@ -357,35 +382,16 @@ class ProactiveScheduler:
             violetdb.refresh_event_states()
             self.tracker.expire_unanswered()
 
-        # 明确约定的提醒：独立于普通闲聊的频率限制
+        # Explicit user-requested reminders and holiday greetings run outside the regular chat cap.
         if self._deliver_due_commitments(current):
             return
-        if self._holiday_greeting(current):                # 2026-11-03: once per holiday, outside the daily cap
-            return
-
-        with self._lock:
-            # 固定时间任务检查（独立于随机调度，但仍有安全/重复检查）
-            fixed_tasks = self._get_due_fixed_tasks(current)
-            if fixed_tasks:
-                event_context = self._build_event_context(current, task_whitelist=fixed_tasks)
-                event_context["event_type"] = "fixed_time_task_check"
-
-        if fixed_tasks:
-            logger.info("[ProactiveScheduler] triggering fixed-time task check: %s", fixed_tasks)
-            pipeline = run_proactive_pipeline(
-                event_context=event_context,
-                proactive_agent=self.proactive_agent,
-                chat_agent=self.chat_agent,
-            )
-            self._handle_pipeline_result(pipeline, event_context, kind="fixed")
+        if self._holiday_greeting(current):
             return
 
         with self._lock:
             due, reason = self._is_due(current)
             moment = self._phone_moment(current) if not due and reason == "not due yet" else None
             if moment:
-                # 2026-11-03 (ai/phone_events.py): e.g. the first unlock of the morning -- decide now, not at the
-                # random time; every other rule of _is_due still applies
                 due, reason = self._is_due(current, ignore_next_at=True)
                 reason = "phone moment" if due else reason
             if not due:
@@ -399,11 +405,7 @@ class ProactiveScheduler:
 
         self._add_phone(event_context)
         logger.info("[ProactiveScheduler] triggering proactive pipeline: %s", reason)
-        pipeline = run_proactive_pipeline(
-            event_context=event_context,
-            proactive_agent=self.proactive_agent,
-            chat_agent=self.chat_agent,
-        )
+        pipeline = run_proactive_pipeline(event_context=event_context, chat_agent=self.chat_agent)
         self._handle_pipeline_result(pipeline, event_context, kind="scheduled")
 
     def status_snapshot(self) -> dict[str, Any]:
@@ -414,6 +416,7 @@ class ProactiveScheduler:
             from ai.relationship import WARMTH_LABELS
             view, _, _, level, _ = self._warmth_profile(current)
             eff_after, eff_between, _, _ = self._effective_intervals(current)
+            unanswered = self.unanswered_count(current)
             return {
                 "enabled": self.config.get("enabled", True),
                 "current_time": current.isoformat(),
@@ -431,38 +434,17 @@ class ProactiveScheduler:
                 "effective_min_between_minutes": eff_between,
                 "is_due": due,
                 "due_reason": reason,
-                "cold_streak": self.tracker.cold_streak(),
+                "unanswered_count": unanswered,
+                "cold_streak": unanswered,
                 "cooling_topics": self.tracker.cooling_topics(),
                 "pending_commitments": violetdb.list_commitments(["pending", "sending"], limit=20),
-                "allowed_tasks": self._build_event_context(current)["allowed_tasks"],
             }
 
-    def force_run(
-        self,
-        send: bool = False,
-        event_context_patch: dict[str, Any] | None = None,
-        force_task: str | None = None,
-    ) -> dict[str, Any]:
+    def force_run(self, send: bool = False, event_context_patch: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
             self.load_config()
             current = now_china()
             event_context = self._build_event_context(current)
-            if force_task:
-                task_config = self.config.get("allowed_tasks", {}).get(force_task)
-                if not task_config:
-                    raise ValueError(f"Unknown proactive task: {force_task}")
-                event_context["allowed_tasks"] = {
-                    force_task: {
-                        **task_config,
-                        "enabled": True,
-                        "name": force_task,
-                        "daily_used": self._task_day_count(force_task, current),
-                        "weekly_used": self._task_week_count(force_task, current),
-                    }
-                }
-                event_context["task_block_reason"] = None
-                event_context["force_task"] = force_task
-                event_context["test_instruction"] = f"这是手动测试，请优先选择任务 {force_task}，不要因为真实时间窗或概率跳过。"
             if event_context_patch:
                 event_context = deep_merge(event_context, event_context_patch)
             event_context["event_type"] = "manual_proactive_test"
@@ -475,21 +457,20 @@ class ProactiveScheduler:
             if scoped is None:
                 raise RuntimeError("这个人设没有可以发消息的渠道")
             with scoped:
-                pipeline = run_proactive_pipeline(
-                    event_context=event_context,
-                    proactive_agent=self.proactive_agent,
-                    chat_agent=self.chat_agent,
-                )
+                pipeline = run_proactive_pipeline(event_context=event_context, chat_agent=self.chat_agent)
                 if send:
-                    self._handle_pipeline_result(pipeline)
+                    self._handle_pipeline_result(pipeline, event_context)
         finally:
             self._pipeline_lock.release()
         return pipeline
 
+    # ------------------------------------------------------------------
+    # Hard gates (7 simple rules)
+    # ------------------------------------------------------------------
     def _is_due(self, current: datetime, ignore_next_at: bool = False) -> tuple[bool, str]:
         from ai import test_mode
         if test_mode.active():
-            return False, "test mode"                    # 2026-10-30: nothing by herself while testing
+            return False, "test mode"
         next_at = self._get_next_proactive_at()
         if not next_at and not ignore_next_at:
             self._set_next_proactive_at(self._random_next_time(current))
@@ -518,31 +499,27 @@ class ProactiveScheduler:
         busy = self._busy_situation()
         if busy is not None:
             return False, f"the user said they are busy ({busy['value']}) until {busy['expires_at'][5:16]}"
-        # phase 9.4.4 (VIOLET_SCHEDULE_PROACTIVE): a class / exam by the timetable -- after the user's own wishes and
-        # busy state, before the opportunity checks; it only ever adds a reason not to write
         gate = self._schedule_gate(current)
         if gate is not None and gate.blocked:
             self._postpone_past(gate)
             return False, gate.reason()
         if self._today_sent_count(current) >= daily_limit:
             return False, "daily proactive limit reached"
-        cold = self.tracker.cold_streak()
-        if cold >= int(self.config.get("max_cold_streak", 2)):
-            return False, f"waiting for the user to re-engage (cold streak {cold})"
+        unanswered = self.unanswered_count(current)
+        if unanswered >= int(self.config.get("max_cold_streak", 2)):
+            return False, f"waiting for the user to reply ({unanswered} unanswered)"
         return True, "due"
 
     def _in_quiet_hours(self, current: datetime) -> bool:
         quiet = self.config.get("quiet_hours") or {}
-        start = quiet.get("start")
-        end = quiet.get("end")
+        start, end = quiet.get("start"), quiet.get("end")
         if not start or not end:
             return False
-        current_minutes = current.hour * 60 + current.minute
-        start_minutes = self._hhmm_to_minutes(start)
-        end_minutes = self._hhmm_to_minutes(end)
-        if start_minutes <= end_minutes:
-            return start_minutes <= current_minutes < end_minutes
-        return current_minutes >= start_minutes or current_minutes < end_minutes
+        now_m = current.hour * 60 + current.minute
+        start_m, end_m = self._hhmm_to_minutes(start), self._hhmm_to_minutes(end)
+        if start_m <= end_m:
+            return start_m <= now_m < end_m
+        return now_m >= start_m or now_m < end_m
 
     @staticmethod
     def _hhmm_to_minutes(value: str) -> int:
@@ -552,391 +529,171 @@ class ProactiveScheduler:
     def _day_start(self, current: datetime) -> str:
         return current.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
-    def _week_start(self, current: datetime) -> str:
-        start = current - timedelta(days=current.weekday())
-        return start.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-
     def _today_sent_count(self, current: datetime) -> int:
-        # Explicit reminders do not use up the chat budget.
-        return violetdb.count_proactive_events_since(self._day_start(current), status="sent",
-                                                  exclude_event_types=("commitment_reminder", "holiday_greeting"))
-
-    def _task_week_count(self, task_name: str, current: datetime) -> int:
-        return violetdb.count_proactive_events_since(
-            self._week_start(current),
-            action_type="task",
-            task_name=task_name,
-        )
-
-    def _task_day_count(self, task_name: str, current: datetime) -> int:
         return violetdb.count_proactive_events_since(
             self._day_start(current),
-            action_type="task",
-            task_name=task_name,
+            status="sent",
+            exclude_event_types=("commitment_reminder", "holiday_greeting"),
         )
 
-    def _get_due_fixed_tasks(self, current: datetime) -> list[str]:
-        """返回当前时间命中固定检查时间、且今天尚未检查过的任务名列表。"""
-        due = []
-        if self._in_quiet_hours(current):
-            return due
-        # A fixed-time task is still Violet starting a conversation (unlike a reminder the user asked for):
-        # an explicit "do not start conversations" and a current busy situation always win.
-        # Not marked as done, so nothing is queued up for later -- that day's check is simply skipped.
-        proactive_pref = self.profile.preferences.effective().get("proactive_chat") or {}
-        if proactive_pref.get("origin") == "explicit" and proactive_pref.get("value") == "no":
-            return due
-        if self._busy_situation() is not None:
-            return due
-        gate = self._schedule_gate(current)                # phase 9.4.4: same as busy -- skipped, not queued
-        if gate is not None and gate.blocked:
-            return due
-        since_sent = minutes_since(violetdb.get_latest_proactive_event_at(status="sent"), current)
-        if since_sent is not None and since_sent < float(self.config.get("fixed_task_min_gap_minutes", 30)):
-            return due
-        current_minutes = current.hour * 60 + current.minute
-        # 允许在固定时间点前后 check_interval_seconds/2 的窗口内命中
-        tolerance = int(self.config.get("check_interval_seconds", 60)) // 2
-        for task_name, task_config in (self.config.get("allowed_tasks") or {}).items():
-            if not task_config.get("enabled", False):
-                continue
-            fixed_time = task_config.get("fixed_check_time")
-            if not fixed_time:
-                continue
-            target_minutes = self._hhmm_to_minutes(fixed_time)
-            if abs(current_minutes - target_minutes) > tolerance:
-                continue
-            # 检查今天是否已经针对该任务做过 fixed_time 触发（避免同一分钟重复）
-            checked_key = f"fixed_check_done_{task_name}_{current.date().isoformat()}"
-            if violetdb.get_proactive_setting(checked_key):
-                continue
-            violetdb.set_proactive_setting(checked_key, "1")
-            due.append(task_name)
-        return due
+    def _busy_situation(self) -> dict[str, Any] | None:
+        pattern = BUSY_VALUES_RE if env_bool("VIOLET_SCHEDULE_PROACTIVE", False) else BUSY_VALUES_NO_CLASS_RE
+        for situation in self.profile.situations.current(["availability", "activity"]):
+            if pattern.search(situation["value"]):
+                return situation
+        return None
 
-    def _is_task_time_allowed(self, task_config: dict[str, Any], current: datetime) -> bool:
-        windows = task_config.get("allowed_time_windows") or []
-        if not windows:
-            return True
-        current_minutes = current.hour * 60 + current.minute
-        for window in windows:
-            start, end = window.split("-", 1)
-            if self._hhmm_to_minutes(start) <= current_minutes <= self._hhmm_to_minutes(end):
-                return True
-        return False
-
-    def _build_event_context(self, current: datetime, task_whitelist: list[str] | None = None) -> dict[str, Any]:
-        allowed_tasks = {}
-        blocked_reasons = []
-        for task_name, task_config in (self.config.get("allowed_tasks") or {}).items():
-            # 白名单模式：只包含指定任务，且强制启用（跳过概率/时间窗检查）
-            if task_whitelist is not None:
-                if task_name not in task_whitelist:
-                    continue
-                task_allowed = bool(task_config.get("enabled", False))
-                # 白名单任务仍然检查次数限制
-                daily_limit = int(task_config.get("daily_limit", 0) or 0)
-                weekly_limit = int(task_config.get("weekly_limit", 0))
-                if daily_limit and self._task_day_count(task_name, current) >= daily_limit:
-                    task_allowed = False
-                    blocked_reasons.append(f"{task_name} daily limit reached")
-                if weekly_limit and self._task_week_count(task_name, current) >= weekly_limit:
-                    task_allowed = False
-                    blocked_reasons.append(f"{task_name} weekly limit reached")
-                allowed_tasks[task_name] = {
-                    **task_config,
-                    "enabled": task_allowed,
-                    "name": task_name,
-                    "daily_used": self._task_day_count(task_name, current),
-                    "weekly_used": self._task_week_count(task_name, current),
-                }
-                continue
-
-            task_allowed = bool(task_config.get("enabled", False))
-            daily_limit = int(task_config.get("daily_limit", 0) or 0)
-            weekly_limit = int(task_config.get("weekly_limit", 0))
-            trigger_probability = float(task_config.get("trigger_probability", 1.0))
-            if task_allowed and trigger_probability < 1.0 and random.random() > trigger_probability:
-                task_allowed = False
-                blocked_reasons.append(f"{task_name} skipped by trigger probability")
-            if daily_limit and self._task_day_count(task_name, current) >= daily_limit:
-                task_allowed = False
-                blocked_reasons.append(f"{task_name} daily limit reached")
-            if weekly_limit and self._task_week_count(task_name, current) >= weekly_limit:
-                task_allowed = False
-                blocked_reasons.append(f"{task_name} weekly limit reached")
-            if not self._is_task_time_allowed(task_config, current):
-                task_allowed = False
-                blocked_reasons.append(f"{task_name} outside allowed time windows")
-            allowed_tasks[task_name] = {
-                **task_config,
-                "enabled": task_allowed,
-                "name": task_name,
-                "daily_used": self._task_day_count(task_name, current),
-                "weekly_used": self._task_week_count(task_name, current),
-            }
-
-        # 2026-11-19: materialise today's daily life before building state/motives so she still has a day even when the
-        # owner has not messaged yet (previously 6 consecutive proactive checks skipped with "没有可分享的生活小事")
+    # ------------------------------------------------------------------
+    # Single-call proactive context & direct note for ChatAgent
+    # ------------------------------------------------------------------
+    def _build_event_context(self, current: datetime) -> dict[str, Any]:
         try:
             from ai.daily_life import DailyLife
             DailyLife(violetdb).ensure_today(current)
         except Exception:                                    # noqa: BLE001
             logger.debug("[ProactiveScheduler] daily life ensure_today skipped", exc_info=True)
+
+        from ai.relationship import WARMTH_LABELS
+        view, _, _, level, _ = self._warmth_profile(current)
+        state = self._conversation_state(current)
+        schedule_moments = self._schedule_moments(current)
+        if schedule_moments:
+            state["allowed_schedule_moments"] = schedule_moments
+        unanswered = self._unanswered_proactive(current)
+        recent, habit_note = self._recent_proactive(current)
+        plans = self._shareable_open_plans(current)
+        since_user = minutes_since(violetdb.get_latest_message_at(role="user"), current)
+        sent_today = self._today_sent_count(current)
+        daily_limit = int(self.config.get("daily_message_limit", 3))
+        class_ok = not env_bool("VIOLET_SCHEDULE_PROACTIVE", False)
+
+        note, summary_topic = self._compose_proactive_note(
+            view=view,
+            level=level,
+            since_user=since_user,
+            sent_today=sent_today,
+            daily_limit=daily_limit,
+            unanswered=unanswered,
+            life_events=state.get("allowed_life_events") or [],
+            upcoming=[m for m in state.get("allowed_memories") or [] if m.get("type") == "upcoming_event"],
+            open_plans=plans,
+            web_findings=state.get("allowed_web_findings") or [],
+            schedule_moments=schedule_moments,
+            recent=recent,
+            habit_note=habit_note,
+            class_ok=class_ok,
+        )
         return {
             "event_type": "scheduled_proactive_check",
             "scheduled_at": current.isoformat(),
             "current_time": current.isoformat(),
             "time_bucket": time_bucket(current),
-            "minutes_since_user_message": minutes_since(violetdb.get_latest_message_at(role="user"), current),
+            "minutes_since_user_message": since_user,
             "minutes_since_last_proactive": minutes_since(violetdb.get_latest_proactive_event_at(status="sent"), current),
-            "daily_sent_count": self._today_sent_count(current),
-            "daily_message_limit": self.config.get("daily_message_limit"),
-            "allowed_tasks": allowed_tasks,
-            "task_selection_instruction": (
-                "allowed_tasks 是可选主动任务列表。每个任务都包含 description/task_info/constraints。"
-                "如果选择任务，task.name 必须等于其中一个 key，task.description 应基于配置 description，"
-                "task.task_info 和 task.constraints 应合并配置中的默认值，不要自行发明越权任务。"
-            ),
-            "task_block_reason": "; ".join(blocked_reasons) if blocked_reasons else None,
-            "conversation_state": (state := self._conversation_state()),
-            **self._motives(current, state),
-            **self._schedule_context(current, state),           # phase 9.4.4 (off: nothing)
-        }
-
-    def _motives(self, current: datetime, state: dict[str, Any]) -> dict[str, Any]:
-        """Phase 8.9.3: Violet's own reasons to get in touch (share / miss / ask_opinion), from the relationship and
-        her life -- so a proactive message comes because she has something, not because it is morning."""
-        try:
-            from ai.daily_life import mentions_life
-            from ai.life_store import LifeStore
-            from ai.relationship import WARMTH_LABELS, proactive_motives
-            view, persona_stage, rel_kind, level, _ = self._warmth_profile(current)
-            minutes = minutes_since(violetdb.get_latest_message_at(role="user"), current)
-            plans = LifeStore(violetdb).plans(["planned", "active"])
-            # phase 8.9.5: a plan of hers that came up in the chats of the last two days can be picked up again
-            since = current - timedelta(days=2)
-            from ai import context_cut                    # 2026-11-09: not from before 翻篇
-            recent_text = [r["content"] or "" for r in context_cut.owner_rows(violetdb.fetch_all(
-                "SELECT content, created_at FROM messages ORDER BY id DESC LIMIT 120"))
-                if r["created_at"] and parse_time(r["created_at"]) >= since]
-            talked = {p["id"] for p in plans if any(mentions_life(t, p["content"]) for t in recent_text)}
-            motives = proactive_motives(view, None if minutes is None else minutes / 60, state.get("cold_streak", 0),
-                                        state.get("allowed_life_events") or [], plans, talked,
-                                        unanswered=self._unanswered_proactive(current),
-                                        afterglow=self._afterglow(current), persona_stage=persona_stage,
-                                        rel_kind=rel_kind)
-            # phase 8.9.8: where the talk about it ended ("周末一起找吧 / 拍封面给你"), so it is not reopened as undecided
-            from ai.daily_life import last_talk, talk_note
-            contents = {p["id"]: p["content"] for p in plans}
-            for motive in motives:
-                if motive.get("type") == "continue" and motive.get("plan_id") in contents:
-                    note = talk_note(last_talk(violetdb, contents[motive["plan_id"]], current))
-                    if note:
-                        motive["last_talk"] = note
-            # phase 8.9.9: a plan she already brought up on her own since the user last wrote, with nothing new about it,
-            # is not a new reason (ab-v2 step 9: the bookstore at 08:58, "already said" at 12:00 and 13:36, sent again
-            # at 14:50 from the same inputs). Missing the user stays a reason of its own.
-            raised = self._raised_unanswered(plans)
-            motives = [m for m in motives if m.get("plan_id") not in raised]
-        except Exception:
-            logger.exception("[ProactiveScheduler] motives unavailable")
-            return {}
-        recent, habit_note = self._recent_proactive(current)
-        class_ok = not env_bool("VIOLET_SCHEDULE_PROACTIVE", False)
-        warmth_hint = (
-            "你们现在已经很亲近（热度较高），只要有自然理由且未到今日上限，就大方热情地主动发一句，不用过度犹豫；"
-            if level >= 2 else ""
-        )
-        dnd_hint = (
-            "对方在打游戏、刷视频、刷手机或平时上课都不算勿扰，照常可以轻快发一句简短消息；只有深夜疑似睡了或对方亲口说过正忙/开会/别打扰才避开。"
-            if class_ok else
-            "对方在打游戏、刷视频、刷手机不算勿扰，照常可以发简短消息；只有深夜疑似睡了或对方亲口说过正忙/别打扰才避开。"
-        )
-        out = {
+            "daily_sent_count": sent_today,
+            "daily_message_limit": daily_limit,
             "relationship_stage": view.stage,
             "warmth_level": level,
             "warmth_label": WARMTH_LABELS.get(level, ""),
             "class_proactive_allowed": class_ok,
-            "violet_motives": motives,
-            "motive_note": (
-                "violet_motives 是 Violet 此刻真有的、想找对方的理由（今天刚发生的生活小事 daily_share、长期经历 share、"
-                "想念对方 miss、熟络后随口搭话 warm_checkin、想听对方的意见、接着聊之前的事、上一条很久没回时有点委屈地再找对方一次、接着刚才亲近的那份情绪）。"
-                + warmth_hint + dnd_hint
-                + "刚聊完、气氛还热的时候，接着那份情绪往往比换新话题自然；真的一条也没有才不发，不要按时间段硬发空洞问候。"
-            ),
-            "recent_proactive": recent,
-            "proactive_habit_note": habit_note,
+            "summary_topic": summary_topic,
+            "summary_reason": f"热度：{WARMTH_LABELS.get(level, '')}（{summary_topic}）",
+            "proactive_note": note,
+            "conversation_state": state,
         }
-        if raised:
-            contents = {p["id"]: p["content"] for p in plans}
-            out["already_raised"] = [{"about": contents[pid], "at": at.strftime("%m-%d %H:%M")} for pid, at in raised.items()]
-            out["already_raised_note"] = ("already_raised 里的事，你在对方上次说话之后已经主动说过了，对方还没回，也没有新的进展："
-                                          "不要换个说法再拿它找对方。")
-        return out
 
-    def _afterglow(self, current: datetime) -> dict[str, Any] | None:
-        """Phase 8.9.11: the latest conversation was warm or playful on the user's side (ai.relationship WARM_RE /
-        PLAYFUL_RE), it ended within 12 hours, and Violet has not written on her own since: {"at", "quote"}."""
-        from ai.relationship import PLAYFUL_RE, is_warm
-        if self._unanswered_proactive(current):
-            return None
-        from ai import context_cut                        # 2026-11-09: not from before 翻篇
-        rows = context_cut.owner_rows(violetdb.fetch_all("SELECT role, content, created_at FROM messages ORDER BY id DESC LIMIT 60"))
-        talk, previous = [], None
-        for row in rows:                                  # newest first, back to the start of that conversation
-            at = parse_time(row["created_at"]) if row.get("created_at") else None
-            if at is None or (previous is not None and previous - at >= timedelta(hours=3)):
-                break
-            talk.append({"role": row["role"], "text": row["content"] or "", "at": at})
-            previous = at
-        users = [m for m in talk if m["role"] == "user"]
-        if not users or current - talk[0]["at"] > timedelta(hours=12):
-            return None
-        warm = next((m for m in users if is_warm(m["text"]) or PLAYFUL_RE.search(m["text"])), None)
-        if warm is None:
-            return None
-        return {"at": warm["at"].strftime("%H:%M"), "quote": warm["text"].strip()[:30]}
-
-    def _unanswered_proactive(self, current: datetime) -> list[dict[str, Any]]:
-        """Phase 8.9.10: the messages Violet sent on her own since the user's latest message (reminders aside), oldest
-        first: {"at": "HH:MM", "hours": hours ago rounded for wording, "elapsed_hours": the exact hours}. Gates use
-        elapsed_hours (phase 9.1.1: 5 h 57 min rounded to 6.0 and passed a 6-hour gate)."""
-        from ai import context_cut
-        last_user = context_cut.owner_floor(violetdb.get_latest_message_at(role="user"))    # 2026-11-09: or 翻篇
-        last_user_at = parse_time(last_user) if last_user else None
-        out = []
-        for row in violetdb.fetch_all("SELECT created_at FROM proactive_events WHERE status = 'sent' AND event_type != ? "
-                                   "ORDER BY id DESC LIMIT 20", ("commitment_reminder",)):
-            at = parse_time(row["created_at"]) if row["created_at"] else None
-            if at is None or (last_user_at is not None and at <= last_user_at):
-                continue
-            elapsed = (current - at).total_seconds() / 3600
-            out.append({"at": at.strftime("%H:%M"), "hours": round(elapsed, 1), "elapsed_hours": elapsed})
-        return out[::-1]
-
-    def _raised_unanswered(self, plans: list[dict[str, Any]]) -> dict[int, datetime]:
-        """Phase 8.9.9: {plan id: when} for plans a sent proactive message (its text, or the decision's reason / topic)
-        brought up after the user's latest message -- unless a happened life event about the plan came after it."""
-        from ai.daily_life import mentions_life
-        from ai.life_store import LifeStore
-        from ai import context_cut
-        last_user = context_cut.owner_floor(violetdb.get_latest_message_at(role="user"))    # 2026-11-09: or 翻篇
-        last_user_at = parse_time(last_user) if last_user else None
-        raised: dict[int, datetime] = {}
-        for row in violetdb.fetch_all(
-                "SELECT created_at, sent_messages, decision FROM proactive_events WHERE status = 'sent' AND event_type != ? "
-                "ORDER BY id DESC LIMIT 20", ("commitment_reminder",)):
-            at = parse_time(row["created_at"]) if row["created_at"] else None
-            if at is None or (last_user_at is not None and at <= last_user_at):
-                continue
-            try:
-                sent = json.loads(row["sent_messages"] or "[]")
-                decision = json.loads(row["decision"] or "{}")
-            except (TypeError, ValueError):
-                sent, decision = [], {}
-            brief = decision.get("chat_brief") if isinstance(decision.get("chat_brief"), dict) else {}
-            text = "\n".join([*(str(m.get("content") if isinstance(m, dict) else m) for m in sent if m),
-                              str(decision.get("reason") or ""), str(brief.get("topic") or "")])
-            for plan in plans:
-                if plan["id"] not in raised and mentions_life(text, plan["content"]):
-                    raised[plan["id"]] = at
-        if raised:
-            contents = {p["id"]: p["content"] for p in plans}
-            for event in LifeStore(violetdb).recent_happened(days=3):
-                when = parse_time(event["occurred_at"])
-                for pid, at in list(raised.items()):
-                    if when > at and mentions_life(event["content"], contents[pid]):
-                        del raised[pid]                  # something did happen about it since: new to tell
-        return raised
-
-    def _recent_proactive(self, current: datetime) -> tuple[list[dict[str, Any]], str | None]:
-        """Phase 8.9.5: what Violet sent on her own lately (3 days), and -- when she keeps ending on a check-in question
-        ("今天过得怎么样？", "吃得怎么样呀？", "准备怎么过呀？") -- a note to do it differently this time."""
-        from ai import context_cut
-        since = current - timedelta(days=3)
-        cut = context_cut.owner_floor()                   # 2026-11-09: "昨晚聊到快两点" (08:12) is from before 翻篇
-        if cut:
-            since = max(since, parse_time(cut))
-        recent = []
-        for row in violetdb.fetch_all(
-                "SELECT created_at, sent_messages FROM proactive_events WHERE status = 'sent' AND event_type != ? "
-                "ORDER BY id DESC LIMIT 20", ("commitment_reminder",))[::-1]:
-            if not row["created_at"] or parse_time(row["created_at"]) < since:
-                continue
-            try:
-                sent = json.loads(row["sent_messages"] or "[]")
-            except (TypeError, ValueError):
-                sent = []
-            text = "\n".join(str(m.get("content") if isinstance(m, dict) else m) for m in sent if m)
-            if text:
-                recent.append({"at": row["created_at"][5:16].replace("T", " "), "text": text,
-                               "checkin": bool(CHECKIN_RE.search(text))})
-        checkins = [r for r in recent if r["checkin"]]
-        if not checkins:
-            return recent, None
-        example = checkins[-1]["text"].replace("\n", " ")[:40]
-        return recent, (f"【你最近主动发的消息】这几天你主动找对方 {len(recent)} 次，有 {len(checkins)} 次是用问近况收尾的"
-                        f"（比如“{example}”）。这次换个样子：只说你想说的那件事、一句想念或撒娇就好，不用再问对方怎么样。")
-
-    def _handle_pipeline_result(self, pipeline: dict[str, Any], event_context: dict[str, Any] | None = None,
-                                kind: str | None = None) -> None:
-        """kind: "scheduled" / "fixed" for Violet-initiated runs of the scheduler (None: a manual force_run)."""
-        event_id = pipeline.get("event_id")
-        chat_result = pipeline.get("chat")
-        from ai import trace
-        trace.step("主动联系", 方式=kind or "手动测试", 事件=event_id, 决定=pipeline.get("proactive_decision"),
-                   要发送=pipeline.get("should_send", True), 内容=trace.text((chat_result or {}).get("content")),
-                   错误=pipeline.get("error"))
-        if event_id is None or not chat_result or not pipeline.get("should_send", True):
-            return
-        event_id = int(event_id)
-        content = chat_result.get("content", "")
-        from ai.channels.outbound import chat_payload       # phase 10.6: the only way to sendable messages
-        payload = chat_payload(content if isinstance(content, str) else "", images=False)
-        if not payload.get("should_send", False):
-            violetdb.update_proactive_event(event_id, status="skipped", reason="ChatAgent decided not to send")
-            return
-        if kind is not None and self._schedule() is not None:
-            # phase 9.4.4: the rules again right before sending (only with the timetable feature on: off = as before)
-            with self._lock:
-                blocked = self._final_check(now_china(), kind)
-            if blocked:
-                logger.info("[ProactiveScheduler] not sent, final check: %s", blocked)
-                violetdb.update_proactive_event(event_id, status="skipped", reason=f"final check: {blocked}"[:500])
-                return
-        messages = payload.get("messages", [])
-        try:
-            report = self.send_messages(messages, event_id)
-        except Exception as exc:
-            logger.exception("proactive send crashed for event %s", event_id)
-            violetdb.update_proactive_event(event_id, status="failed", reason=f"send error: {exc}"[:500])
-            return
-        if report is None:
-            # Legacy callback without a report: keep the old behaviour.
-            violetdb.update_proactive_event(event_id, status="sent", sent_messages=messages)
-            return
-        sent = report.get("sent_messages") or []
-        if sent:
-            reason = None
-            if report.get("failed_count") or report.get("cancelled_count"):
-                reason = f"partially sent {len(sent)}/{len(messages)}: {report.get('error')}"[:500]
-            violetdb.update_proactive_event(event_id, status="sent", sent_messages=sent, reason=reason)
-            self._after_proactive_sent(pipeline, event_id)
-            self._record_schedule_moments(pipeline, event_context, sent, event_id)
+    def _compose_proactive_note(
+        self,
+        *,
+        view,
+        level: int,
+        since_user: float | None,
+        sent_today: int,
+        daily_limit: int,
+        unanswered: list[dict[str, Any]],
+        life_events: list[dict[str, Any]],
+        upcoming: list[dict[str, Any]],
+        open_plans: list[dict[str, Any]],
+        web_findings: list[dict[str, Any]],
+        schedule_moments: list[dict[str, Any]],
+        recent: list[dict[str, Any]],
+        habit_note: str | None,
+        class_ok: bool,
+    ) -> tuple[str, str]:
+        from ai.relationship import WARMTH_LABELS
+        gap = _format_gap(since_user)
+        lines: list[str] = ["【主动联系参考】"]
+        if view.stage == "distance":
+            lines.append("- 对方明确要求保持轻松友好的距离：除非下面有很具体值得分享的小事，否则直接输出 [NO_REPLY]；即便开口也不撒娇、不用亲昵称呼。")
+            topic = "distance"
+        elif level >= 3:
+            lines.append(f"- 你们已经很亲近（{WARMTH_LABELS[level]}），距对方上次说话约 {gap}（今日已主动 {sent_today}/{daily_limit} 次）："
+                         "可以自然热情地来蹭个存在感、分享刚发生的小事、撒个娇或说一句想对方，贴合你的人设和阶段，简短自然即可。")
+            topic = "warm_deep"
+        elif level == 2:
+            lines.append(f"- 你们已经挺熟了（{WARMTH_LABELS[level]}），距对方上次说话约 {gap}（今日已主动 {sent_today}/{daily_limit} 次）："
+                         "只要有今天的小事、想念或随口冒出的小念头，就大方发一句（不用过度犹豫，也别问空洞的“吃了吗/在干嘛”）。")
+            topic = "warm_active"
+        elif level == 1:
+            lines.append(f"- 你们正在慢慢熟起来（{WARMTH_LABELS[level]}），距对方上次说话约 {gap}（今日已主动 {sent_today}/{daily_limit} 次）："
+                         "有下面的生活小事、计划，或隔了一阵子想轻轻搭一句时，自然说一句就好。")
+            topic = "warming"
         else:
-            violetdb.update_proactive_event(event_id, status="failed", sent_messages=[],
-                                         reason=f"send failed: {report.get('error')}"[:500])
+            lines.append(f"- 你们还在互相熟悉（{WARMTH_LABELS[0]}），距对方上次说话约 {gap}："
+                         "下面有具体生活小事或临近事项时再顺口发一句；没有合适话题就输出 [NO_REPLY]，还不说想念、不撒娇。")
+            topic = "initial"
 
-    # ------------------------------------------------------------------
-    # Phase 2: conversation state, backoff, commitments
-    # ------------------------------------------------------------------
+        if unanswered:
+            last = unanswered[0]
+            waited = float(last.get("elapsed_hours", last.get("hours", 0)))
+            gate = 3.0 if level >= 3 else 4.0
+            if level >= 2 and not view.cooled and len(unanswered) == 1 and waited >= gate:
+                lines.append(f"- 你 {last.get('at', '')} 主动发过一条，对方过了约 {int(waited)} 小时还没回："
+                             "已经很亲近了，可以带点轻巧小情绪再找一次（想对方、小委屈或玩笑式撒娇），只找这一次；不认真指责、不重复上一条内容。")
+                topic = "miss_unanswered"
+            else:
+                lines.append(f"- 你 {last.get('at', '')} 发的那条对方还没回：若没新鲜事就输出 [NO_REPLY]，别重复催问。")
 
-    def _conversation_state(self) -> dict[str, Any]:
-        """What the proactive decision may and may not touch (enforced in ai.chat)."""
+        if class_ok:
+            lines.append("- 时机判断：对方打游戏、刷视频、刷手机或平时上课都不算勿扰，照常可以发简短轻松的消息；"
+                         "只有深夜屏幕熄灭很久疑似睡觉，或对方亲口说过正忙/开会/别打扰时才输出 [NO_REPLY]。")
+        else:
+            lines.append("- 时机判断：对方打游戏、刷视频、刷手机不算勿扰；只有深夜疑似睡觉或对方正忙/别打扰时才输出 [NO_REPLY]。")
+
+        if life_events:
+            topic = "daily_share" if any(e.get("type") == "violet_daily_event" for e in life_events) else "life_share"
+            lines.append("- 你最近刚发生、还没告诉对方的小事（选一件自然随口提一句，用自己的语气）：")
+            for ev in life_events:
+                lines.append(f"  · {ev['content']}")
+        if upcoming:
+            topic = "upcoming_event"
+            lines.append("- 对方即将到来的事（可在发生前自然提一次比如祝顺利，别追问结果）：")
+            for m in upcoming[:2]:
+                lines.append(f"  · {m['content']}（{m.get('event_time') or ''}）")
+        if open_plans:
+            lines.append("- 你自己近期的打算（可选聊一句看法或新想法，还没做的别说成做了）：")
+            for p in open_plans[:2]:
+                extra = f"；{p['last_talk']}" if p.get("last_talk") else ""
+                lines.append(f"  · {p['content']}{extra}")
+        if schedule_moments:
+            lines.append("- 课表小背景（仅供参考，别说成确定事实，不提也正常）：")
+            for sm in schedule_moments[:2]:
+                lines.append(f"  · {sm.get('note') or sm.get('type')}")
+        if web_findings:
+            lines.append("- 你在网上看到、可能合对方胃口的资料（不是你亲身经历，若提到请说明来源网站，不提也正常）：")
+            for wf in web_findings[:1]:
+                lines.append(f"  · {wf['title']}（来源：{wf['domain']}）")
+        if recent:
+            preview = " / ".join(f"{r['at']}「{r['text'].replace(chr(10), ' ')[:26]}」" for r in recent[-4:])
+            lines.append(f"- 你最近主动发过：{preview}（换个新角度，别重复同样的话）。")
+        if habit_note:
+            lines.append(f"- {habit_note}")
+        return "\n".join(lines), topic
+
+    def _conversation_state(self, current: datetime | None = None) -> dict[str, Any]:
         cooling = self.tracker.cooling_topics()
-        cooling_memory_ids = {c.get("memory_id") for c in cooling if c.get("memory_id")}
-        upcoming = self._mentionable_upcoming_events(cooling_memory_ids)
+        cooling_ids = {c.get("memory_id") for c in cooling if c.get("memory_id")}
+        upcoming = self._mentionable_upcoming_events(cooling_ids)
         upcoming_ids = {m["id"] for m in upcoming}
         restricted = [
             {
@@ -953,11 +710,13 @@ class ProactiveScheduler:
         allowed = [
             {"id": m["id"], "content": m["content"], "type": "fact"}
             for m in violetdb.list_recent_event_memories(kinds=["fact"], limit=10)
-            if m.get("status") == "active" and m["id"] not in cooling_memory_ids
+            if m.get("status") == "active" and m["id"] not in cooling_ids
         ]
         allowed += upcoming
+        unanswered = self.unanswered_count(current)
         return {
-            "cold_streak": self.tracker.cold_streak(),
+            "unanswered_count": unanswered,
+            "cold_streak": unanswered,
             "cooling_topics": cooling,
             "restricted_memories": restricted,
             "allowed_memories": allowed,
@@ -967,17 +726,64 @@ class ProactiveScheduler:
         }
 
     # ------------------------------------------------------------------
-    # Phase 4: Violet's virtual life
+    # Shareable content collectors
     # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
-    # Phase 5B: things Violet found on the web (explorer findings only)
-    # ------------------------------------------------------------------
-    def _shareable_web_findings(self) -> list[dict[str, Any]]:
-        """At most one candidate, after: freshness, the USER's interests, repeats, avoided topics,
-        web-share spacing and cooling. Busy / quiet hours / caps / cold streak are checked in _is_due,
-        and the model may still decide not to send (normal)."""
+    def _shareable_life_events(self) -> list[dict[str, Any]]:
         try:
-            from ai.memory_model import mentions_topic, touches_topic
+            from ai.life_store import LifeStore
+            from ai.persona import life_config
+            cfg = life_config().get("sharing") or {}
+        except Exception:
+            logger.exception("[life] sharing config unavailable")
+            return []
+        if not cfg.get("enabled", True):
+            return []
+        if self.tracker.topic_state(LIFE_TOPIC)["unengaged"] >= int(cfg.get("cooling_after_disengaged_shares", 2)):
+            return []
+        result, daily_today = [], []
+        today_iso = violetdb.now()[:10]
+        for event in LifeStore(violetdb).recent_happened(days=float(cfg.get("recent_days", 3))):
+            if int(event["share_count"]) >= int(cfg.get("max_shares_per_event", 1)):
+                continue
+            if self.tracker.topic_state(life_topic_key(event["id"]))["cooling"]:
+                continue
+            if event["source"] == "life_daily":
+                if str(event.get("occurred_at") or "")[:10] == today_iso:
+                    daily_today.append({
+                        "id": event["id"], "content": event["content"], "occurred_at": event["occurred_at"],
+                        "type": "violet_daily_event",
+                    })
+                continue
+            result.append({
+                "id": event["id"], "content": event["content"], "occurred_at": event["occurred_at"],
+                "type": "violet_life_event",
+            })
+        _, _, _, _, pace = self._warmth_profile()
+        picked = result[-2:]
+        if len(picked) < 2 and daily_today:
+            room = min(int(pace.get("max_daily_offers") or 1), 2 - len(picked))
+            picked.extend(daily_today[-room:])
+        return picked
+
+    def _shareable_open_plans(self, current: datetime) -> list[dict[str, Any]]:
+        try:
+            from ai.daily_life import last_talk, talk_note
+            from ai.life_store import LifeStore
+            plans = LifeStore(violetdb).plans(["planned", "active"])
+            raised = self._raised_unanswered(plans)
+            out = []
+            for plan in plans:
+                if plan["id"] in raised:
+                    continue
+                note = talk_note(last_talk(violetdb, plan["content"], current))
+                out.append({"id": plan["id"], "content": plan["content"], "last_talk": note or None})
+            return out
+        except Exception:                                    # noqa: BLE001
+            return []
+
+    def _shareable_web_findings(self) -> list[dict[str, Any]]:
+        try:
+            from ai.memory_model import mentions_topic
             from ai.web.explorer import explore_config
             from ai.web.findings import FindingsStore
             from ai.web.providers import _bigrams
@@ -989,7 +795,6 @@ class ProactiveScheduler:
             return []
         store = FindingsStore(violetdb)
         now = parse_time(violetdb.now())
-        # the user did not engage with Violet's last web shares: stop until they do
         if self.tracker.topic_state(WEB_TOPIC)["unengaged"] >= int(cfg.get("cooling_after_disengaged_shares", 2)):
             return []
         last = violetdb.fetch_one("SELECT MAX(shared_with_user_at) AS t FROM web_findings")
@@ -998,7 +803,7 @@ class ProactiveScheduler:
         interests = [f["value"] for f in self.profile.facts.list_facts(["active"], fact_key="interest")
                      if f.get("use_in_context", 1)]
         if not interests:
-            return []                                   # nothing known about what the user cares for
+            return []
         avoid = [item["value"] for item in self.profile.preferences.effective().get("avoid_topic", [])]
         shared = [(f["id"], f["title"]) for f in violetdb.fetch_all("SELECT id, title FROM web_findings WHERE share_count > 0")]
         result = []
@@ -1010,82 +815,16 @@ class ProactiveScheduler:
                 continue
             if any(touches_topic(text, a) or mentions_topic(text, a) for a in avoid):
                 continue
-            if self.tracker.topic_state(web_topic_key(f["id"]))["cooling"]:
-                continue
-            a = _bigrams(f["title"])          # another finding on the same story was already shared
+            a = _bigrams(f["title"])
             if any(a and len(a & _bigrams(t)) / len(a | _bigrams(t)) >= 0.5
                    for other_id, t in shared if other_id != f["id"] and _bigrams(t)):
                 continue
-            result.append({"id": f["id"], "title": f["title"], "domain": f["domain"], "summary": (f["summary"] or "")[:200],
-                           "published_at": f["published_at"], "type": "web_finding",
-                           "note": "外部网页资料，不是 Violet 的经历；可以说“看到一篇…”，要说明来源网站；不提也完全正常"})
+            result.append({"id": f["id"], "title": f["title"], "domain": f["domain"],
+                           "summary": (f["summary"] or "")[:200], "published_at": f["published_at"],
+                           "type": "web_finding"})
         return result[: int(cfg.get("max_candidates", 1))]
 
-    def _record_web_shares(self, finding_ids: list[int], proactive_event_id: int | None) -> None:
-        from ai.web.findings import FindingsStore
-        store = FindingsStore(violetdb)
-        for finding_id in finding_ids:
-            if not store.get(finding_id):
-                continue
-            store.mark_shared(finding_id)
-            violetdb.add_topic_mention(web_topic_key(finding_id), "violet_web", proactive_event_id=proactive_event_id)
-        if finding_ids:
-            violetdb.add_topic_mention(WEB_TOPIC, "violet_web", proactive_event_id=proactive_event_id)
-
-    def _shareable_life_events(self) -> list[dict[str, Any]]:
-        """Recent happened events Violet has not shared yet. Only candidates: not sending is normal."""
-        try:
-            from ai.life_store import LifeStore
-            from ai.persona import life_config
-            cfg = life_config().get("sharing") or {}
-        except Exception:
-            logger.exception("[life] sharing config unavailable")
-            return []
-        if not cfg.get("enabled", True):
-            return []
-        # the user did not engage with Violet's last life shares: stop offering them until they do
-        if self.tracker.topic_state(LIFE_TOPIC)["unengaged"] >= int(cfg.get("cooling_after_disengaged_shares", 2)):
-            return []
-        result = []
-        daily_today = []
-        today_iso = violetdb.now()[:10]
-        for event in LifeStore(violetdb).recent_happened(days=float(cfg.get("recent_days", 3))):
-            if int(event["share_count"]) >= int(cfg.get("max_shares_per_event", 1)):
-                continue
-            if self.tracker.topic_state(life_topic_key(event["id"]))["cooling"]:
-                continue
-            if event["source"] == "life_daily":
-                # 2026-11-19: offer at most one fresh today-only persona daily event so she has real life to share
-                # instead of skipping 6 consecutive proactive checks on quiet days
-                if str(event.get("occurred_at") or "")[:10] == today_iso:
-                    daily_today.append({
-                        "id": event["id"], "content": event["content"], "occurred_at": event["occurred_at"],
-                        "type": "violet_daily_event",
-                        "note": "你今天刚发生的小事（还没告诉过对方）；很适合按性格随口分享一句或小吐槽一下",
-                    })
-                continue
-            result.append({"id": event["id"], "content": event["content"], "occurred_at": event["occurred_at"],
-                           "type": "violet_life_event", "note": "Violet 自己确实发生过的小事；可以随口提一句，也可以不提"})
-        _, _, _, _, pace = self._warmth_profile()
-        picked = result[-2:]
-        if len(picked) < 2 and daily_today:
-            room = min(int(pace.get("max_daily_offers") or 1), 2 - len(picked))
-            picked.extend(daily_today[-room:])
-        return picked
-
-    def _record_life_shares(self, event_ids: list[int], proactive_event_id: int | None) -> None:
-        from ai.life_store import LifeStore
-        store = LifeStore(violetdb)
-        for event_id in event_ids:
-            if not store.event(event_id):
-                continue
-            store.mark_shared(event_id)
-            violetdb.add_topic_mention(life_topic_key(event_id), "violet_life", proactive_event_id=proactive_event_id)
-        if event_ids:
-            violetdb.add_topic_mention(LIFE_TOPIC, "violet_life", proactive_event_id=proactive_event_id)
-
     def _mentionable_upcoming_events(self, cooling_memory_ids: set) -> list[dict[str, Any]]:
-        """Planned events the user raised recently, happening soon, not yet mentioned by Violet."""
         cfg = self.config.get("event_topics") or {}
         if not cfg.get("enabled", True):
             return []
@@ -1094,24 +833,190 @@ class ProactiveScheduler:
         fresh_after = now - timedelta(days=float(cfg.get("max_days_since_user_mention", 2)))
         result = []
         for m in violetdb.list_recent_event_memories(kinds=["event"], include_ended=False, limit=30):
-            event_time = event_deadline(m.get("event_time"))     # phase 9.1.1: a date-only time lasts the whole day
+            event_time = event_deadline(m.get("event_time"))
             raised_by_user = parse_time(m.get("last_user_mention_at")) or parse_time(m.get("created_at"))
             if m.get("progress") != "planned" or not event_time or not (now < event_time <= horizon):
                 continue
             if raised_by_user < fresh_after or m["id"] in cooling_memory_ids or m.get("status") != "active":
                 continue
-            violet_raised = violetdb.list_topic_mentions(topic_key=memory_topic_key(m["id"]), sources=VIOLET_SOURCES,
-                                                   since=raised_by_user.isoformat(), limit=1)
-            if violet_raised:
+            if violetdb.list_topic_mentions(topic_key=memory_topic_key(m["id"]), sources=VIOLET_SOURCES,
+                                            since=raised_by_user.isoformat(), limit=1):
                 continue
-            result.append({
-                "id": m["id"], "content": m["content"], "type": "upcoming_event", "event_time": m["event_time"],
-                "note": "可以在事情发生之前自然地提一次（比如祝顺利），不要追问结果，之后也不要再提",
-            })
+            result.append({"id": m["id"], "content": m["content"], "type": "upcoming_event",
+                           "event_time": m["event_time"]})
         return result
 
+    def _unanswered_proactive(self, current: datetime) -> list[dict[str, Any]]:
+        from ai import context_cut
+        last_user = context_cut.owner_floor(violetdb.get_latest_message_at(role="user"))
+        last_user_at = parse_time(last_user) if last_user else None
+        out = []
+        for row in violetdb.fetch_all(
+            "SELECT created_at FROM proactive_events WHERE status = 'sent' "
+            "AND event_type NOT IN ('commitment_reminder', 'holiday_greeting') ORDER BY id DESC LIMIT 20"
+        ):
+            at = parse_time(row["created_at"]) if row["created_at"] else None
+            if at is None or (last_user_at is not None and at <= last_user_at):
+                continue
+            elapsed = (current - at).total_seconds() / 3600
+            out.append({"at": at.strftime("%H:%M"), "hours": round(elapsed, 1), "elapsed_hours": elapsed})
+        return out[::-1]
+
+    def _raised_unanswered(self, plans: list[dict[str, Any]]) -> dict[int, datetime]:
+        from ai import context_cut
+        from ai.daily_life import mentions_life
+        from ai.life_store import LifeStore
+        last_user = context_cut.owner_floor(violetdb.get_latest_message_at(role="user"))
+        last_user_at = parse_time(last_user) if last_user else None
+        raised: dict[int, datetime] = {}
+        for row in violetdb.fetch_all(
+            "SELECT created_at, sent_messages FROM proactive_events WHERE status = 'sent' "
+            "AND event_type NOT IN ('commitment_reminder', 'holiday_greeting') ORDER BY id DESC LIMIT 20"
+        ):
+            at = parse_time(row["created_at"]) if row["created_at"] else None
+            if at is None or (last_user_at is not None and at <= last_user_at):
+                continue
+            try:
+                sent = json.loads(row["sent_messages"] or "[]")
+            except (TypeError, ValueError):
+                sent = []
+            text = "\n".join(str(m.get("content") if isinstance(m, dict) else m) for m in sent if m)
+            for plan in plans:
+                if plan["id"] not in raised and mentions_life(text, plan["content"]):
+                    raised[plan["id"]] = at
+        if raised:
+            contents = {p["id"]: p["content"] for p in plans}
+            for event in LifeStore(violetdb).recent_happened(days=3):
+                when = parse_time(event["occurred_at"])
+                for pid, at in list(raised.items()):
+                    if when > at and mentions_life(event["content"], contents[pid]):
+                        del raised[pid]
+        return raised
+
+    def _recent_proactive(self, current: datetime) -> tuple[list[dict[str, Any]], str | None]:
+        from ai import context_cut
+        since = current - timedelta(days=3)
+        cut = context_cut.owner_floor()
+        if cut:
+            since = max(since, parse_time(cut))
+        recent = []
+        for row in violetdb.fetch_all(
+            "SELECT created_at, sent_messages FROM proactive_events WHERE status = 'sent' "
+            "AND event_type NOT IN ('commitment_reminder', 'holiday_greeting') ORDER BY id DESC LIMIT 20"
+        )[::-1]:
+            if not row["created_at"] or parse_time(row["created_at"]) < since:
+                continue
+            try:
+                sent = json.loads(row["sent_messages"] or "[]")
+            except (TypeError, ValueError):
+                sent = []
+            text = "\n".join(str(m.get("content") if isinstance(m, dict) else m) for m in sent if m)
+            if text:
+                recent.append({"at": row["created_at"][5:16].replace("T", " "), "text": text,
+                               "checkin": bool(CHECKIN_RE.search(text))})
+        checkins = [r for r in recent if r["checkin"]]
+        if not checkins:
+            return recent, None
+        example = checkins[-1]["text"].replace("\n", " ")[:40]
+        return recent, (f"这几天你主动找对方 {len(recent)} 次，有 {len(checkins)} 次是用问近况收尾的（比如“{example}”）。"
+                        "这次换个样子：只说你想说的那件事、一句想念或撒娇就好，不用再问对方怎么样。")
+
     # ------------------------------------------------------------------
-    # Phase 9.4.4: the timetable (VIOLET_SCHEDULE_ENABLED + VIOLET_SCHEDULE_PROACTIVE; both off = nothing here runs)
+    # Send handling & post-send tracking (derived directly from sent text)
+    # ------------------------------------------------------------------
+    def _handle_pipeline_result(self, pipeline: dict[str, Any], event_context: dict[str, Any] | None = None,
+                                kind: str | None = None) -> None:
+        event_id = pipeline.get("event_id")
+        chat_result = pipeline.get("chat")
+        from ai import trace
+        trace.step("主动联系", 方式=kind or "手动测试", 事件=event_id,
+                   要发送=pipeline.get("should_send", True), 内容=trace.text((chat_result or {}).get("content")),
+                   错误=pipeline.get("error"))
+        if event_id is None or not chat_result or not pipeline.get("should_send", True):
+            return
+        event_id = int(event_id)
+        content = chat_result.get("content", "")
+        from ai.channels.outbound import chat_payload
+        payload = chat_payload(content if isinstance(content, str) else "", images=False)
+        if not payload.get("should_send", False):
+            violetdb.update_proactive_event(event_id, status="skipped", reason="ChatAgent decided not to send")
+            return
+        if kind is not None and self._schedule() is not None:
+            with self._lock:
+                blocked = self._final_check(now_china())
+            if blocked:
+                logger.info("[ProactiveScheduler] not sent, final check: %s", blocked)
+                violetdb.update_proactive_event(event_id, status="skipped", reason=f"final check: {blocked}"[:500])
+                return
+        messages = payload.get("messages", [])
+        try:
+            report = self.send_messages(messages, event_id)
+        except Exception as exc:
+            logger.exception("proactive send crashed for event %s", event_id)
+            violetdb.update_proactive_event(event_id, status="failed", reason=f"send error: {exc}"[:500])
+            return
+        if report is None:
+            violetdb.update_proactive_event(event_id, status="sent", sent_messages=messages)
+            self._after_proactive_sent(event_context, messages, event_id)
+            return
+        sent = report.get("sent_messages") or []
+        if sent:
+            reason = None
+            if report.get("failed_count") or report.get("cancelled_count"):
+                reason = f"partially sent {len(sent)}/{len(messages)}: {report.get('error')}"[:500]
+            violetdb.update_proactive_event(event_id, status="sent", sent_messages=sent, reason=reason)
+            self._after_proactive_sent(event_context, sent, event_id)
+        else:
+            violetdb.update_proactive_event(event_id, status="failed", sent_messages=[],
+                                            reason=f"send failed: {report.get('error')}"[:500])
+
+    def _after_proactive_sent(self, event_context: dict[str, Any] | None, sent: list[Any], event_id: int) -> None:
+        try:
+            sent_text = "\n".join(str(m.get("content") if isinstance(m, dict) else m) for m in sent if m)
+            state = (event_context or {}).get("conversation_state") or {}
+
+            # 1. Mark any offered life / daily events mentioned in the sent text as shared
+            from ai.daily_life import mentions_life
+            from ai.life_store import LifeStore
+            store = LifeStore(violetdb)
+            shared_life_ids: list[int] = []
+            for ev in state.get("allowed_life_events") or []:
+                eid = ev.get("id")
+                if eid is not None and mentions_life(sent_text, ev.get("content") or ""):
+                    shared_life_ids.append(int(eid))
+            for eid in shared_life_ids:
+                if store.event(eid):
+                    store.mark_shared(eid)
+                    violetdb.add_topic_mention(life_topic_key(eid), "violet_life", proactive_event_id=event_id)
+            if shared_life_ids:
+                violetdb.add_topic_mention(LIFE_TOPIC, "violet_life", proactive_event_id=event_id)
+
+            # 2. Mark any offered upcoming user event mentioned in the sent text (one-shot wish)
+            mentioned_mem_ids = [
+                int(m["id"]) for m in state.get("allowed_memories") or []
+                if m.get("type") == "upcoming_event" and m.get("id") is not None
+                and touches_topic(sent_text, m.get("content") or "")
+            ]
+            self.tracker.record_eve_topic(
+                (event_context or {}).get("summary_topic") or "proactive",
+                mentioned_mem_ids,
+                proactive_event_id=event_id,
+            )
+
+            # 3. Mark mentioned web findings & schedule moments
+            offered_web_ids = [int(f["id"]) for f in state.get("allowed_web_findings") or [] if f.get("id") is not None]
+            note_web_mentions(sent_text, used_finding_ids=offered_web_ids)
+            offered_schedule = state.get("allowed_schedule_moments") or []
+            if offered_schedule:
+                from ai.schedule.awareness import record_mentions
+                record_mentions(violetdb, offered_schedule, None, sent_text, event_id)
+
+            self._set_next_proactive_at(self._backoff_next_time(now_china()))
+        except Exception:
+            logger.exception("could not record post-send tracking for event %s", event_id)
+
+    # ------------------------------------------------------------------
+    # Timetable awareness (VIOLET_SCHEDULE_ENABLED + VIOLET_SCHEDULE_PROACTIVE)
     # ------------------------------------------------------------------
     def _schedule(self):
         from ai.schedule import awareness
@@ -1130,35 +1035,24 @@ class ProactiveScheduler:
         return gate
 
     def _postpone_past(self, gate) -> None:
-        """The next look comes after the busy window plus the usual random wait: a suppressed message is not sent
-        the moment class ends, and every other rule still applies then."""
         later = self._random_next_time(gate.until)
         current_next = self._get_next_proactive_at()
         if current_next is None or current_next < later:
             self._set_next_proactive_at(later)
 
-    def _schedule_context(self, current: datetime, state: dict[str, Any]) -> dict[str, Any]:
-        """Optional background for the decision: offered moments go into conversation_state (the decision may only
-        name these ids); nothing at all when the feature is off or nothing applies."""
+    def _schedule_moments(self, current: datetime) -> list[dict[str, Any]]:
         aware = self._schedule()
         if aware is None:
-            return {}
+            return []
         avoid = [item["value"] for item in self.profile.preferences.effective().get("avoid_topic", [])]
         from ai.context_engine import PLAN_ANSWERED_KINDS, USER_STATED_SOURCES
         stated = any(s.get("source") in USER_STATED_SOURCES for s in self.profile.situations.current(list(PLAN_ANSWERED_KINDS)))
-        moments = aware.moments(current, violetdb, avoid_topics=avoid, unanswered=bool(self._unanswered_proactive(current)),
-                                user_stated_now=stated)
-        if not moments:
-            return {}
-        state["allowed_schedule_moments"] = moments
-        return {"schedule_note": (
-            "conversation_state.allowed_schedule_moments 是按对方课表推算出的小背景（明天的考试、今天的课按计划上完了、"
-            "这几天课多）。它们不是要发消息的理由，只有你本来就想找对方时才可以自然地用上一个；用了就把它的 id 写进 "
-            "mentioned_schedule_ids。课表只是计划，不代表对方真实在哪、在做什么；不要编造课程细节。")}
+        return aware.moments(
+            current, violetdb, avoid_topics=avoid,
+            unanswered=bool(self._unanswered_proactive(current)), user_stated_now=stated,
+        )
 
-    def _final_check(self, current: datetime, kind: str) -> str | None:
-        """Phase 9.4.4: just before an Violet-initiated message goes out, the rules are looked at again -- the generation
-        took time and the user may have become busy, asked for quiet or entered a class meanwhile."""
+    def _final_check(self, current: datetime) -> str | None:
         if self._in_quiet_hours(current):
             return "quiet hours"
         pref = self.profile.preferences.effective().get("proactive_chat") or {}
@@ -1171,87 +1065,18 @@ class ProactiveScheduler:
         if gate is not None and gate.blocked:
             self._postpone_past(gate)
             return gate.reason()
-        if kind == "scheduled":
-            limit = int(self.config.get("daily_message_limit", 3))
-            if pref.get("origin") == "explicit" and pref.get("value") == "less":
-                limit = min(limit, 1)
-            if self._today_sent_count(current) >= limit:
-                return "daily proactive limit reached"
+        limit = int(self.config.get("daily_message_limit", 3))
+        if pref.get("origin") == "explicit" and pref.get("value") == "less":
+            limit = min(limit, 1)
+        if self._today_sent_count(current) >= limit:
+            return "daily proactive limit reached"
         return None
 
-    def _busy_situation(self) -> dict[str, Any] | None:
-        pattern = BUSY_VALUES_RE if env_bool("VIOLET_SCHEDULE_PROACTIVE", False) else BUSY_VALUES_NO_CLASS_RE
-        for situation in self.profile.situations.current(["availability", "activity"]):
-            if pattern.search(situation["value"]):
-                return situation
-        return None
-
-    def _preference_multiplier(self) -> float:
-        pref = self.profile.preferences.effective().get("proactive_chat") or {}
-        if pref.get("value") != "less":
-            return 1.0
-        return 2.0 if pref.get("origin") == "explicit" else 1.5   # implicit: low confidence, gentle effect
-
-    def _backoff_next_time(self, current: datetime) -> datetime:
-        base = self._random_next_time(current)
-        cold = self.tracker.cold_streak()
-        factor = float(self.config.get("unanswered_backoff_factor", 2.0))
-        multiplier = min(float(self.config.get("max_backoff_multiplier", 8)), factor ** cold) * self._preference_multiplier()
-        return current + (base - current) * multiplier
-
-    def _after_proactive_sent(self, pipeline: dict[str, Any], event_id: int) -> None:
-        try:
-            self.tracker.record_eve_topic(
-                pipeline.get("topic_key"), pipeline.get("mentioned_memory_ids") or [], proactive_event_id=event_id,
-            )
-            life_ids = list(pipeline.get("mentioned_life_event_ids") or [])
-            # 2026-11-19: even if the decision omitted mentioned_life_event_ids, mark a today's daily event shared once
-            # the sent message or brief talks about it so she never shares the exact same daily item twice.
-            try:
-                from ai.daily_life import mentions_life
-                from ai.life_store import LifeStore
-                dec = pipeline.get("proactive_decision") or {}
-                brief = dec.get("chat_brief") if isinstance(dec.get("chat_brief"), dict) else {}
-                text = "\n".join([str((pipeline.get("chat") or {}).get("content") or ""),
-                                  str(brief.get("topic") or ""), str(dec.get("reason") or "")])
-                today_iso = violetdb.now()[:10]
-                for ev in LifeStore(violetdb).recent_happened(days=1.5):
-                    if (ev["source"] == "life_daily" and ev["id"] not in life_ids
-                            and int(ev.get("share_count") or 0) == 0
-                            and str(ev.get("occurred_at") or "")[:10] == today_iso
-                            and mentions_life(text, ev["content"])):
-                        life_ids.append(ev["id"])
-            except Exception:                                # noqa: BLE001
-                pass
-            self._record_life_shares(life_ids, event_id)
-            self._record_web_shares(pipeline.get("mentioned_web_finding_ids") or [], event_id)
-            self._set_next_proactive_at(self._backoff_next_time(now_china()))
-        except Exception:
-            logger.exception("could not record proactive topic for event %s", event_id)
-
-    def _record_schedule_moments(self, pipeline: dict[str, Any], event_context: dict[str, Any] | None,
-                                 sent: list[Any], event_id: int) -> None:
-        offered = ((event_context or {}).get("conversation_state") or {}).get("allowed_schedule_moments") or []
-        if not offered:
-            return
-        try:
-            from ai.schedule.awareness import record_mentions
-            text = "\n".join(str(m.get("content") if isinstance(m, dict) else m) for m in sent if m)
-            record_mentions(violetdb, offered, pipeline.get("proactive_decision") or {}, text, event_id)
-        except Exception:
-            logger.exception("could not record schedule moments for event %s", event_id)
-
-    def _quiet_end(self, current: datetime) -> datetime:
-        quiet = self.config.get("quiet_hours") or {}
-        hour, minute = (quiet.get("end") or "08:00").split(":", 1)
-        end = current.replace(hour=int(hour), minute=int(minute), second=0, microsecond=0)
-        if end <= current:
-            end += timedelta(days=1)
-        return end
-
+    # ------------------------------------------------------------------
+    # Phone snapshot & wake moments
+    # ------------------------------------------------------------------
     @staticmethod
     def _poll_phone_events() -> None:
-        """2026-11-03 (ai/phone_events.py): the phone's new events, at most once a minute. Never stops the tick."""
         try:
             from ai import phone_events
             phone_events.poll(now_china())
@@ -1268,8 +1093,6 @@ class ProactiveScheduler:
 
     @staticmethod
     def _add_phone(event_context: dict[str, Any]) -> None:
-        """2026-11-03 (ai/phone_state.py): what the owner's phone says now, for the decision and the message.
-        Read outside the scheduler lock (the phone may take seconds); never stops the run."""
         try:
             from ai import phone_state
             text = phone_state.line("proactive")
@@ -1279,12 +1102,10 @@ class ProactiveScheduler:
         if text:
             event_context["phone_now"] = text
 
-    HOLIDAY_ATTEMPTS = 2
-
+    # ------------------------------------------------------------------
+    # Holiday greeting & explicit commitments
+    # ------------------------------------------------------------------
     def _holiday_greeting(self, current: datetime) -> bool:
-        """2026-11-03 (ai/holidays.py, VIOLET_HOLIDAY_GREETING): on a holiday of this persona's relationship, one
-        greeting at the first chance after quiet hours. Not when the owner already talked today (the chat context
-        names the holiday instead), asked her not to write, is busy or in class. True = something was sent."""
         from ai import holidays, test_mode
         if not holidays.enabled() or test_mode.active() or self._in_quiet_hours(current):
             return False
@@ -1302,9 +1123,9 @@ class ProactiveScheduler:
             return False
         last_user = parse_iso(violetdb.get_latest_message_at(role="user"))
         if last_user is not None and last_user.date() == current.date():
-            violetdb.set_proactive_setting(key, "chat")      # they talked first: mentioned in the chat instead
+            violetdb.set_proactive_setting(key, "chat")
             return False
-        pref = (self.profile.preferences.effective().get("proactive_chat") or {})
+        pref = self.profile.preferences.effective().get("proactive_chat") or {}
         if pref.get("origin") == "explicit" and pref.get("value") == "no":
             return False
         if self._busy_situation() is not None:
@@ -1322,7 +1143,7 @@ class ProactiveScheduler:
         from ai.channels.outbound import chat_payload
         try:
             result = self.chat_agent.run("[holiday]", call_context={"is_proactive": True, "proactive_result": decision,
-                                                                     "commitment": None, "proactive_note": note})
+                                                                    "commitment": None, "proactive_note": note})
             payload = chat_payload(str(result.get("content") or ""), images=False)
         except Exception:                                   # noqa: BLE001
             logger.exception("[holiday] greeting could not be written")
@@ -1343,7 +1164,7 @@ class ProactiveScheduler:
         if report is None:
             report = {"sent_messages": payload["messages"]}
         sent = [{k: v for k, v in m.items() if not str(k).startswith("_")} if isinstance(m, dict) else m
-                for m in report.get("sent_messages") or []]          # without the outbound seal (not JSON)
+                for m in report.get("sent_messages") or []]
         if sent:
             violetdb.update_proactive_event(event_id, status="sent", sent_messages=sent)
             violetdb.set_proactive_setting(key, "sent")
@@ -1355,22 +1176,16 @@ class ProactiveScheduler:
         return False
 
     def _deliver_due_commitments(self, current: datetime) -> int:
-        """Send reminders the user explicitly asked for, at the time asked. Not limited by chat caps.
-
-        2026-11-12 (virtual test: "明早七点半叫我起床" went out after 8:00 -- quiet hours 01:00-08:00 -- and she had
-        already said "叫了，七点半叫的"): quiet hours are about HER reaching out on her own. A reminder is the owner's
-        own request with its own time; it goes out then (the "respect_quiet_hours" switch is gone)."""
         cfg = self.config.get("commitments") or {}
         if not cfg.get("enabled", True):
             return 0
         due = violetdb.list_due_commitments(current.isoformat())
         if not due:
             return 0
-
         delivered = 0
         for commitment in due:
             if not violetdb.claim_commitment(commitment["id"]):
-                continue   # already being delivered elsewhere: never send twice
+                continue
             commitment = violetdb.get_commitment(commitment["id"])
             event_id = violetdb.add_proactive_event(
                 event_type="commitment_reminder",
@@ -1392,9 +1207,9 @@ class ProactiveScheduler:
             sent = report.get("sent_messages") or []
             if sent:
                 violetdb.update_commitment(commitment["id"], status="sent", delivered_at=violetdb.now(),
-                                        proactive_event_id=event_id, last_error=result.get("error"))
+                                           proactive_event_id=event_id, last_error=result.get("error"))
                 violetdb.update_proactive_event(event_id, status="sent", sent_messages=sent,
-                                             reason="fallback template used" if result.get("used_fallback") else None)
+                                                reason="fallback template used" if result.get("used_fallback") else None)
                 self.tracker.record_eve_topic(f"commitment:{commitment['id']}", (), proactive_event_id=event_id,
                                               source="violet_commitment")
                 delivered += 1
@@ -1402,10 +1217,10 @@ class ProactiveScheduler:
             error = str(report.get("error") or "not sent")[:500]
             max_attempts = int(cfg.get("max_attempts", 3))
             if commitment["attempts"] >= max_attempts:
-                violetdb.update_commitment(commitment["id"], status="failed", last_error=error, proactive_event_id=event_id)
+                violetdb.update_commitment(commitment["id"], status="failed", proactive_event_id=event_id, last_error=error)
             else:
-                retry_at = current + timedelta(minutes=float(cfg.get("retry_minutes", 5)))
-                violetdb.update_commitment(commitment["id"], status="pending", last_error=error,
-                                        next_attempt_at=retry_at.isoformat(), proactive_event_id=event_id)
-            violetdb.update_proactive_event(event_id, status="failed", reason=f"send failed: {error}")
+                retry_at = (current + timedelta(minutes=float(cfg.get("retry_minutes", 5)))).isoformat()
+                violetdb.update_commitment(commitment["id"], status="pending", next_attempt_at=retry_at,
+                                           proactive_event_id=event_id, last_error=error)
+            violetdb.update_proactive_event(event_id, status="failed", sent_messages=[], reason=error)
         return delivered

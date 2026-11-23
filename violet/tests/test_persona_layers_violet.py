@@ -18,12 +18,9 @@ def data_dir(tmp_path, monkeypatch):
 
 def test_the_default_prompts_no_longer_fix_who_she_is():
     from ai.agents.chat_agent import ChatAgent
-    from ai.agents.proactive_agent import ProactiveAgent
     from ai.settings import PROJECT_ROOT
     chat = (PROJECT_ROOT / ChatAgent.default_prompt_file).read_text(encoding="utf-8")
-    proactive = (PROJECT_ROOT / ProactiveAgent.default_prompt_file).read_text(encoding="utf-8")
     assert "女孩" not in chat and "撒娇" not in chat and "你们的关系" in chat and "你自己" in chat
-    assert "女友" not in proactive and "你们的关系" in proactive
 
 
 def test_relationship_default_set_and_kept_on_a_switch(db, data_dir):

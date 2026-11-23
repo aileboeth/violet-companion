@@ -410,13 +410,15 @@ SET_INTERACTION_PREFERENCE_SCHEMA = {
         "name": "set_interaction_preference",
         "description": (
             "用户明确提出交流方式的要求时记录。key/value："
-            "reply_length=short|normal|long；proactive_chat=welcome|less|no；follow_up_questions=ok|less|no；"
-            "advice=welcome|only_when_asked|no；humor=likes|neutral|no；avoid_topic=不想反复聊的话题（自由文本）。"
+            "reply_length=short|normal|long；proactive_chat=welcome|less|no；"
+            "closeness=distance（认真要求保持距离/别撒娇）|normal（愿意亲近/解除距离）；"
+            "follow_up_questions=ok|less|no；advice=welcome|only_when_asked|no；"
+            "humor=likes|neutral|no；avoid_topic=不想反复聊的话题（自由文本）。"
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "key": {"type": "string", "enum": ["reply_length", "proactive_chat", "follow_up_questions", "advice", "humor", "avoid_topic"]},
+                "key": {"type": "string", "enum": ["reply_length", "proactive_chat", "closeness", "follow_up_questions", "advice", "humor", "avoid_topic"]},
                 "value": {"type": "string"},
                 "evidence": {"type": "string", "description": "用户原话（逐字）。"},
             },

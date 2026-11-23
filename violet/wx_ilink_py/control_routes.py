@@ -1124,7 +1124,7 @@ def register_control_routes(app: Flask, violetdb, client=None, proactive_schedul
         out = {}
         for agent in all_agents or []:
             cfg, key = getattr(agent, "_config", None), str(getattr(agent, "model_env_key", "") or "")
-            kind = {"CHAT_LLM_MODEL": "chat", "PROACTIVE_LLM_MODEL": "proactive"}.get(key)
+            kind = {"CHAT_LLM_MODEL": "chat"}.get(key)
             if cfg is None or kind is None:
                 continue
             text = (cfg.reply_prompt or "").strip()

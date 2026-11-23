@@ -37,12 +37,10 @@ from tools import violet_sources as _sources
 
 logger = logging.getLogger("violet.control")
 
-ROLES = (("CHAT", "ChatAgent（写回复）"), ("MEMORY", "MemoryAgent（记忆）"),
-         ("PROACTIVE", "ProactiveAgent（主动联系决策）"))
+ROLES = (("CHAT", "ChatAgent（聊天与主动发消息）"), ("MEMORY", "MemoryAgent（记忆）"))
 MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+\-]{0,119}$")
 HHMM_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
-PROMPT_DIRS = {"chat": PROJECT_ROOT / "persona" / "chat_prompt_versions",
-               "proactive": PROJECT_ROOT / "persona" / "proactive_prompt_versions"}
+PROMPT_DIRS = {"chat": PROJECT_ROOT / "persona" / "chat_prompt_versions"}
 
 
 @dataclass
@@ -114,8 +112,6 @@ SETTINGS: list[Setting] = [
     Setting("prompt.chat", "Chat 提示词版本", "prompts", "prompt_version", "now",
             "留空 = 用 .env 里的 CHAT_LLM_PROMPT；选一个版本 = 用 persona/chat_prompt_versions 里对应的文件",
             target="prompt"),
-    Setting("prompt.proactive", "主动联系决策提示词版本", "prompts", "prompt_version", "now",
-            "留空 = 用 .env 里的 PROACTIVE_LLM_PROMPT", target="prompt"),
     Setting("DEBOUNCE_NORMAL", "等对方说完再回（秒）", "messages", "float", "now",
             "对方连发几条时，最后一条之后等多久再一起处理", 5.0, 0, 120),
     Setting("DEBOUNCE_EXTRA", "对方像是没说完时多等（秒）", "messages", "float", "now", "", 10.0, 0, 300),
@@ -737,7 +733,7 @@ class ControlStore:
         if _CHECKED_INSTALLER_V1.get(key_id) == rev:
             return {}
         values = doc.get("values") or {}
-        candidates = [k for k in ("prompt.chat", "prompt.proactive") if values.get(k) == "v1"]
+        candidates = [k for k in ("prompt.chat",) if values.get(k) == "v1"]
         if not candidates:
             _CHECKED_INSTALLER_V1[key_id] = rev
             return {}

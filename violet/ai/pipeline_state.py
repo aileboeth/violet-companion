@@ -27,7 +27,7 @@ ITEM_LIMIT = 80              # items of one list / keys of one dict
 DEPTH_LIMIT = 8
 
 CHAT_NODES = ["Chat", "Memory"]
-PROACTIVE_NODES = ["Proactive", "Chat"]
+PROACTIVE_NODES = ["Chat"]
 SOCIAL_NODES = ["Social", "Act"]
 NODES = {"chat": CHAT_NODES, "proactive": PROACTIVE_NODES, "social": SOCIAL_NODES}
 

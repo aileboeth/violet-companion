@@ -177,7 +177,8 @@ def test_proactive_messages_never_get_web_tools(web_world):
     arm(w)
     w.scheduler.tick()
     proactive_calls = [c for c in w.llm.calls_for("fake-chat")
-                       if any("主动触达" in (m.get("content") or "") for m in c["messages"] if m["role"] == "user")]
+                       if any("主动联系参考" in (m.get("content") or "") or "系统定时唤醒" in (m.get("content") or "")
+                              for m in c["messages"] if m["role"] == "user")]
     assert proactive_calls and all(SEARCH not in tool_names(c) and FETCH not in tool_names(c) for c in proactive_calls)
 
 

@@ -296,20 +296,9 @@ def test_compact_memory_tools_keep_names_params_and_enums(monkeypatch):
     assert memory_tools_compact.compact(full["save_memory"]) == full["save_memory"]
 
 
-def test_decision_sees_the_last_turns_only(violetdb):
-    from ai.context_engine import ContextEngine
-    for i in range(30):
-        violetdb.add_user_message("text", f"第{i}句")
-        violetdb.add_assistant_message("text", f"回{i}")
-    decision = [m for m in ContextEngine(violetdb).history([], mode="decision") if m["role"] != "system"]
-    proactive = [m for m in ContextEngine(violetdb).history([], mode="proactive") if m["role"] != "system"]
-    assert len(decision) == 8 and decision[-1]["content"] == "回29" and len(proactive) > len(decision)
-
-
 def test_decision_eval_runs_end_to_end_with_a_fake_model(monkeypatch, violetdb):
     from tests.fakes import FakeLLM, completion, install_fake_llm
-    install_fake_llm(monkeypatch, FakeLLM(default=lambda kw: completion(
-        '{"should_act": false, "action_type": "none", "reason": "eval"}')))
+    install_fake_llm(monkeypatch, FakeLLM(default=lambda kw: completion("[NO_REPLY]")))
     from tools import decision_eval
     for case in decision_eval.MEMORY_CASES[:2]:
         result = decision_eval.memory_case(violetdb, case)

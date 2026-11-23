@@ -93,7 +93,8 @@ def memory_case(db, case) -> dict[str, Any]:
 
 
 def decision_case(db, case) -> dict[str, Any]:
-    from ai.agents.proactive_agent import ProactiveAgent
+    from ai.agents import ChatAgent
+    from ai.chat import run_proactive_pipeline
     from ai.memory_model import parse_time
     from ai.proactive_scheduler import ProactiveScheduler, now_china
     cid, setup, _ = case
@@ -116,15 +117,15 @@ def decision_case(db, case) -> dict[str, Any]:
     for i, (role, text) in enumerate(rows):
         when = at(start - i * (1 if setup != "cold" else 60))
         (db.add_user_message if role == "user" else db.add_assistant_message)("text", text, created_at=when)
-    if setup == "cold":                       # three messages she started, none answered (cold_streak = 3)
+    if setup == "cold":
         for _ in range(3):
             db.add_proactive_event("scheduled_check", status="sent", action_type="chat", reason="eval")
-    sched = ProactiveScheduler(None, None, send_messages=lambda *a: None)
+    chat = ChatAgent()
+    sched = ProactiveScheduler(chat, send_messages=lambda *a: None)
     context = sched._build_event_context(now_china())
     try:
-        result = ProactiveAgent().run(json.dumps(context, ensure_ascii=False))
-        decision = json.loads(result.get("content") or "{}")
-        act, error = bool(decision.get("should_act")), None
+        res = run_proactive_pipeline(context, chat)
+        act, error = bool(res.get("should_send")), res.get("error")
     except Exception as exc:                                  # noqa: BLE001
         act, error = None, f"{exc.__class__.__name__}: {exc}"[:200]
     return {"act": act, "tokens": tokens(db), "error": error}

@@ -175,26 +175,25 @@ def started(w, clock, moment, last_user=timedelta(hours=3)):
 def test_no_proactive_message_and_no_model_call_in_class(make_world, clock, timetable):
     w = world(make_world, **ON)
     started(w, clock, at(7, 8, 30))
-    decide(w, chat_brief={"topic": "想你了"})
     chat(w, proactive="在干嘛呀")
     arm(w)
     w.scheduler.tick()
-    assert w.llm.calls_for("fake-proactive") == [] and w.client.sent_texts == []
+    assert w.llm.calls_for("fake-chat") == [] and w.client.sent_texts == []
     due, reason = w.scheduler._is_due(clock.now())
     assert not due and reason == "not due yet"                               # postponed past the class, not queued
     next_at = datetime.fromisoformat(w.db.get_proactive_setting("next_proactive_at"))
     assert next_at >= at(7, 9, 45) + timedelta(minutes=60)                   # window end + the usual random wait
     clock(at(7, 9, 46))                                                      # class over: nothing is "made up"
     w.scheduler.tick()
-    assert w.llm.calls_for("fake-proactive") == [] and w.client.sent_texts == []
+    assert w.llm.calls_for("fake-chat") == [] and w.client.sent_texts == []
     clock(next_at)                                                           # 10:45: 英语 (10:00-11:40) -> later again
     w.scheduler.tick()
-    assert w.llm.calls_for("fake-proactive") == [] and w.client.sent_texts == []
+    assert w.llm.calls_for("fake-chat") == [] and w.client.sent_texts == []
     next_at = datetime.fromisoformat(w.db.get_proactive_setting("next_proactive_at"))
     assert next_at >= at(7, 11, 45) + timedelta(minutes=60)
     clock(next_at)                                                           # its own time, no class: one ordinary check
     w.scheduler.tick()
-    assert w.client.sent_texts == ["在干嘛呀"] and len(w.llm.calls_for("fake-proactive")) == 1
+    assert w.client.sent_texts == ["在干嘛呀"] and len(w.llm.calls_for("fake-chat")) == 1
 
 
 def test_explicit_wishes_quiet_hours_and_busy_come_first(make_world, clock, timetable):
@@ -269,13 +268,12 @@ def test_final_check_stops_a_message_when_class_started_meanwhile(make_world, cl
 def test_switched_off_means_exactly_the_old_behaviour(make_world, clock, timetable, monkeypatch):
     w = world(make_world, VIOLET_SCHEDULE_ENABLED="1")                                 # VIOLET_SCHEDULE_PROACTIVE not set
     started(w, clock, at(7, 8, 30))
-    decide(w, chat_brief={"topic": "想你了"})
     chat(w, proactive="在干嘛呀")
     arm(w)
     w.scheduler.tick()
     assert w.client.sent_texts == ["在干嘛呀"]                               # in class by the plan: not looked at
-    context = json.loads(w.llm.calls_for("fake-proactive")[-1]["messages"][-1]["content"].splitlines()[-1])
-    assert "schedule_note" not in context and "allowed_schedule_moments" not in context["conversation_state"]
+    ctx = w.scheduler._build_event_context(clock.now())
+    assert "allowed_schedule_moments" not in ctx["conversation_state"]
     monkeypatch.delenv("VIOLET_SCHEDULE_ENABLED")
     monkeypatch.setenv("VIOLET_SCHEDULE_PROACTIVE", "1")                        # without the master switch: nothing
     assert w.scheduler._schedule() is None and w.scheduler._schedule_gate(clock.now()) is None
@@ -287,24 +285,23 @@ def test_exam_tomorrow_is_offered_with_the_minimum_and_wished_once(make_world, c
     caplog.set_level(logging.INFO)
     w = world(make_world, **ON)
     started(w, clock, at(9, 18, 0))                                          # Wed evening, the quiz is Thu 10:00
-    decide(w, chat_brief={"topic": "明天小测，祝顺利"}, mentioned_schedule_ids=[f"schedule:exam:{timetable[1]['quiz']}"])
     chat(w, proactive="明天小测加油呀")
-    arm(w)
-    w.scheduler.tick()
-    context = json.loads(w.llm.calls_for("fake-proactive")[-1]["messages"][-1]["content"].splitlines()[-1])
+    context = w.scheduler._build_event_context(clock.now())
     offered = context["conversation_state"]["allowed_schedule_moments"]
     exam = next(m for m in offered if m["type"] == "exam_tomorrow")
     assert (exam["exam"], exam["kind"], exam["start"]) == ("高数小测（虚构）", "小测", "10:00")
     text = json.dumps(context, ensure_ascii=False)
     for secret in (TEACHER, ROOM, SEAT, NOTE):
-        assert secret not in text                                            # never in the decision's input
+        assert secret not in text                                            # never in the model's input
+    arm(w)
+    w.scheduler.tick()
     event = latest_event(w)
     assert event["status"] == "sent" and SEAT not in (event.get("metadata") or "")
     assert w.db.list_topic_mentions(topic_key=exam["id"])
     for record in caplog.records:
         for secret in (TEACHER, ROOM, SEAT, NOTE):
             assert secret not in record.getMessage()
-    # once: not offered again, and a decision naming it is refused
+    # once: not offered again
     later = clock.now() + timedelta(hours=4)
     clock(later)
     assert not [m for m in moments(w.db, later) if m["type"] == "exam_tomorrow"]
@@ -313,7 +310,6 @@ def test_exam_tomorrow_is_offered_with_the_minimum_and_wished_once(make_world, c
 def test_an_exam_named_in_the_sent_text_counts_even_without_the_id(make_world, clock, timetable):
     w = world(make_world, **ON)
     started(w, clock, at(9, 18, 0))
-    decide(w, chat_brief={"topic": "随便聊聊"})
     chat(w, proactive="对了明天高数小测别紧张")
     arm(w)
     w.scheduler.tick()
@@ -324,26 +320,15 @@ def test_an_exam_named_in_the_sent_text_counts_even_without_the_id(make_world, c
 def test_a_restart_remembers_what_was_already_said(make_world, clock, timetable):
     w = world(make_world, **ON)
     started(w, clock, at(9, 18, 0))
-    decide(w, mentioned_schedule_ids=[f"schedule:exam:{timetable[1]['quiz']}"], chat_brief={"topic": "祝顺利"})
-    chat(w, proactive="明天加油")
+    chat(w, proactive="明天小测加油")
     arm(w)
     w.scheduler.tick()
     from ai.proactive_scheduler import ProactiveScheduler
-    fresh = ProactiveScheduler(None, None, send_messages=lambda m, e=None: None,
+    fresh = ProactiveScheduler(None, send_messages=lambda m, e=None: None,
                                config_path=w.scheduler.config_path)          # a new process would build this
     context = fresh._build_event_context(clock.now())
     assert not [m for m in context["conversation_state"].get("allowed_schedule_moments") or []
                 if m["type"] == "exam_tomorrow"]
-
-
-def test_a_decision_may_not_name_a_moment_that_was_not_offered(make_world, clock, timetable):
-    w = world(make_world, **ON)
-    started(w, clock, at(9, 18, 0))
-    decide(w, mentioned_schedule_ids=["schedule:exam:999"], chat_brief={"topic": "x"})
-    chat(w, proactive="明天加油")
-    arm(w)
-    w.scheduler.tick()
-    assert w.client.sent_texts == [] and "schedule moment schedule:exam:999 was not offered" in latest_event(w)["reason"]
 
 
 def test_changed_or_cancelled_exams_and_avoided_topics(make_world, clock, timetable):
@@ -400,15 +385,16 @@ def test_dense_week_is_offered_once_a_week(violetdb, timetable):
 
 
 def test_moments_never_create_a_message_on_their_own(make_world, clock, timetable):
-    """The schedule adds background only: with the default "do not act" decision nothing is sent, and no check runs
+    """The schedule adds background only: when ChatAgent returns [NO_REPLY] nothing is sent, and no check runs
     before the scheduler's own time."""
     w = world(make_world, **ON)
     started(w, clock, at(9, 18, 0))
+    chat(w, proactive="[NO_REPLY]")
     w.scheduler.tick()                                                       # next time not reached
-    assert w.llm.calls_for("fake-proactive") == []
+    assert w.llm.calls_for("fake-chat") == []
     arm(w)
     w.scheduler.tick()
-    assert len(w.llm.calls_for("fake-proactive")) == 1 and w.client.sent_texts == []
+    assert len(w.llm.calls_for("fake-chat")) == 1 and w.client.sent_texts == []
     assert latest_event(w)["status"] == "skipped"
 
 

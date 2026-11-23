@@ -211,16 +211,21 @@ class Awareness:
                 "对方来消息就照常回复。")
 
 
-def record_mentions(db, offered: list[dict[str, Any]], decision: dict[str, Any], sent_text: str,
+def record_mentions(db, offered: list[dict[str, Any]], decision: dict[str, Any] | None, sent_text: str,
                     proactive_event_id: int | None) -> list[str]:
-    """After a proactive message really went out: the offered moments it used are done for good. Used = listed in
-    the decision's mentioned_schedule_ids, or (exams) named in what was sent -- so a wish is never repeated even when
-    the model forgot to list it."""
+    """After a proactive message really went out: mark offered moments that the sent text actually touched."""
     from ai.schedule.access import mentions_course
-    wanted = {str(x) for x in (decision.get("mentioned_schedule_ids") or []) if x}
+    wanted = {str(x) for x in ((decision or {}).get("mentioned_schedule_ids") or []) if x}
+    text = sent_text or ""
     used = []
     for m in offered:
-        hit = m["id"] in wanted or (m.get("type") == "exam_tomorrow" and mentions_course(sent_text or "", m["exam"]))
+        mtype = m.get("type")
+        hit = (
+            m["id"] in wanted
+            or (mtype == "exam_tomorrow" and (mentions_course(text, m["exam"]) or (m.get("kind") and m["kind"] in text)))
+            or (mtype == "classes_over_today" and bool(re.search(r"(下课|课上完|没课了|放学|上完课)", text)))
+            or (mtype == "dense_week" and bool(re.search(r"(课多|满课|课排得|这几天课|好几节课)", text)))
+        )
         if hit:
             db.add_topic_mention(m["id"], "violet_schedule", proactive_event_id=proactive_event_id)
             used.append(m["id"])

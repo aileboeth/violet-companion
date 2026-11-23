@@ -19,7 +19,7 @@ def env(monkeypatch, violetdb, tmp_path):
     monkeypatch.setenv("DEBOUNCE_NORMAL", "0.05")
     monkeypatch.setenv("DEBOUNCE_EXTRA", "0.1")
     llm = install_fake_llm(monkeypatch, FakeLLM(default_responders("哼\n终于想起我了")))
-    from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
+    from ai.agents import ChatAgent, MemoryAgent
     from violet_runtime import VioletRuntime, MessageSender
     client = FakeILinkClient()
     agents = {"chat": ChatAgent(), "memory": MemoryAgent()}
@@ -32,7 +32,7 @@ def env(monkeypatch, violetdb, tmp_path):
     rt = VioletRuntime(client, violetdb, agents, vision=vision, sender=sender)
     rt.start_worker()
     yield {"rt": rt, "client": client, "llm": llm, "db": violetdb, "agents": agents,
-           "proactive_agent": ProactiveAgent(), "vision_calls": vision_calls, "tmp": tmp_path}
+           "vision_calls": vision_calls, "tmp": tmp_path}
     rt.stop(timeout=2)
 
 
@@ -106,15 +106,12 @@ def test_debounce_waits_longer_for_unfinished_sentences():
 
 def test_scheduled_proactive_message_is_sent_and_recorded(env):
     from ai.proactive_scheduler import ProactiveScheduler
-    env["llm"].responders["fake-proactive"] = lambda kw: json.dumps(
-        {"should_act": True, "action_type": "chat", "reason": "好久没说话", "chat_brief": {"topic": "问候"}})
     env["llm"].responders["fake-chat"] = lambda kw: "在干嘛呢"
     config = env["tmp"] / "proactive.json"
     config.write_text(json.dumps({"enabled": True, "quiet_hours": far_quiet_hours(), "min_minutes_after_user_message": 30,
-                                  "min_minutes_between_proactive_messages": 60, "daily_message_limit": 2,
-                                  "allowed_tasks": {}}), encoding="utf-8")
+                                  "min_minutes_between_proactive_messages": 60, "daily_message_limit": 2}), encoding="utf-8")
     rt = env["rt"]
-    scheduler = ProactiveScheduler(env["proactive_agent"], env["agents"]["chat"],
+    scheduler = ProactiveScheduler(env["agents"]["chat"],
                                    send_messages=lambda m, e=None: rt.send_proactive(m, e), config_path=config,
                                    is_busy=rt.is_busy, pipeline_lock=rt.pipeline_lock)
     db = env["db"]
@@ -127,7 +124,7 @@ def test_scheduled_proactive_message_is_sent_and_recorded(env):
     assert db.get_recent_messages(5)[-1]["content"] == "在干嘛呢"
     # dry-run test endpoint path still works without sending
     result = scheduler.force_run(send=False)
-    assert result["proactive_decision"]["should_act"] is True
+    assert result["should_send"] is True
     assert env["client"].sent_texts == ["在干嘛呢"]
 
 

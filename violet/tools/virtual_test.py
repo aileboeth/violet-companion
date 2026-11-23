@@ -259,7 +259,7 @@ class World:
         from ai import about_owner
         from ai import persona_templates as pt
         from ai import stickers, voice
-        from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
+        from ai.agents import ChatAgent, MemoryAgent
         from ai.agents.base_agent import BaseAgent
         from ai.chat import violetdb
         from ai.proactive_scheduler import ProactiveScheduler
@@ -300,7 +300,7 @@ class World:
         for description in STICKERS:
             stickers.add_bytes(violetdb, PNG + description.encode("utf-8"), source="eval", description=description)
         self.client = OwnerClient()
-        chat, memory, proactive = ChatAgent(), MemoryAgent(), ProactiveAgent()
+        chat, memory = ChatAgent(), MemoryAgent()
         holder: dict[str, Any] = {}
 
         def send(messages, proactive_event_id=None):
@@ -308,7 +308,7 @@ class World:
             if proactive_event_id is not None:
                 return rt.send_proactive(messages, proactive_event_id)
             return rt.sender.send_messages(messages, origin="reply").to_dict()
-        self.scheduler = ProactiveScheduler(proactive_agent=proactive, chat_agent=chat, send_messages=send)
+        self.scheduler = ProactiveScheduler(chat_agent=chat, send_messages=send)
         self.runtime = VioletRuntime(self.client, violetdb, {"chat": chat, "memory": memory},
                                      proactive_scheduler=self.scheduler, vision=lambda path: "（测试）",
                                      sender=MessageSender(self.client, violetdb, simulate_typing=False, sleep=lambda s: None))

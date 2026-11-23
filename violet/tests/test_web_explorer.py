@@ -264,7 +264,7 @@ def test_a_finding_is_shared_once_even_after_restart(make_world):
     row = w.db.fetch_one("SELECT * FROM web_findings WHERE id = ?", (fid,))
     assert row["share_count"] == 1 and row["shared_with_user_at"]
     # "restart": a fresh scheduler sees the persisted share
-    restarted = ProactiveScheduler(w.scheduler.proactive_agent, w.scheduler.chat_agent, send_messages=lambda m, e=None: None, config_path=w.scheduler.config_path)
+    restarted = ProactiveScheduler(w.scheduler.chat_agent, send_messages=lambda m, e=None: None, config_path=w.scheduler.config_path)
     assert restarted._conversation_state()["allowed_web_findings"] == []
     # even long after the share (spacing rule satisfied), the same finding is never offered again
     w.db.execute("UPDATE web_findings SET shared_with_user_at = ?",
@@ -274,12 +274,7 @@ def test_a_finding_is_shared_once_even_after_restart(make_world):
     other = finding(w.db, title="一本写山里图书馆的短篇小说集", url="https://books.example.org/other")
     assert [f["id"] for f in restarted._conversation_state()["allowed_web_findings"]] == [other]
     w.db.execute("UPDATE web_findings SET status = 'disabled' WHERE id = ?", (other,))
-    say(w, "哈哈好")
-    age_everything(w.db, 5)
-    arm(w)
-    w.scheduler.tick()                                   # the model tries the same finding again
-    assert latest_event(w)["status"] == "skipped" and f"web finding {fid} may not be shared now" in latest_event(w)["reason"]
-    assert w.client.sent_texts.count("看到 books.example.org 上一篇新书书评，说是写小镇夏天的小说") == 1
+    assert restarted._conversation_state()["allowed_web_findings"] == []
 
 
 # ---------------------------------------------------------------------------

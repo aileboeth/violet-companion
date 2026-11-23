@@ -25,10 +25,9 @@ def test_upcoming_event_the_user_raised_may_be_mentioned_once_before_it_happens(
     age_all(w.db, 3)                       # user raised it 3h ago; game is in 17h
     state = w.scheduler._conversation_state()
     allowed = {m["id"]: m for m in state["allowed_memories"]}
-    assert allowed[event["id"]]["type"] == "upcoming_event" and "不要追问结果" in allowed[event["id"]]["note"]
+    assert allowed[event["id"]]["type"] == "upcoming_event"
     assert event["id"] not in [m["memory_id"] for m in state["restricted_memories"]]
 
-    decide(w, topic_key="game_wish", mentioned_memory_ids=[event["id"]], chat_brief={"topic": "祝比赛顺利"})
     chat(w, proactive="明天篮球比赛加油呀")
     arm(w)
     w.scheduler.tick()

@@ -105,6 +105,7 @@ def sensitivity_for(key: str, value: str) -> str:
 PREF_VALUES: dict[str, tuple[str, ...] | None] = {
     "reply_length": ("short", "normal", "long"),
     "proactive_chat": ("welcome", "less", "no"),
+    "closeness": ("normal", "distance"),
     "follow_up_questions": ("ok", "less", "no"),
     "advice": ("welcome", "only_when_asked", "no"),
     "humor": ("likes", "neutral", "no"),
@@ -113,6 +114,7 @@ PREF_VALUES: dict[str, tuple[str, ...] | None] = {
 PREF_LABELS = {
     "reply_length": {"short": "喜欢简短的回复", "normal": "回复长短适中", "long": "可以多说一些"},
     "proactive_chat": {"welcome": "欢迎你主动找他/她聊天", "less": "希望你少主动发消息", "no": "不希望你主动发消息"},
+    "closeness": {"normal": "正常亲近互动", "distance": "希望保持轻松友好的距离（不撒娇、少亲昵）"},
     "follow_up_questions": {"ok": "不介意被追问", "less": "不喜欢被连续追问", "no": "不希望被追问"},
     "advice": {"welcome": "愿意听建议", "only_when_asked": "只在他/她问的时候才给建议", "no": "不想要建议"},
     "humor": {"likes": "喜欢开玩笑", "neutral": "玩笑适度", "no": "不喜欢开玩笑"},

@@ -219,19 +219,14 @@ def test_p3_s8_occasional_short_reply_is_not_a_permanent_trait(make_world):
     quiet_memory(w)
     say(w, "早")
     age_all(w.db, 3)
-    decide(w, topic_key="small_talk", chat_brief={"topic": "闲聊"})
     chat(w, proactive="在干嘛呀")
     arm(w)
     w.scheduler.tick()
     say(w, "嗯")
-    assert w.scheduler.tracker.cold_streak() == 1
-    assert "proactive_chat" not in w.scheduler.profile.preferences.effective()      # one "嗯" is not a trait
-    obs = w.db.fetch_all("SELECT value FROM preference_observations WHERE pref_key = 'proactive_chat'")
-    assert [o["value"] for o in obs] == ["less"]
+    # Brief reply is still a real reply: unanswered_count resets to 0 and never penalizes proactive_chat
+    assert w.scheduler.unanswered_count() == 0
+    assert "proactive_chat" not in w.scheduler.profile.preferences.effective()
 
-    age_all(w.db, 2)
-    say(w, "在吗")                                                # the user comes back on their own
-    assert w.scheduler.tracker.cold_streak() == 0
     age_all(w.db, 4)
     arm(w)
     w.scheduler.tick()

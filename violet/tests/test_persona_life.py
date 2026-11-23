@@ -489,13 +489,12 @@ def test_life_events_are_only_candidates_and_never_shared_twice(make_world):
     state = w.scheduler._conversation_state()
     assert [e["id"] for e in state["allowed_life_events"]] == [event_id]
 
-    # the model may decide not to share at all: that is normal
-    w.llm.responders["fake-proactive"] = lambda kw: json.dumps({"should_act": False, "action_type": "none", "reason": "没什么想说"})
+    # the model may decide not to share at all: that is normal ([NO_REPLY])
+    chat(w, proactive="[NO_REPLY]")
     arm(w)
     w.scheduler.tick()
     assert latest_event(w)["status"] == "skipped" and store.event(event_id)["share_count"] == 0
 
-    decide(w, topic_key="violet_reading", mentioned_life_event_ids=[event_id], chat_brief={"topic": "随口说说最近在读的书"})
     chat(w, proactive="昨天又往后读了几章《边城》\n写得好慢")
     arm(w)
     w.scheduler.tick()
@@ -503,12 +502,15 @@ def test_life_events_are_only_candidates_and_never_shared_twice(make_world):
     assert store.event(event_id)["share_count"] == 1
     assert w.scheduler._conversation_state()["allowed_life_events"] == []
 
-    # the model tries to share the same event again: rejected in code
+    # once shared, the event is no longer offered as an allowed candidate and share_count does not increase again
     say(w, "哈哈好呀")
     age_everything(w.db, 4)
+    chat(w, proactive="今天天气挺舒服的")
     arm(w)
     w.scheduler.tick()
-    assert latest_event(w)["status"] == "skipped" and f"life event {event_id} may not be shared now" in latest_event(w)["reason"]
+    last_prompt = "\n".join(str(m.get("content", "")) for m in w.llm.calls_for("fake-chat")[-1]["messages"])
+    assert "你最近的生活经历" not in last_prompt
+    assert store.event(event_id)["share_count"] == 1
     assert w.client.sent_texts.count("昨天又往后读了几章《边城》") == 1
 
 
@@ -516,7 +518,6 @@ def test_user_uninterested_in_eves_life_stops_life_shares(make_world):
     w, store, thread_id = share_world(make_world)
     for i, content in enumerate(["又往后读了几章《边城》", "在《边城》里停在一段写得很慢的地方"]):
         event_id = happened(store, content, hours_ago=10 - i * 2, thread=thread_id, uid=f"u{i}")
-        decide(w, topic_key=f"violet_reading_{i}", mentioned_life_event_ids=[event_id], chat_brief={"topic": "说说书"})
         chat(w, proactive=content)
         arm(w)
         w.scheduler.tick()
@@ -539,10 +540,10 @@ def test_busy_user_is_not_disturbed_even_with_new_life_events(make_world):
     w, store, thread_id = share_world(make_world)
     happened(store, "又往后读了几章《边城》", hours_ago=2, thread=thread_id)
     Profile(w.db).situations.observe("availability", "在开会", "user_stated", evidence="在开会", user_message="我在开会", until="2h")
-    calls = len(w.llm.calls_for("fake-proactive"))
+    calls = len(w.llm.calls_for("fake-chat"))
     arm(w)
     w.scheduler.tick()
-    assert len(w.llm.calls_for("fake-proactive")) == calls
+    assert len(w.llm.calls_for("fake-chat")) == calls
     assert w.scheduler.status_snapshot()["due_reason"].startswith("the user said they are busy")
 
 

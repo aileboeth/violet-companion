@@ -9,7 +9,7 @@ setup_logging()
 
 from wx_ilink_py import ILinkClient, create_app
 from ai.chat import violetdb, run_pipeline
-from ai.agents import ChatAgent, MemoryAgent, ProactiveAgent
+from ai.agents import ChatAgent, MemoryAgent
 from ai.debug_visualizer import reload_debug_mode
 from ai.life_scheduler import LifeScheduler
 from ai.proactive_scheduler import ProactiveScheduler
@@ -41,9 +41,8 @@ client = ILinkClient(data_dir=env_str("VIOLET_DATA_DIR", "./data"), auto_login=F
 # --- Agent 实例（持久化，MCP 不重复启动）---
 chat_agent = ChatAgent()
 memory_agent = MemoryAgent()
-proactive_agent = ProactiveAgent()
 
-_ALL_AGENTS = [chat_agent, memory_agent, proactive_agent]
+_ALL_AGENTS = [chat_agent, memory_agent]
 
 runtime: VioletRuntime | None = None
 
@@ -59,7 +58,6 @@ def _send_pipeline_messages(messages: list[dict], proactive_event_id: int | None
 
 
 proactive_scheduler = ProactiveScheduler(
-    proactive_agent=proactive_agent,
     chat_agent=chat_agent,
     send_messages=_send_pipeline_messages,
 )

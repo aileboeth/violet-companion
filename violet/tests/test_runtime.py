@@ -278,14 +278,12 @@ def test_turns_are_serialized_and_see_previous_turn(env):
 
 def test_proactive_tick_waits_while_user_turn_is_pending(env, tmp_path):
     client, db, llm = env["client"], env["db"], env["llm"]
-    from ai.agents import ProactiveAgent
     from ai.proactive_scheduler import ProactiveScheduler
     config = tmp_path / "proactive.json"
     config.write_text(json.dumps({"enabled": True, "quiet_hours": far_quiet_hours(), "min_minutes_after_user_message": 0,
-                                  "min_minutes_between_proactive_messages": 0, "daily_message_limit": 5,
-                                  "allowed_tasks": {}}), encoding="utf-8")
+                                  "min_minutes_between_proactive_messages": 0, "daily_message_limit": 5}), encoding="utf-8")
     rt_holder = {}
-    scheduler = ProactiveScheduler(ProactiveAgent(), env["agents"]["chat"],
+    scheduler = ProactiveScheduler(env["agents"]["chat"],
                                    send_messages=lambda m, e=None: rt_holder["rt"].send_proactive(m, e),
                                    config_path=config)
     rt = env["build"](proactive_scheduler=scheduler)
@@ -294,27 +292,24 @@ def test_proactive_tick_waits_while_user_turn_is_pending(env, tmp_path):
     db.set_proactive_setting("next_proactive_at", (datetime.fromisoformat(db.now()) - timedelta(minutes=1)).isoformat())
 
     rt.ingest_text("我来了")            # buffered, not yet processed (worker not started)
-    # on_user_message() pushed next_proactive_at into the future; re-arm it so the
-    # tick would fire if it ignored the pending user turn.
     db.set_proactive_setting("next_proactive_at", (datetime.fromisoformat(db.now()) - timedelta(minutes=1)).isoformat())
     scheduler.tick()
-    assert llm.calls_for("fake-proactive") == []
+    assert llm.calls_for("fake-chat") == []
     rt.start_worker()
     assert rt.wait_idle()
+    before = len(llm.calls_for("fake-chat"))
     db.set_proactive_setting("next_proactive_at", (datetime.fromisoformat(db.now()) - timedelta(minutes=1)).isoformat())
     scheduler.tick()
-    assert len(llm.calls_for("fake-proactive")) == 1
+    assert len(llm.calls_for("fake-chat")) == before + 1
 
 
 def test_proactive_send_failure_is_recorded(env, tmp_path):
     client, db, llm = env["client"], env["db"], env["llm"]
-    from ai.agents import ProactiveAgent
     from ai.proactive_scheduler import ProactiveScheduler
-    llm.responders["fake-proactive"] = lambda kw: json.dumps({"should_act": True, "action_type": "chat", "reason": "t"})
     llm.responders["fake-chat"] = lambda kw: "想你了"
     client.send_failures = [requests.ReadTimeout("x")]
     rt_holder = {}
-    scheduler = ProactiveScheduler(ProactiveAgent(), env["agents"]["chat"],
+    scheduler = ProactiveScheduler(env["agents"]["chat"],
                                    send_messages=lambda m, e=None: rt_holder["rt"].send_proactive(m, e),
                                    config_path=tmp_path / "p.json")
     rt = env["build"](proactive_scheduler=scheduler)

@@ -183,12 +183,10 @@ def create_app(
                 "error": "manual proactive sending is disabled; set VIOLET_ALLOW_MANUAL_PROACTIVE_SEND=1 to allow it",
             }), 403
         event_context_patch = payload.get("event_context") or {}
-        force_task = payload.get("force_task")
         try:
             pipeline = proactive_scheduler.force_run(
                 send=send,
                 event_context_patch=event_context_patch,
-                force_task=force_task,
             )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -198,7 +196,7 @@ def create_app(
             "ok": True,
             "send": send,
             "event_id": pipeline.get("event_id"),
-            "decision": pipeline.get("proactive_decision"),
+            "should_send": pipeline.get("should_send"),
             "chat_content": (pipeline.get("chat") or {}).get("content"),
             "error": pipeline.get("error"),
         })

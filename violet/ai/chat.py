@@ -11,7 +11,7 @@ from ai.debug_visualizer import visualize_pipeline_start, visualize_pipeline_end
 import ai.pipeline_state as _ps
 from ai.settings import ENV_PATH, env_bool, env_str
 from ai.chat_output import NO_REPLY_TOKEN, normalize_chat_output, strip_images
-from ai.conversation_state import TopicTracker, normalize_topic_key
+from ai.conversation_state import TopicTracker
 from ai.memory_model import EVENT_KINDS, KIND_LABELS, PROGRESS_LABELS, event_time_label, is_date_only, touches_topic
 
 violetdb = VioletDatabase()
@@ -636,25 +636,17 @@ def _run_pipeline(
     return result(memory_result)
 
 
-def _safe_json_loads(raw: str, default: Any) -> Any:
-    parsed = parse_json_object(raw)
-    return parsed if parsed is not None else default
-
-
 def run_proactive_pipeline(
     event_context: dict[str, Any],
-    proactive_agent,
     chat_agent,
 ) -> dict[str, Any]:
-    """
-    串行执行 proactive -> chat 主动触达 pipeline（ProactiveAgent 只做决策；主动链路不调用 MemoryAgent）。
+    """Single-call proactive pipeline: ChatAgent decides and writes directly (or outputs [NO_REPLY]).
 
-    任何阶段抛出的异常都会被记录为 proactive_events.status = failed，
-    不会再让事件停留在 planned / task_started。
+    Any unexpected error is recorded as proactive_events.status = 'failed'.
     """
     state: dict[str, Any] = {"event_id": None}
     try:
-        return _run_proactive_pipeline(event_context, proactive_agent, chat_agent, state)
+        return _run_proactive_pipeline(event_context, chat_agent, state)
     except Exception as exc:
         logger.exception("proactive pipeline failed")
         reason = f"pipeline error: {exc.__class__.__name__}: {exc}"[:500]
@@ -676,8 +668,6 @@ def run_proactive_pipeline(
         _ps.pipeline_end(error=reason)
         return {
             "event_id": state["event_id"],
-            "proactive": None,
-            "proactive_decision": None,
             "chat": None,
             "should_send": False,
             "error": reason,
@@ -686,164 +676,114 @@ def run_proactive_pipeline(
 
 def _run_proactive_pipeline(
     event_context: dict[str, Any],
-    proactive_agent,
     chat_agent,
     state: dict[str, Any],
 ) -> dict[str, Any]:
-    event_input = json.dumps(event_context, ensure_ascii=False)
-    visualize_pipeline_start(f"[proactive] {event_context.get('event_type', 'scheduled_check')}")
-    _ps.pipeline_start("proactive", event_context.get("event_type", "proactive"))
+    from ai.channels.outbound import chat_payload
 
-    visualize_step("Proactive Decision", "判断是否主动触达以及是否下发任务")
-    _ps.node_start("Proactive", input_data={"event_context": event_context})
-    proactive_result = proactive_agent.run(event_input)
-    proactive_json = _safe_json_loads(proactive_result.get("content", ""), default={})
-    if not isinstance(proactive_json, dict):
-        proactive_json = {}
-    if not proactive_json:
-        logger.warning("ProactiveAgent returned no usable JSON; treating as 'do not act'")
+    event_type = event_context.get("event_type", "scheduled_check")
+    visualize_pipeline_start(f"[proactive] {event_type}")
+    _ps.pipeline_start("proactive", event_type)
 
-    should_act = bool(proactive_json.get("should_act"))
-    action_type = proactive_json.get("action_type", "none")
-    if action_type == "task":
-        action_type = "chat"          # 2026-11-11: no task executor any more -- she just writes
-    if action_type not in ("none", "chat"):
-        logger.warning("ProactiveAgent returned unknown action_type %r; treating as 'none'", action_type)
-        action_type = "none"
     conversation_state = event_context.get("conversation_state") or {}
-    violation = None
-    if should_act and action_type != "none":
-        violation = validate_proactive_decision(proactive_json, conversation_state)
-        if violation:
-            logger.info("proactive decision rejected by policy: %s", violation)
-    if not should_act or action_type == "none" or violation:
-        _ps.node_done("Proactive", output_data={"messages": proactive_result.get("messages", []), "content": proactive_json})
-        _ps.node_skip("Chat")
+    restricted = restricted_topics_from_state(conversation_state)
+    phone_note = "\n".join(x for x in (event_context.get("phone_moment"), event_context.get("phone_now")) if x)
+
+    visualize_step("Chat Generation", "判断并生成主动联系消息")
+    _ps.node_start("Chat", input_data={"trigger": "[proactive event]", "event_type": event_type,
+                                       "warmth_level": event_context.get("warmth_level")})
+    chat_result = chat_agent.run(
+        "[proactive event]",
+        call_context={
+            "is_proactive": True,
+            "restricted_topics": restricted,
+            "proactive_note": event_context.get("proactive_note"),
+            "phone_note": phone_note,
+        },
+    )
+    raw_content = chat_result.get("content", "")
+    _ps.node_done("Chat", output_data={"messages": chat_result.get("messages", []), "content": raw_content})
+
+    payload = chat_payload(raw_content if isinstance(raw_content, str) else "", images=False)
+    if not payload.get("should_send", False):
+        reason = "ChatAgent decided not to send"
         event_id = violetdb.add_proactive_event(
-            event_type=event_context.get("event_type", "scheduled_check"),
+            event_type=event_type,
             status="skipped",
             action_type="none",
-            reason=(f"policy: {violation}" if violation else
-                    proactive_json.get("reason", "ProactiveAgent decided not to act.")),
-            decision=proactive_json,
+            reason=reason,
+            decision={"should_act": False, "action_type": "none", "reason": reason},
             metadata=event_context,
             scheduled_at=event_context.get("scheduled_at"),
         )
         state["event_id"] = event_id
         visualize_pipeline_end()
         _ps.pipeline_end()
-        return {
-            "event_id": event_id,
-            "proactive": proactive_result,
-            "proactive_decision": proactive_json,
-            "chat": None,
-            "should_send": False,
-        }
+        return {"event_id": event_id, "chat": chat_result, "should_send": False}
 
+    guarded, life_violations = guard_reply(raw_content, entity="proactive_reply")
+    if life_violations:
+        chat_result = {**chat_result, "content": guarded}
+        raw_content = guarded
+        if not guarded.strip():
+            reason = "policy: proactive message contradicted recorded facts"
+            event_id = violetdb.add_proactive_event(
+                event_type=event_type,
+                status="skipped",
+                action_type="none",
+                reason=reason,
+                decision={"should_act": False, "action_type": "none", "reason": reason},
+                metadata=event_context,
+                scheduled_at=event_context.get("scheduled_at"),
+            )
+            state["event_id"] = event_id
+            visualize_pipeline_end()
+            _ps.pipeline_end()
+            return {"event_id": event_id, "chat": chat_result, "should_send": False, "error": reason}
+
+    touched = find_touched_topic(raw_content, restricted)
+    if touched is not None:
+        reason = f"policy: generated message touches restricted topic (memory {touched.get('memory_id') or touched.get('topic_key')})"
+        logger.info(reason)
+        event_id = violetdb.add_proactive_event(
+            event_type=event_type,
+            status="skipped",
+            action_type="none",
+            reason=reason,
+            decision={"should_act": False, "action_type": "none", "reason": reason},
+            metadata=event_context,
+            scheduled_at=event_context.get("scheduled_at"),
+        )
+        state["event_id"] = event_id
+        visualize_pipeline_end()
+        _ps.pipeline_end()
+        return {"event_id": event_id, "chat": chat_result, "should_send": False, "error": reason}
+
+    summary_reason = event_context.get("summary_reason") or "主动联系"
+    decision_record = {"should_act": True, "action_type": "chat", "reason": summary_reason,
+                       "topic_key": event_context.get("summary_topic") or "proactive"}
     event_id = violetdb.add_proactive_event(
-        event_type=event_context.get("event_type", "scheduled_check"),
+        event_type=event_type,
         status="planned",
-        action_type=action_type,
-        reason=proactive_json.get("reason"),
-        decision=proactive_json,
+        action_type="chat",
+        reason=summary_reason,
+        decision=decision_record,
         metadata=event_context,
         scheduled_at=event_context.get("scheduled_at"),
     )
     state["event_id"] = event_id
-
-    _ps.node_done("Proactive", "Chat", output_data={"messages": proactive_result.get("messages", []), "content": proactive_json})
-
-    visualize_step("Chat Generation", "生成主动触达消息")
-    _ps.node_start("Chat", input_data={"trigger": "[proactive event]", "proactive_decision": proactive_json})
-    restricted = restricted_topics_from_state(conversation_state)
-    chat_result = chat_agent.run(
-        "[proactive event]",
-        call_context={
-            "is_proactive": True,
-            "proactive_result": proactive_json,
-            "restricted_topics": restricted,
-            "proactive_note": event_context.get("proactive_habit_note"),     # phase 8.9.5
-            # 2026-11-03 (ai/phone_state.py, ai/phone_events.py): the phone now, and the moment that woke her up
-            "phone_note": "\n".join(x for x in (event_context.get("phone_moment"), event_context.get("phone_now")) if x),
-        },
-    )
-    _ps.node_done("Chat", output_data={"messages": chat_result.get("messages", []), "content": chat_result.get("content")})
-
-    guarded, life_violations = guard_reply(chat_result.get("content", ""), entity="proactive_reply")
-    if life_violations:
-        chat_result = {**chat_result, "content": guarded}
-        if not guarded.strip():
-            reason = "policy: proactive message contradicted recorded facts"
-            violetdb.update_proactive_event(event_id, status="skipped", reason=reason, decision=proactive_json)
-            visualize_pipeline_end()
-            _ps.pipeline_end()
-            return {"event_id": event_id, "proactive": proactive_result, "proactive_decision": proactive_json,
-                    "chat": chat_result, "should_send": False, "error": reason}
-    touched = find_touched_topic(chat_result.get("content", ""), restricted)
-    if touched is not None:
-        reason = f"policy: generated message touches restricted topic (memory {touched.get('memory_id') or touched.get('topic_key')})"
-        logger.info(reason)
-        violetdb.update_proactive_event(event_id, status="skipped", reason=reason, decision=proactive_json)
-        visualize_pipeline_end()
-        _ps.pipeline_end()
-        return {
-            "event_id": event_id,
-            "proactive": proactive_result,
-            "proactive_decision": proactive_json,
-            "chat": chat_result,
-            "should_send": False,
-            "error": reason,
-        }
-
-    violetdb.update_proactive_event(
-        event_id,
-        action_type=action_type,
-        decision=proactive_json,
-    )
     visualize_pipeline_end()
     _ps.pipeline_end()
-
     return {
         "event_id": event_id,
-        "proactive": proactive_result,
-        "proactive_decision": proactive_json,
         "chat": chat_result,
         "should_send": True,
-        "topic_key": decision_topic_key(proactive_json),
-        "mentioned_memory_ids": decision_memory_ids(proactive_json),
-        "mentioned_life_event_ids": decision_life_event_ids(proactive_json),
-        "mentioned_web_finding_ids": decision_web_finding_ids(proactive_json),
     }
 
 
 # ---------------------------------------------------------------------------
-# Proactive policy helpers (phase 2)
+# Proactive policy helpers
 # ---------------------------------------------------------------------------
-
-def decision_topic_key(decision: dict[str, Any]) -> str:
-    brief = decision.get("chat_brief") if isinstance(decision.get("chat_brief"), dict) else {}
-    return normalize_topic_key(decision.get("topic_key") or brief.get("topic"))
-
-
-def decision_memory_ids(decision: dict[str, Any]) -> list[int]:
-    ids = []
-    for value in decision.get("mentioned_memory_ids") or []:
-        try:
-            ids.append(int(value))
-        except (TypeError, ValueError):
-            continue
-    return ids
-
-
-def decision_web_finding_ids(decision: dict[str, Any]) -> list[int]:
-    ids = []
-    for value in decision.get("mentioned_web_finding_ids") or []:
-        try:
-            ids.append(int(value))
-        except (TypeError, ValueError):
-            continue
-    return ids
-
 
 def note_web_mentions(reply_text: str, used_finding_ids: list[int] | None = None) -> list[int]:
     """Findings Violet talked about in a sent reply count as shared (never offered proactively again).
@@ -873,49 +813,6 @@ def note_web_mentions(reply_text: str, used_finding_ids: list[int] | None = None
             violetdb.add_topic_mention(web_topic_key(f["id"]), "violet_reply")
             shared.append(f["id"])
     return shared
-
-
-def decision_life_event_ids(decision: dict[str, Any]) -> list[int]:
-    ids = []
-    for value in decision.get("mentioned_life_event_ids") or []:
-        try:
-            ids.append(int(value))
-        except (TypeError, ValueError):
-            continue
-    return ids
-
-
-def validate_proactive_decision(decision: dict[str, Any], conversation_state: dict[str, Any]) -> str | None:
-    """Code-level checks on a ProactiveAgent decision. Returns a violation or None.
-
-    * a memory may only be referenced if it is in allowed_memories (long-term
-      facts that are not cooling); events are never proactive follow-ups;
-    * a cooling topic key may not be chosen again until the user re-engages.
-    """
-    if not conversation_state:
-        return None
-    allowed = {int(m["id"]) for m in conversation_state.get("allowed_memories") or [] if m.get("id") is not None}
-    for memory_id in decision_memory_ids(decision):
-        if memory_id not in allowed:
-            return f"memory {memory_id} may not be raised proactively"
-    allowed_web = {int(f["id"]) for f in conversation_state.get("allowed_web_findings") or []}
-    for finding_id in decision_web_finding_ids(decision):
-        if finding_id not in allowed_web:
-            return f"web finding {finding_id} may not be shared now"
-    allowed_life = {int(e["id"]) for e in conversation_state.get("allowed_life_events") or []}
-    for event_id in decision_life_event_ids(decision):
-        if event_id not in allowed_life:
-            return f"life event {event_id} may not be shared now"
-    # phase 9.4.4: timetable moments only as offered this time (an exam already wished for is never offered again)
-    allowed_schedule = {str(m.get("id")) for m in conversation_state.get("allowed_schedule_moments") or []}
-    for moment_id in decision.get("mentioned_schedule_ids") or []:
-        if str(moment_id) not in allowed_schedule:
-            return f"schedule moment {str(moment_id)[:60]} was not offered now"
-    cooling_keys = {c.get("topic_key") for c in conversation_state.get("cooling_topics") or []}
-    key = decision_topic_key(decision)
-    if key in cooling_keys:
-        return f"topic {key!r} is cooling (raised without engagement)"
-    return None
 
 
 def restricted_topics_from_state(conversation_state: dict[str, Any]) -> list[dict[str, Any]]:
