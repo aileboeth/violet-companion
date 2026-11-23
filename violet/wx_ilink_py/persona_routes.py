@@ -134,6 +134,18 @@ def register_persona_routes(app: Flask, violetdb, all_agents=None) -> None:
             return bad(str(exc))
         return ok({"in_effect": _in_effect(pt, str(data.get("channel") or "") or None)})
 
+    @app.post("/api/persona/distance/clear")
+    def persona_distance_clear():
+        """{channel: id | null (the main persona)} -- lift an active 'distance' relationship lock."""
+        from ai import memory_scope, persona_templates as pt
+        from ai.relationship import clear_distance
+        data = body()
+        channel = str(data.get("channel") or "") or None
+        scope = memory_scope.for_channel(channel) if channel else memory_scope.MAIN
+        with memory_scope.use(scope):
+            cleared_at = clear_distance(violetdb)
+        return ok({"cleared_at": cleared_at, "in_effect": _in_effect(pt, channel)})
+
     def _used_by(pt, rows: list[dict]) -> dict[str, list[str]]:
         """template key -> the channels talking as that persona (their own choice, else the main persona)."""
         main = pt.current()["template"]

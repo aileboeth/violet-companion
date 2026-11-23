@@ -31,6 +31,7 @@ ENGAGED, DISENGAGED, NEUTRAL = 1, 0, 2
 USER_SOURCE = "user"
 LAST_ENGAGED_KEY = "last_engaged_user_turn_at"
 GENERIC_TOPIC = "general_chat"
+ACTIVE_EXCHANGE_MINUTES = 15.0
 
 
 def memory_topic_key(memory_id: int) -> str:
@@ -106,9 +107,12 @@ class TopicTracker:
                 (value, self.db.now(), *[m["id"] for m in pending]),
             )
         user_initiated = not pending and self._starts_new_conversation()
-        if category != "disengaged" or user_initiated:
+        # 2026-11-23: a follow-up turn right after Violet replied (nothing pending) means the user is
+        # actively conversing even if the message is short, so reset the cold streak.
+        continued_chat = not pending and not user_initiated and self._in_active_exchange()
+        if category != "disengaged" or user_initiated or continued_chat:
             self.db.set_proactive_setting(LAST_ENGAGED_KEY, self.db.now())
-        return {"category": category, "user_initiated": user_initiated,
+        return {"category": category, "user_initiated": user_initiated, "continued_chat": continued_chat,
                 "evaluated": [(m["id"], m["source"]) for m in pending]}
 
     def _starts_new_conversation(self) -> bool:
@@ -118,10 +122,17 @@ class TopicTracker:
         gap = (parse_time(self.db.now()) - parse_time(last_eve)).total_seconds() / 60
         return gap >= env_float("VIOLET_USER_INITIATED_GAP_MINUTES", 30)
 
+    def _in_active_exchange(self) -> bool:
+        last_eve = self.db.get_latest_message_at(role="assistant")
+        if not last_eve:
+            return False
+        gap = (parse_time(self.db.now()) - parse_time(last_eve)).total_seconds() / 60
+        return 0 <= gap <= ACTIVE_EXCHANGE_MINUTES
+
     def evaluate_user_turn(self, text: str) -> bool:
         """Backward-compatible wrapper: True unless this turn was a brush-off of a pending raise."""
         result = self.evaluate(text)
-        return result["category"] != "disengaged" or result["user_initiated"]
+        return result["category"] != "disengaged" or result["user_initiated"] or result["continued_chat"]
 
     # -- phase 3: who raised a remembered topic ---------------------------------------
     def note_user_mentions(self, user_message: str, recalled: list[dict[str, Any]]) -> list[int]:

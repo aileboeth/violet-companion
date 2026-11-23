@@ -620,6 +620,22 @@ def in_effect(channel: str | None = None, db=None) -> dict[str, Any]:
     now = stage(channel, db) if db is not None else None     # db: the database of this persona's own records
     if now:
         rel = {**rel, "stage": now}
+    if db is not None:
+        try:
+            from ai.relationship import WARMTH_LABELS, assess, warmth_level
+            view = assess(db)
+            wlevel = warmth_level(view, now, rel_kind=rel.get("kind"))
+            rel = {
+                **rel,
+                "relationship_state": {
+                    "stage": view.stage,
+                    "distance_at": view.distance_at,
+                    "warmth_level": wlevel,
+                    "warmth_label": WARMTH_LABELS.get(wlevel, ""),
+                },
+            }
+        except Exception:                                    # noqa: BLE001
+            pass
     return {"persona": title + (f"（{name}）" if name and name not in title else ""), **rel}
 
 

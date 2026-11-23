@@ -75,6 +75,15 @@ class DailyLife:
         name = str((data.get("identity") or {}).get("name") or "")
         return name, own if isinstance(own, dict) and own else self.daily["slots"]
 
+    def _warmth_level(self) -> int:
+        try:
+            from ai import persona_templates as pt
+            from ai.relationship import assess, warmth_level
+            rel = pt.relationship(None)
+            return warmth_level(assess(self.db), pt.stage(None, self.db), rel_kind=rel.get("kind"))
+        except Exception:                                    # noqa: BLE001
+            return 0
+
     def plan_for(self, day: date, tz) -> list[dict[str, Any]]:
         """The whole day, decided from the date (and what the days before it already had).
 
@@ -85,11 +94,16 @@ class DailyLife:
         it is looked at."""
         name, slots_spec = self._persona()
         rng = random.Random(f"{self.daily.get('seed_salt', 'eve-day')}:{_install_seed()}:{name}:{day.isoformat()}")
-        if rng.random() < float(self.daily.get("quiet_day_probability", 0.15)):
+        from ai.relationship import proactive_pace
+        pace = proactive_pace(self._warmth_level())
+        quiet_roll = rng.random()
+        if pace["allow_quiet_day"] and quiet_roll < float(self.daily.get("quiet_day_probability", 0.15)):
             return []
         slots = list(slots_spec.items())
         lo, hi = (list(self.daily.get("items_per_day") or [1, 3]) + [3])[:2]
-        count = min(rng.randint(int(lo), int(hi)), len(slots))
+        lo = max(int(lo), int(pace["daily_min_items"]))
+        hi = max(int(hi), lo)
+        count = min(rng.randint(lo, hi), len(slots))
         day_start = datetime(day.year, day.month, day.day, tzinfo=tz)
         window = timedelta(days=float(self.daily.get("repeat_window_days", 5)))
         recent = {e["content"] for e in self.store.events(("happened",), since=(day_start - window).isoformat(),

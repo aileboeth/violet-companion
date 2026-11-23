@@ -39,7 +39,9 @@ _cache: dict[str, Any] = {"at": 0.0, "line": ""}     # line: {"_data", "_now", k
 _lock = threading.Lock()
 
 GUIDE = ("（手机状态只作参考：判断现在合不合适说话、怎么开口更自然。不要每次都提，更不要逐条复述；"
-         "可以偶尔顺口说一句“又在刷某某呀”，但不要让对方觉得被监视。夜里屏幕熄灭很久多半是在睡觉。"
+         "可以偶尔顺口说一句“又在刷某某呀”，但不要让对方觉得被监视。"
+         "打游戏、刷视频、刷手机或平时上课都不算勿扰，照常可以发一句简短轻松的消息；"
+         "只有深夜屏幕熄灭很久疑似睡觉，或对方亲口说过现在忙/开会/别打扰时才避开。"
          # 2026-11-09 (real chat): "戴着耳机" every turn beat the owner's "不是耳机是手表，你要记住哦" twice, and the next
          # morning; the alarm in every line made her nag about it for twenty minutes
          "对方亲口说过的事（聊天记录、记忆里的）比手机数据准，对不上时按对方说的来；"

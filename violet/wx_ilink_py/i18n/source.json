@@ -1073,6 +1073,9 @@
 "主动消息避开不该提的话题": [
 "ai/control_config.py"
 ],
+"主动热度：{0}": [
+"control_persona.js"
+],
 "主动状态读取失败：": [
 "control.js"
 ],
@@ -1134,6 +1137,9 @@
 ],
 "交给 Violet": [
 "tools/violet_voice.py"
+],
+"亲密黏人": [
+"control_persona.js"
 ],
 "亲近（默认）": [
 "ai/persona_templates.py"
@@ -1549,6 +1555,9 @@
 "保存配置": [
 "control_channels.js"
 ],
+"保持距离中": [
+"control_persona.js"
+],
 "保留记忆": [
 "control_persona.js"
 ],
@@ -1795,6 +1804,9 @@
 "关系": [
 "control_persona.js"
 ],
+"关系互动状态": [
+"control_persona.js"
+],
 "关系阶段": [
 "control_persona.js"
 ],
@@ -1977,6 +1989,9 @@
 "control_persona.js"
 ],
 "初始阶段": [
+"control_persona.js"
+],
+"初识克制": [
 "control_persona.js"
 ],
 "删掉之前画的 {0} 个套装表情包，重新画整套 {1} 个？每个算一张图片的额度。": [
@@ -2942,6 +2957,9 @@
 "她什么时候可以自己来找你。发到哪个渠道，在“聊天渠道”页最上面选。": [
 "control.html"
 ],
+"她会克制撒娇并暂停主动惦记，若已和好或属于误判可一键解除。": [
+"control_persona.js"
+],
 "她会在聊天里慢慢问一些了解你的问题（怎么称呼、上学还是上班……）；你拒绝过的不会再问。": [
 "control.js"
 ],
@@ -3719,6 +3737,9 @@
 "已被新的取代": [
 "control.js"
 ],
+"已解除「保持距离」状态，主动互动将恢复正常": [
+"control_persona.js"
+],
 "已记下": [
 "control.js",
 "control_diag.js"
@@ -3928,6 +3949,9 @@
 "当前人设与阶段": [
 "control.js"
 ],
+"当前处于「保持距离」状态": [
+"control_persona.js"
+],
 "当前密码不正确": [
 "wx_ilink_py/auth.py"
 ],
@@ -4125,6 +4149,9 @@
 ],
 "愿意听建议": [
 "control.js"
+],
+"慢慢升温": [
+"control_persona.js"
 ],
 "慢慢认识你": [
 "ai/control_config.py"
@@ -5957,6 +5984,9 @@
 "control.html",
 "control_schedule.js"
 ],
+"熟络活跃": [
+"control_persona.js"
+],
 "爱好": [
 "control_persona.js"
 ],
@@ -7018,6 +7048,12 @@
 ],
 "解除": [
 "control.js"
+],
+"解除保持距离": [
+"control_persona.js"
+],
+"触发于 {0}：她会克制撒娇并暂停主动惦记，可一键解除。": [
+"control_persona.js"
 ],
 "警告": [
 "control_logs.js"

@@ -379,8 +379,8 @@ def test_proactive_daily_life_materialization_and_stage_motive_alignment(isolate
     from ai.relationship import MISS_AFTER_HOURS, RelationshipView, proactive_motives
 
     monkeypatch.setenv("VIOLET_DAILY_LIFE", "1")
-    assert MISS_AFTER_HOURS["warming"] == 12
-    assert MISS_AFTER_HOURS["close"] == 6
+    assert MISS_AFTER_HOURS["warming"] == 8
+    assert MISS_AFTER_HOURS["close"] == 4
 
     pt.switch(violetdb, "stepsister", "keep")
     now = datetime(2026, 11, 19, 20, 30, 0)
@@ -534,5 +534,166 @@ def test_overview_proactive_recent_and_stateless_sandbox_api(isolated_data, viol
     assert violetdb.fetch_one("SELECT COUNT(*) AS n FROM messages")["n"] == before_msgs
     assert violetdb.fetch_one("SELECT COUNT(*) AS n FROM memory_jobs")["n"] == before_jobs
     assert mood.current(violetdb)["value"] == before_mood
+
+
+# ---------------------------------------------------------------------------
+# 11. Stage-scaled progressive warmth, distance recovery & class/quick-reply rules (v0.7.77)
+# ---------------------------------------------------------------------------
+
+def test_stage_scaled_proactive_warmth_pace_and_daily_life(isolated_data, violetdb, monkeypatch):
+    from datetime import date, datetime, timezone, timedelta
+    from ai import persona_templates as pt
+    from ai.daily_life import DailyLife
+    from ai.profile_store import Profile
+    from ai.proactive_scheduler import ProactiveScheduler
+    from ai.relationship import RelationshipView, proactive_motives, warmth_level
+
+    monkeypatch.setenv("VIOLET_DAILY_LIFE", "1")
+    pt.switch(violetdb, "stepsister", "keep")
+    sched = object.__new__(ProactiveScheduler)
+    sched.config = {"min_minutes_after_user_message": 90, "min_minutes_between_proactive_messages": 180,
+                    "random_delay_minutes": {"evening": [90, 180]}}
+    sched.profile = Profile(violetdb)
+    sched.tracker = SimpleNamespace(topic_state=lambda _: {"unengaged": 0, "cooling": False})
+
+    # Stage 0: polite shipped defaults unchanged (90 / 180)
+    pt.set_stage(None, 0)
+    after0, between0, lvl0, _ = sched._effective_intervals()
+    assert (after0, between0, lvl0) == (90.0, 180.0, 0)
+
+    # Stage 1 -> warming (60 / 120)
+    pt.set_stage(None, 1)
+    after1, between1, lvl1, _ = sched._effective_intervals()
+    assert (lvl1, round(after1), round(between1)) == (1, 60, 121)
+
+    # Stage 2 ("不只是妹妹") -> active warmth (45 / 90)
+    pt.set_stage(None, 2)
+    after2, between2, lvl2, _ = sched._effective_intervals()
+    assert (lvl2, after2, between2) == (2, 45.0, 90.0)
+
+    # Stage 3+ ("藏不住了") -> deep warmth (36 / 72)
+    pt.set_stage(None, 3)
+    after3, between3, lvl3, _ = sched._effective_intervals()
+    assert (lvl3, after3, between3) == (3, 36.0, 72.0)
+
+    # Distance view always drops warmth back to 0
+    assert warmth_level(RelationshipView(stage="distance"), {"index": 3, "total": 5}) == 0
+
+    # Stage 2 gets warm_checkin after 2.5h and miss after 4h (even with cold_streak=1 when user DID reply)
+    m_checkin = proactive_motives(RelationshipView(stage="new"), hours_since_user=2.8, cold_streak=0,
+                                  life_events=[], open_plans=[], unanswered=[],
+                                  persona_stage={"index": 2, "total": 5, "label": "不只是妹妹"})
+    assert any(m["type"] == "warm_checkin" for m in m_checkin)
+
+    m_miss = proactive_motives(RelationshipView(stage="new"), hours_since_user=4.5, cold_streak=1,
+                               life_events=[], open_plans=[], unanswered=[],
+                               persona_stage={"index": 2, "total": 5, "label": "不只是妹妹"})
+    assert any(m["type"] == "miss" for m in m_miss)
+
+    # DailyLife at Stage 2 never rolls a 0-item quiet day and plans all 3 daily slots
+    pt.set_stage(None, 2)
+    dl = DailyLife(violetdb)
+    dl.daily = {**dl.daily, "quiet_day_probability": 0.99}
+    tz = timezone(timedelta(hours=8))
+    plan = dl.plan_for(date(2026, 11, 23), tz)
+    assert len(plan) == 3
+
+    # Explicit "less" preference disables interval speedup
+    sched.profile.preferences.set_explicit("proactive_chat", "less", evidence="少主动发", user_message="以后少主动发消息")
+    after_less, between_less, _, _ = sched._effective_intervals()
+    assert (after_less, between_less) == (90.0, 180.0)
+
+
+def test_distance_false_positives_auto_decay_and_admin_clear_api(isolated_data, violetdb, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from ai import persona_templates as pt
+    from ai.agents import ChatAgent
+    from ai.relationship import assess, is_close_invite, is_distance_request
+    from tests.fakes import FakeLLM, default_responders, install_fake_llm
+    from wx_ilink_py import ILinkClient, create_app
+
+    # 1. Negation, questions & drama quotes do NOT trigger distance
+    for benign in ("我又没让你保持距离", "才不是肉麻", "这台词好肉麻", "这样肉麻吗？", "谁说我们不熟"):
+        assert not is_distance_request(benign), benign
+    for real in ("别撒娇了", "保持点距离吧", "正常点说话", "太黏了"):
+        assert is_distance_request(real), real
+
+    # Expanded close invites work and respect negations
+    assert is_close_invite("抱抱") and is_close_invite("多来找我聊天呀")
+    assert not is_close_invite("别抱抱") and not is_close_invite("不想你了")
+
+    # 2. Active distance lock decays naturally after 3+ days & multi-day chatting (>=4 msgs across >=2 days)
+    tz = timezone(timedelta(hours=8))
+    base = datetime(2026, 11, 20, 0, 15, 0, tzinfo=tz)
+    violetdb.execute("INSERT INTO messages (role, direction, message_type, content, created_at) VALUES ('user', 'incoming', 'text', '别太黏了', ?)", (base.isoformat(),))
+    assert assess(violetdb, now=base + timedelta(hours=12)).stage == "distance"
+
+    for offset_h, txt in ((10, "早呀"), (30, "吃午饭了"), (54, "刚下课"), (74, "晚上好")):
+        violetdb.execute(
+            "INSERT INTO messages (role, direction, message_type, content, created_at) VALUES ('user', 'incoming', 'text', ?, ?)",
+            (txt, (base + timedelta(hours=offset_h)).isoformat()),
+        )
+    assert assess(violetdb, now=base + timedelta(hours=80)).stage != "distance"
+
+    # 3. Fresh distance trigger shows up in /api/persona/templates and clears cleanly via POST /api/persona/distance/clear
+    pt.switch(violetdb, "stepsister", "keep")
+    violetdb.execute("DELETE FROM messages")
+    now_iso = violetdb.now()
+    violetdb.execute("INSERT INTO messages (role, direction, message_type, content, created_at) VALUES ('user', 'incoming', 'text', '保持距离吧', ?)", (now_iso,))
+    assert assess(violetdb).stage == "distance"
+
+    token = "test-distance-token"
+    headers = {"Authorization": f"Bearer {token}", "Origin": "http://localhost"}
+    install_fake_llm(monkeypatch, FakeLLM(default_responders("嗯")))
+    app = create_app(
+        client=ILinkClient(data_dir=isolated_data, auto_login=False),
+        violetdb=violetdb,
+        proactive_scheduler=None,
+        all_agents=[ChatAgent()],
+        admin_token=token,
+    )
+    client = app.test_client()
+    tpls = client.get("/api/persona/templates", headers=headers).get_json()
+    assert tpls["in_effect"]["relationship_state"]["stage"] == "distance"
+
+    cleared = client.post("/api/persona/distance/clear", json={}, headers=headers)
+    assert cleared.status_code == 200
+    assert cleared.get_json()["in_effect"]["relationship_state"]["stage"] != "distance"
+    assert assess(violetdb).stage != "distance"
+
+
+def test_class_situation_and_quick_reply_cold_streak(isolated_data, violetdb, monkeypatch):
+    from ai.conversation_state import TopicTracker
+    from ai.profile_store import Profile
+    from ai.proactive_scheduler import ProactiveScheduler
+
+    sched = object.__new__(ProactiveScheduler)
+    sched.profile = Profile(violetdb)
+
+    # Ordinary class activity does NOT block when VIOLET_SCHEDULE_PROACTIVE is OFF
+    monkeypatch.setenv("VIOLET_SCHEDULE_PROACTIVE", "0")
+    sched.profile.situations.observe("activity", "在上课", "user_stated", evidence="在上课", user_message="我在上课好无聊")
+    assert sched._busy_situation() is None
+
+    # When VIOLET_SCHEDULE_PROACTIVE is ON, class activity DOES block
+    monkeypatch.setenv("VIOLET_SCHEDULE_PROACTIVE", "1")
+    assert sched._busy_situation() is not None
+
+    # Explicit DND / busy / exam ALWAYS blocks even with VIOLET_SCHEDULE_PROACTIVE=0
+    monkeypatch.setenv("VIOLET_SCHEDULE_PROACTIVE", "0")
+    sched.profile.situations.observe("availability", "上课别打扰", "user_stated", evidence="上课别打扰", user_message="上课别打扰我")
+    assert sched._busy_situation() is not None
+
+    # Quick 2-turn short reply in active exchange resets cold_streak
+    tracker = TopicTracker(violetdb)
+    violetdb.add_proactive_event("scheduled_proactive_check", status="sent", action_type="chat")
+    tracker.record_eve_topic("daily_life")
+    tracker.evaluate("嗯")
+    assert tracker.cold_streak() == 1
+    violetdb.add_assistant_message("text", "那你先忙呀")
+    res = tracker.evaluate("好")
+    assert res["continued_chat"] is True
+    assert tracker.cold_streak() == 0
+
 
 

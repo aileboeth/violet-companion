@@ -14,8 +14,9 @@ from ai.chat_output import normalize_chat_output, strip_images
 from ai.conversation_state import (VIOLET_SOURCES, LIFE_TOPIC, WEB_TOPIC, TopicTracker, life_topic_key, memory_topic_key,
                                    web_topic_key)
 from ai.memory_model import PROGRESS_LABELS, event_deadline, parse_time
-from ai.profile_schema import BUSY_VALUES_RE
+from ai.profile_schema import BUSY_VALUES_NO_CLASS_RE, BUSY_VALUES_RE
 from ai.profile_store import Profile
+from ai.settings import env_bool
 
 logger = logging.getLogger("violet.proactive")
 
@@ -268,11 +269,52 @@ class ProactiveScheduler:
     def _set_next_proactive_at(self, value: datetime) -> None:
         violetdb.set_proactive_setting("next_proactive_at", value.isoformat())
 
+    def _warmth_profile(self, current: datetime | None = None) -> tuple[Any, dict[str, Any] | None, str | None, int, dict[str, Any]]:
+        """(RelationshipView, persona_stage, rel_kind, warmth_level 0..3, pace dict) for the current scope."""
+        from ai.relationship import RelationshipView, assess, proactive_pace, warmth_level
+        try:
+            view = assess(violetdb, current)
+        except Exception:                                    # noqa: BLE001
+            view = RelationshipView("new")
+        try:
+            from ai import persona_templates as pt
+            persona_stage = pt.stage(None, violetdb)
+            rel_kind = (pt.relationship(None) or {}).get("kind")
+        except Exception:                                    # noqa: BLE001
+            persona_stage, rel_kind = None, None
+        level = warmth_level(view, persona_stage, rel_kind=rel_kind)
+        return view, persona_stage, rel_kind, level, proactive_pace(level)
+
+    def _effective_intervals(self, current: datetime | None = None) -> tuple[float, float, int, dict[str, Any]]:
+        """(min_after_user, min_between, warmth_level, pace) scaled by stage warmth unless user prefers 'less'."""
+        from ai.relationship import scaled_minutes
+        _, _, _, level, pace = self._warmth_profile(current)
+        try:
+            pref = (self.profile.preferences.effective().get("proactive_chat") or {})
+        except Exception:                                    # noqa: BLE001
+            pref = {}
+        less = pref.get("value") == "less"
+        base_after = float(self.config.get("min_minutes_after_user_message", 30))
+        base_between = float(self.config.get("min_minutes_between_proactive_messages", 120))
+        after_scale = 1.0 if less else float(pace["after_user_scale"])
+        between_scale = 1.0 if less else float(pace["interval_scale"])
+        return (
+            scaled_minutes(base_after, after_scale, floor=25),
+            scaled_minutes(base_between, between_scale, floor=50),
+            level,
+            pace,
+        )
+
     def _random_next_time(self, current: datetime) -> datetime:
+        from ai.relationship import scaled_minutes
         bucket = time_bucket(current)
         ranges = self.config.get("random_delay_minutes", {})
         min_delay, max_delay = ranges.get(bucket) or ranges.get("other") or [60, 150]
-        return current + timedelta(minutes=random.randint(int(min_delay), int(max_delay)))
+        _, _, _, pace = self._effective_intervals(current)
+        scale = float(pace["delay_scale"])
+        lo = int(round(scaled_minutes(float(min_delay), scale, floor=20)))
+        hi = max(lo, int(round(scaled_minutes(float(max_delay), scale, floor=25))))
+        return current + timedelta(minutes=random.randint(lo, hi))
 
     def _run_loop(self) -> None:
         while not self._stop_event.is_set():
@@ -369,6 +411,9 @@ class ProactiveScheduler:
             self.load_config()
             current = now_china()
             due, reason = self._is_due(current)
+            from ai.relationship import WARMTH_LABELS
+            view, _, _, level, _ = self._warmth_profile(current)
+            eff_after, eff_between, _, _ = self._effective_intervals(current)
             return {
                 "enabled": self.config.get("enabled", True),
                 "current_time": current.isoformat(),
@@ -379,6 +424,11 @@ class ProactiveScheduler:
                 "minutes_since_last_proactive": minutes_since(violetdb.get_latest_proactive_event_at(status="sent"), current),
                 "daily_sent_count": self._today_sent_count(current),
                 "daily_message_limit": self.config.get("daily_message_limit"),
+                "relationship_stage": view.stage,
+                "warmth_level": level,
+                "warmth_label": WARMTH_LABELS.get(level, ""),
+                "effective_min_after_user_minutes": eff_after,
+                "effective_min_between_minutes": eff_between,
                 "is_due": due,
                 "due_reason": reason,
                 "cold_streak": self.tracker.cold_streak(),
@@ -452,11 +502,10 @@ class ProactiveScheduler:
         since_user = minutes_since(violetdb.get_latest_message_at(role="user"), current)
         if since_user is None:
             return False, "no user message yet"
-        min_after_user = float(self.config.get("min_minutes_after_user_message", 30))
+        min_after_user, min_between, _, _ = self._effective_intervals(current)
         if since_user < min_after_user:
             return False, "too soon after user message"
         since_sent = minutes_since(violetdb.get_latest_proactive_event_at(status="sent"), current)
-        min_between = float(self.config.get("min_minutes_between_proactive_messages", 120))
         if since_sent is not None and since_sent < min_between:
             return False, "too soon after proactive message"
         prefs = self.profile.preferences.effective()
@@ -661,8 +710,8 @@ class ProactiveScheduler:
         try:
             from ai.daily_life import mentions_life
             from ai.life_store import LifeStore
-            from ai.relationship import assess, proactive_motives
-            view = assess(violetdb)
+            from ai.relationship import WARMTH_LABELS, proactive_motives
+            view, persona_stage, rel_kind, level, _ = self._warmth_profile(current)
             minutes = minutes_since(violetdb.get_latest_message_at(role="user"), current)
             plans = LifeStore(violetdb).plans(["planned", "active"])
             # phase 8.9.5: a plan of hers that came up in the chats of the last two days can be picked up again
@@ -672,12 +721,11 @@ class ProactiveScheduler:
                 "SELECT content, created_at FROM messages ORDER BY id DESC LIMIT 120"))
                 if r["created_at"] and parse_time(r["created_at"]) >= since]
             talked = {p["id"] for p in plans if any(mentions_life(t, p["content"]) for t in recent_text)}
-            from ai import persona_templates as pt
-            persona_stage = pt.stage(None, violetdb)
             motives = proactive_motives(view, None if minutes is None else minutes / 60, state.get("cold_streak", 0),
                                         state.get("allowed_life_events") or [], plans, talked,
                                         unanswered=self._unanswered_proactive(current),
-                                        afterglow=self._afterglow(current), persona_stage=persona_stage)
+                                        afterglow=self._afterglow(current), persona_stage=persona_stage,
+                                        rel_kind=rel_kind)
             # phase 8.9.8: where the talk about it ended ("周末一起找吧 / 拍封面给你"), so it is not reopened as undecided
             from ai.daily_life import last_talk, talk_note
             contents = {p["id"]: p["content"] for p in plans}
@@ -695,12 +743,31 @@ class ProactiveScheduler:
             logger.exception("[ProactiveScheduler] motives unavailable")
             return {}
         recent, habit_note = self._recent_proactive(current)
-        out = {"relationship_stage": view.stage, "violet_motives": motives, "motive_note": (
-            "violet_motives 是 Violet 此刻真有的、想找对方的理由（今天刚发生的生活小事 daily_share、长期经历 share、"
-            "想念对方、想听对方的意见、接着聊之前的事、上一条很久没回时有点委屈地再找对方一次、接着刚才亲近的那份情绪）。"
-            "里面只要有自然合适的理由（比如刚发生了一件好玩的小事，或一阵子没聊），且时机不打扰对方，就大方选一个发一句；"
-            "刚聊完、气氛还热的时候，接着那份情绪往往比换新话题自然；真的一条也没有才不发，不要按时间段硬发空洞问候。"),
-            "recent_proactive": recent, "proactive_habit_note": habit_note}
+        class_ok = not env_bool("VIOLET_SCHEDULE_PROACTIVE", False)
+        warmth_hint = (
+            "你们现在已经很亲近（热度较高），只要有自然理由且未到今日上限，就大方热情地主动发一句，不用过度犹豫；"
+            if level >= 2 else ""
+        )
+        dnd_hint = (
+            "对方在打游戏、刷视频、刷手机或平时上课都不算勿扰，照常可以轻快发一句简短消息；只有深夜疑似睡了或对方亲口说过正忙/开会/别打扰才避开。"
+            if class_ok else
+            "对方在打游戏、刷视频、刷手机不算勿扰，照常可以发简短消息；只有深夜疑似睡了或对方亲口说过正忙/别打扰才避开。"
+        )
+        out = {
+            "relationship_stage": view.stage,
+            "warmth_level": level,
+            "warmth_label": WARMTH_LABELS.get(level, ""),
+            "class_proactive_allowed": class_ok,
+            "violet_motives": motives,
+            "motive_note": (
+                "violet_motives 是 Violet 此刻真有的、想找对方的理由（今天刚发生的生活小事 daily_share、长期经历 share、"
+                "想念对方 miss、熟络后随口搭话 warm_checkin、想听对方的意见、接着聊之前的事、上一条很久没回时有点委屈地再找对方一次、接着刚才亲近的那份情绪）。"
+                + warmth_hint + dnd_hint
+                + "刚聊完、气氛还热的时候，接着那份情绪往往比换新话题自然；真的一条也没有才不发，不要按时间段硬发空洞问候。"
+            ),
+            "recent_proactive": recent,
+            "proactive_habit_note": habit_note,
+        }
         if raised:
             contents = {p["id"]: p["content"] for p in plans}
             out["already_raised"] = [{"about": contents[pid], "at": at.strftime("%m-%d %H:%M")} for pid, at in raised.items()]
@@ -999,9 +1066,11 @@ class ProactiveScheduler:
                 continue
             result.append({"id": event["id"], "content": event["content"], "occurred_at": event["occurred_at"],
                            "type": "violet_life_event", "note": "Violet 自己确实发生过的小事；可以随口提一句，也可以不提"})
+        _, _, _, _, pace = self._warmth_profile()
         picked = result[-2:]
         if len(picked) < 2 and daily_today:
-            picked.append(daily_today[-1])
+            room = min(int(pace.get("max_daily_offers") or 1), 2 - len(picked))
+            picked.extend(daily_today[-room:])
         return picked
 
     def _record_life_shares(self, event_ids: list[int], proactive_event_id: int | None) -> None:
@@ -1111,8 +1180,9 @@ class ProactiveScheduler:
         return None
 
     def _busy_situation(self) -> dict[str, Any] | None:
+        pattern = BUSY_VALUES_RE if env_bool("VIOLET_SCHEDULE_PROACTIVE", False) else BUSY_VALUES_NO_CLASS_RE
         for situation in self.profile.situations.current(["availability", "activity"]):
-            if BUSY_VALUES_RE.search(situation["value"]):
+            if pattern.search(situation["value"]):
                 return situation
         return None
 

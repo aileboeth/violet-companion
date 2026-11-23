@@ -143,6 +143,9 @@ SITUATION_KINDS: dict[str, SituationSpec] = {s.kind: s for s in [
     SituationSpec("health", "身体状况", 12, sensitive=True),
     SituationSpec("device", "手机状态", 0.5, user_only=False, external_sources=("phone_mcp",)),
 ]}
-BUSY_VALUES_RE = re.compile(r"(忙|开会|考试|上课|睡|勿扰|没空|不方便|busy|sleep)", re.IGNORECASE)
+BUSY_VALUES_RE = re.compile(r"(忙|开会|考试|上课|睡|勿扰|别打扰|不要打扰|没空|不方便|busy|sleep)", re.IGNORECASE)
+# 2026-11-23: when VIOLET_SCHEDULE_PROACTIVE is OFF, ordinary class time is NOT do-not-disturb
+# unless the user also says they are busy / in an exam / do-not-disturb.
+BUSY_VALUES_NO_CLASS_RE = re.compile(r"(忙|开会|考试|睡|勿扰|别打扰|不要打扰|没空|不方便|busy|sleep)", re.IGNORECASE)
 EXTERNAL_MAX_CONFIDENCE = 0.5
 EXTERNAL_MAX_TTL_HOURS = 0.5

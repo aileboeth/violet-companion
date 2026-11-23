@@ -349,7 +349,7 @@ class ContextEngine:
             if now_stage and not now_stage["auto"] and now_stage["index"] >= 1:
                 lines += self._records_lines()
             else:
-                lines += self._closeness_lines()
+                lines += self._closeness_lines(now_stage)
             if now_stage:
                 sample_hint = (f"这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{_fill(now_stage['sample'], data, rel['call'])}」"
                                if now_stage.get("sample") else "")
@@ -392,7 +392,7 @@ class ContextEngine:
                     "不要编，也不要说成“我们才刚认识”。"]
         return []
 
-    def _closeness_lines(self) -> list[str]:
+    def _closeness_lines(self, persona_stage: dict[str, Any] | None = None) -> list[str]:
         """The default relationship: how close you are comes from the chat so far (user 2026-11-12: 第一次聊天像刚认识，
         慢慢熟)."""
         row = self._first_message_row()
@@ -409,7 +409,7 @@ class ContextEngine:
             try:
                 view = assess(self.db)
                 self._relationship = view
-                lines.append(describe(view))
+                lines.append(describe(view, persona_stage=persona_stage))
             except Exception:
                 logger.exception("relationship view unavailable")
         return lines

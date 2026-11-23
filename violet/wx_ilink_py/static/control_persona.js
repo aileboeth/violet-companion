@@ -293,23 +293,26 @@
   }
 
   // 2026-11-19: visual relationship stage stepper card (#pl-stage)
+  const WARMTH_LABELS = ["初识克制", "慢慢升温", "熟络活跃", "亲密黏人"];
   function renderStageCard(d) {
     const box = $("#pl-stage");
     if (!box) return false;
     const targets = [];
-    if (d.in_effect && d.in_effect.stage) {
+    const mainRel = d.in_effect && d.in_effect.relationship_state ? d.in_effect.relationship_state : null;
+    if (d.in_effect && (d.in_effect.stage || (mainRel && mainRel.stage === "distance"))) {
       targets.push({
         key: "__main__", channel: null, badge: "主设定",
         persona: d.in_effect.persona || "Violet",
-        tplKey: d.current.template, stage: d.in_effect.stage,
+        tplKey: d.current.template, stage: d.in_effect.stage || null, relState: mainRel,
       });
     }
     for (const c of d.channels || []) {
-      if (c.template && c.in_effect && c.in_effect.stage) {
+      const chRel = c.in_effect && c.in_effect.relationship_state ? c.in_effect.relationship_state : null;
+      if (c.template && c.in_effect && (c.in_effect.stage || (chRel && chRel.stage === "distance"))) {
         targets.push({
           key: c.id, channel: c.id, badge: c.label,
           persona: c.in_effect.persona || c.label,
-          tplKey: c.template, stage: c.in_effect.stage,
+          tplKey: c.template, stage: c.in_effect.stage || null, relState: chRel,
         });
       }
     }
@@ -322,6 +325,57 @@
     if (!targets.some((x) => x.key === stageTargetKey)) stageTargetKey = targets[0].key;
     const cur = targets.find((x) => x.key === stageTargetKey) || targets[0];
     const s = cur.stage;
+    const relState = cur.relState || null;
+    const isDistance = Boolean(relState && relState.stage === "distance");
+
+    const clearDistance = async () => {
+      try {
+        await api("POST", "/api/persona/distance/clear", { channel: cur.channel });
+        toast("已解除「保持距离」状态，主动互动将恢复正常");
+        loaders.persona();
+      } catch (e) { toast(e.message, false); }
+    };
+
+    const switcher = targets.length > 1
+      ? h("div", { class: "stage-switcher" }, ...targets.map((tg) => h("button", {
+        type: "button", class: "stage-tab" + (tg.key === cur.key ? " active" : ""),
+        text: `${tg.badge} · ${tg.persona}`,
+        onclick: () => { stageTargetKey = tg.key; renderStageCard(d); },
+      })))
+      : null;
+
+    const whenText = relState && relState.distance_at ? String(relState.distance_at).slice(5, 16).replace("T", " ") : "";
+    const distanceBanner = isDistance
+      ? h("div", { class: "stage-distance-alert" },
+        h("div", { class: "stage-distance-text" },
+          h("strong", { text: "当前处于「保持距离」状态" }),
+          h("span", {
+            text: whenText
+              ? `触发于 ${whenText}：她会克制撒娇并暂停主动惦记，可一键解除。`
+              : "她会克制撒娇并暂停主动惦记，若已和好或属于误判可一键解除。",
+          })),
+        h("button", { type: "button", class: "small", text: "解除保持距离", onclick: clearDistance }))
+      : null;
+
+    const wIdx = relState && typeof relState.warmth_level === "number"
+      ? Math.max(0, Math.min(WARMTH_LABELS.length - 1, relState.warmth_level))
+      : null;
+    const warmthPill = isDistance
+      ? pill("保持距离中", "warn")
+      : (wIdx !== null ? pill(`主动热度：${WARMTH_LABELS[wIdx]}`, wIdx >= 2 ? "ok" : "") : null);
+
+    if (!s) {
+      box.replaceChildren(...[
+        h("div", { class: "stage-head" },
+          h("h3", { id: "pl-sec-stage", text: "关系互动状态" }),
+          pill(cur.persona),
+          warmthPill),
+        switcher,
+        distanceBanner,
+      ].filter(Boolean));
+      return true;
+    }
+
     const items = (s.items && s.items.length) ? s.items : (s.labels || []).map((label, idx) => ({
       index: idx, label, days: 0, text: idx === s.index ? (s.text || "") : "", sample: idx === s.index ? (s.sample || "") : "",
     }));
@@ -336,14 +390,6 @@
         loaders.persona();
       } catch (e) { toast(e.message, false); }
     };
-
-    const switcher = targets.length > 1
-      ? h("div", { class: "stage-switcher" }, ...targets.map((tg) => h("button", {
-        type: "button", class: "stage-tab" + (tg.key === cur.key ? " active" : ""),
-        text: `${tg.badge} · ${tg.persona}`,
-        onclick: () => { stageTargetKey = tg.key; renderStageCard(d); },
-      })))
-      : null;
 
     const nodes = h("div", { class: "stage-nodes" }, ...items.map((item, idx) => {
       const state = idx < s.index ? "done" : idx === s.index ? "current" : "future";
@@ -397,10 +443,12 @@
         pill(cur.persona),
         pill(`阶段 ${s.index + 1}/${total} · ${s.label}`, "ok"),
         s.auto ? pill("自动推进") : pill("已手动固定", "warn"),
+        warmthPill,
         h("span", { class: "stage-actions" },
           !s.auto ? h("button", { type: "button", class: "ghost small", text: "恢复自动推进", onclick: () => pinStage(null, "") }) : null,
           h("button", { type: "button", class: "ghost small", text: "试聊当前阶段", onclick: () => openSandbox(d, cur.tplKey, s.index) }))),
       switcher,
+      distanceBanner,
       track,
       detail,
     ].filter(Boolean));
