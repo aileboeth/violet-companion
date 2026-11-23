@@ -5298,6 +5298,9 @@
 "模型调用正常": [
 "ai/diagnostics.py"
 ],
+"模型返回了空结果（可能触发了安全过滤）": [
+"ai/setup_status.py"
+],
 "模拟打字间隔": [
 "ai/control_config.py"
 ],
@@ -5932,7 +5935,7 @@
 "control.js",
 "control_model.js"
 ],
-"温度留空时使用各 Agent 的默认值（Chat 默认 0.85 更有活人感，Memory / Proactive 默认 0.2 更稳）。": [
+"温度留空时使用各 Agent 的默认值（Chat 默认 0.85 更有活人感，Memory 默认 0.2 更稳）。": [
 "control.html"
 ],
 "温柔、软萌、慢热，熟了以后很黏人的女孩": [
@@ -6997,6 +7000,9 @@
 "表情包套装已齐": [
 "control_stickers.js"
 ],
+"表格尺寸太大（{0}×{1}，最多 {2} 行 {3} 列）": [
+"ai/schedule/school_xls.py"
+],
 "表里写的学期是“{0}”，会导入到选中的学期“{1}”": [
 "wx_ilink_py/schedule_routes.py"
 ],
@@ -7101,7 +7107,7 @@
 "让她知道你的课表": [
 "control_schedule.js"
 ],
-"让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，xAI（Grok）会带会话缓存路由头，Claude 会标出可缓存的部分，DeepSeek 自动缓存；自动识别 = 按模型名判断；中转站不认这些参数时会自动不再发送": [
+"让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，xAI（Grok）会带会话缓存路由头，Claude 会标出可缓存的部分，DeepSeek 和 Gemini 自动缓存（中转站会带会话路由头）；自动识别 = 按模型名判断；中转站不认这些参数时会自动不再发送": [
 "ai/control_config.py"
 ],
 "记": [

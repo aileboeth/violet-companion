@@ -50,8 +50,8 @@ class SemanticGuard:
         self.db = db
         self.llm = AuxLLM(db, AuxLLMConfig(
             purpose="semantic_guard", model=env_str("VIOLET_SEMANTIC_GUARD_MODEL", ""),
-            timeout_seconds=env_float("VIOLET_SEMANTIC_GUARD_TIMEOUT_SECONDS", 8.0),
-            max_output_tokens=env_int("VIOLET_SEMANTIC_GUARD_MAX_OUTPUT_TOKENS", 300), temperature=0.0,
+            timeout_seconds=env_float("VIOLET_SEMANTIC_GUARD_TIMEOUT_SECONDS", 15.0),
+            max_output_tokens=env_int("VIOLET_SEMANTIC_GUARD_MAX_OUTPUT_TOKENS", 1024), temperature=0.0,
             max_attempts=env_int("VIOLET_SEMANTIC_GUARD_MAX_ATTEMPTS", 2),
             max_calls_per_day=env_int("VIOLET_SEMANTIC_GUARD_MAX_CALLS_PER_DAY", 60),
             max_tokens_per_day=env_int("VIOLET_SEMANTIC_GUARD_MAX_TOKENS_PER_DAY", 60000)))

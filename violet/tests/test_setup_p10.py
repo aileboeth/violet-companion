@@ -74,7 +74,7 @@ def test_the_model_test_uses_the_running_settings_and_keeps_only_the_outcome(mad
     result = admin.post("/api/control/setup/test-model", json={}, headers=SAME).get_json()["data"]
     assert result["ok"] and result["kind"] == "ok" and result["model"] == agents[-1]._config.reply_model
     call = llm.calls[-1]
-    assert call["max_tokens"] == 16 and call["messages"][0]["role"] == "user"
+    assert call["max_tokens"] == 256 and call["messages"][0]["role"] == "user"
     stored = (env_guard / "control" / "setup.json").read_text(encoding="utf-8")
     assert KEY not in stored and "在的" not in stored
     items = {i["id"]: i for i in admin.get("/api/control/setup", headers=JSON).get_json()["data"]["items"]}

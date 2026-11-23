@@ -541,11 +541,6 @@ LIST_ACTIVE_TASKS_SCHEMA = {
     "function": {
         "name": "list_active_tasks",
         "description": "查询当前所有未完成任务会话。",
-        "parameters": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-        },
     },
 }
 
@@ -681,6 +676,8 @@ PROACTIVE_DECISION_SCHEMA = {
 
 
 # Phase 7 B.2: completion signal of a background memory job (offered only there).
+# Note: ai/model_params.py:_strip_empty_tool_parameters() strips empty OBJECT parameters on the wire for Gemini/relays,
+# while keeping the canonical empty schema dict here so local schema inspectors (e.g. memory_tools_compact tests) work.
 MEMORY_DONE_SCHEMA = {
     "type": "function",
     "function": {

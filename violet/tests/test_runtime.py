@@ -215,7 +215,7 @@ def test_send_failure_marks_failed_and_cancels_rest(env):
     assert rt.wait_idle()
     assert client.sent_texts == []
     rows = db.fetch_all("SELECT content, status, attempts FROM outbound_messages ORDER BY id")
-    assert [(r["content"], r["status"], r["attempts"]) for r in rows] == [("好呀", "failed", 1), ("我在听", "cancelled", 0)]
+    assert [(r["content"], r["status"], r["attempts"]) for r in rows] == [("好呀", "unknown", 1), ("我在听", "cancelled", 0)]
     assert _assistant_messages(db) == []
     assert db.fetch_one("SELECT status FROM inbound_messages")["status"] == "failed"
 
@@ -317,7 +317,7 @@ def test_proactive_send_failure_is_recorded(env, tmp_path):
     result = scheduler.force_run(send=True)
     event = db.get_proactive_event(result["event_id"])
     assert event["status"] == "failed" and "send failed" in event["reason"]
-    assert db.fetch_one("SELECT status, origin FROM outbound_messages") == {"status": "failed", "origin": "proactive"}
+    assert db.fetch_one("SELECT status, origin FROM outbound_messages") == {"status": "unknown", "origin": "proactive"}
 
 
 # --- recovery ------------------------------------------------------------------------------

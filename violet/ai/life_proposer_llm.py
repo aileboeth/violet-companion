@@ -35,7 +35,7 @@ TIME_WORDS_RE = re.compile(r"(昨天|今天|明天|前天|后天|上周|下周|�
 EXTERNAL_RE = re.compile(r"(https?://|www\.|新闻|报道|据说|网上|热搜|微博|公众号)")
 DEFAULT_LLM = {
     "max_calls_per_day": 1, "max_calls_per_week": 4, "max_tokens_per_day": 3000,
-    "max_output_tokens": 120, "timeout_seconds": 20, "temperature": 0.7, "max_attempts": 2,
+    "max_output_tokens": 1024, "timeout_seconds": 20, "temperature": 0.7, "max_attempts": 2,
     "max_content_chars": 30, "similarity_threshold": 0.5, "avoid_recent": 20, "fallback": "template",
 }
 

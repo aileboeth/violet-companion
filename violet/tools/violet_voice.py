@@ -27,7 +27,9 @@ import json
 import os
 import platform
 import random
+import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import threading
@@ -210,19 +212,208 @@ def _unpack(archive: Path, target: Path) -> None:
     shutil.rmtree(work, ignore_errors=True)
 
 
-def _chown_tree(path: Path, user: str | None) -> None:
-    if not user or not hasattr(os, "chown"):
-        return
+def _is_link_or_junction(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    isjunction = getattr(os.path, "isjunction", None)
+    if isjunction is not None:
+        try:
+            if isjunction(path):
+                return True
+        except OSError:
+            pass
+    if os.name == "nt":
+        try:
+            st = os.lstat(path)
+            if getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _resolve_ids(user: str | None) -> tuple[int | None, int | None]:
+    if not user:
+        return None, None
     try:
         import pwd
         account = pwd.getpwnam(user)
+        return account.pw_uid, account.pw_gid
     except (ImportError, KeyError):
-        return
-    for p in [path, *path.rglob("*")]:
+        return None, None
+
+
+def _ensure_safe_dir(directory: Path, root: Path | None = None) -> list[Path]:
+    created: list[Path] = []
+    if root is not None:
         try:
-            os.chown(p, account.pw_uid, account.pw_gid, follow_symlinks=False)
+            rel = directory.relative_to(root)
+        except ValueError as exc:
+            raise OSError(f"refusing to write outside {root}: {directory}") from exc
+        if ".." in rel.parts:
+            raise OSError(f"unsafe relative path: {directory}")
+        if _is_link_or_junction(root):
+            raise OSError(f"refusing to traverse symlink: {root}")
+        if not root.exists():
+            root.mkdir(parents=True, exist_ok=True)
+            created.append(root)
+        if _is_link_or_junction(root) or not root.is_dir():
+            raise OSError(f"not a safe directory: {root}")
+        cur = root
+        for part in rel.parts:
+            cur = cur / part
+            if _is_link_or_junction(cur):
+                raise OSError(f"refusing to traverse symlink: {cur}")
+            if not cur.exists():
+                os.mkdir(cur)
+                created.append(cur)
+            if _is_link_or_junction(cur) or not cur.is_dir():
+                raise OSError(f"not a safe directory: {cur}")
+        return created
+    if directory.name == "control" and _is_link_or_junction(directory.parent):
+        raise OSError(f"refusing to traverse symlink: {directory.parent}")
+    if _is_link_or_junction(directory):
+        raise OSError(f"refusing to traverse symlink: {directory}")
+    if not directory.exists():
+        directory.mkdir(parents=True, exist_ok=True)
+        created.append(directory)
+    if _is_link_or_junction(directory) or not directory.is_dir():
+        raise OSError(f"not a safe directory: {directory}")
+    return created
+
+
+def _open_dir_fd_nofollow(directory: Path, root: Path | None = None) -> int:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if root is None:
+        return os.open(directory, flags)
+    dfd = os.open(root, flags)
+    try:
+        for part in directory.relative_to(root).parts:
+            nxt = os.open(part, flags, dir_fd=dfd)
+            os.close(dfd)
+            dfd = nxt
+    except Exception:
+        os.close(dfd)
+        raise
+    return dfd
+
+
+def _safe_write_owned(path: Path, text: str, *, root: Path | None = None, user: str | None = None,
+                      mode: int = 0o640) -> None:
+    created = _ensure_safe_dir(path.parent, root=root)
+    uid, gid = _resolve_ids(user)
+    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set())
+                  and os.replace in getattr(os, "supports_dir_fd", set()))
+    tmp_name = f".{path.name}.{secrets.token_hex(6)}.tmp"
+    open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    if use_dir_fd:
+        dfd = _open_dir_fd_nofollow(path.parent, root=root)
+        try:
+            if path.parent in created and uid is not None and hasattr(os, "fchown"):
+                try:
+                    os.fchown(dfd, uid, gid if gid is not None else -1)
+                except OSError:
+                    pass
+            fd = os.open(tmp_name, open_flags, mode, dir_fd=dfd)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    if hasattr(os, "fchmod"):
+                        try:
+                            os.fchmod(fh.fileno(), mode)
+                        except OSError:
+                            pass
+                    if uid is not None and hasattr(os, "fchown"):
+                        try:
+                            os.fchown(fh.fileno(), uid, gid if gid is not None else -1)
+                        except OSError:
+                            pass
+                    fh.write(text)
+                os.replace(tmp_name, path.name, src_dir_fd=dfd, dst_dir_fd=dfd)
+            except Exception:
+                try:
+                    os.unlink(tmp_name, dir_fd=dfd)
+                except OSError:
+                    pass
+                raise
+        finally:
+            os.close(dfd)
+        return
+    if _is_link_or_junction(path.parent):
+        raise OSError(f"refusing to traverse symlink: {path.parent}")
+    tmp = path.parent / tmp_name
+    fd = os.open(tmp, open_flags, mode)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        if _is_link_or_junction(path.parent) or _is_link_or_junction(tmp):
+            raise OSError(f"refusing to replace through symlink: {path}")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
         except OSError:
             pass
+        raise
+
+
+def _safe_unlink(path: Path, *, root: Path | None = None) -> None:
+    if root is not None:
+        try:
+            rel = path.relative_to(root)
+        except ValueError:
+            return
+        if ".." in rel.parts or _is_link_or_junction(root):
+            return
+        cur = root
+        for part in rel.parts[:-1]:
+            cur = cur / part
+            if _is_link_or_junction(cur) or not cur.exists():
+                return
+    elif _is_link_or_junction(path.parent) or (path.parent.name == "control" and _is_link_or_junction(path.parent.parent)):
+        return
+    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set())
+                  and os.unlink in getattr(os, "supports_dir_fd", set()))
+    if use_dir_fd:
+        try:
+            dfd = _open_dir_fd_nofollow(path.parent, root=root)
+        except OSError:
+            return
+        try:
+            os.unlink(path.name, dir_fd=dfd)
+        except OSError:
+            pass
+        finally:
+            os.close(dfd)
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _chown_tree(path: Path, user: str | None) -> None:
+    uid, gid = _resolve_ids(user)
+    if uid is None or not hasattr(os, "chown") or _is_link_or_junction(path):
+        return
+    try:
+        os.chown(path, uid, gid if gid is not None else -1, follow_symlinks=False)
+    except OSError:
+        pass
+    if not path.is_dir():
+        return
+    for dirpath, dirnames, filenames in os.walk(path, followlinks=False):
+        root_p = Path(dirpath)
+        dirnames[:] = [d for d in dirnames if not _is_link_or_junction(root_p / d)]
+        for name in (*dirnames, *filenames):
+            p = root_p / name
+            if _is_link_or_junction(p):
+                continue
+            try:
+                os.chown(p, uid, gid if gid is not None else -1, follow_symlinks=False)
+            except OSError:
+                pass
 
 
 def _dir_bytes(path: Path) -> int:
@@ -415,10 +606,8 @@ def _export(layout: Any, state: dict[str, Any]) -> None:
     info = state["voice"]
     export = {"installed": True, "url": f"http://127.0.0.1:{info['port']}", "port": info["port"],
               "model": info.get("model"), "installed_at": info.get("installed_at")}
-    path = export_path(layout.data)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(export, ensure_ascii=False), encoding="utf-8")
-    _chown_tree(path, state.get("user"))
+    _safe_write_owned(export_path(layout.data), json.dumps(export, ensure_ascii=False),
+                      root=layout.data, user=state.get("user"), mode=0o640)
 
 
 def uninstall(layout: Any, state: dict[str, Any], *, run: Callable[..., Any] = subprocess.run,
@@ -437,7 +626,7 @@ def uninstall(layout: Any, state: dict[str, Any], *, run: Callable[..., Any] = s
         shutil.rmtree(base, ignore_errors=True)
         removed.append(str(base))
     state.pop("voice", None)
-    export_path(layout.data).unlink(missing_ok=True)
+    _safe_unlink(export_path(layout.data), root=layout.data)
     return removed
 
 

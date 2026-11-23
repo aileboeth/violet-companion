@@ -79,10 +79,16 @@ def _jpeg_size(data: bytes) -> tuple[int, int]:
 def _webp_size(data: bytes) -> tuple[int, int]:
     chunk = data[12:16]
     if chunk == b"VP8X":
+        if len(data) < 30:
+            raise MediaError("invalid_image", "truncated webp VP8X header")
         return 1 + int.from_bytes(data[24:27], "little"), 1 + int.from_bytes(data[27:30], "little")
     if chunk == b"VP8 ":
+        if len(data) < 30:
+            raise MediaError("invalid_image", "truncated webp VP8 header")
         return struct.unpack("<H", data[26:28])[0] & 0x3FFF, struct.unpack("<H", data[28:30])[0] & 0x3FFF
     if chunk == b"VP8L":
+        if len(data) < 25:
+            raise MediaError("invalid_image", "truncated webp VP8L header")
         b = data[21:25]
         return 1 + (((b[1] & 0x3F) << 8) | b[0]), 1 + (((b[3] & 0x0F) << 10) | (b[2] << 2) | ((b[1] & 0xC0) >> 6))
     raise MediaError("invalid_image", "unknown webp chunk")
@@ -94,12 +100,16 @@ def sniff_image(data: bytes) -> ImageInfo:
         raise MediaError("invalid_image", "empty or truncated file")
     try:
         if data.startswith(b"\x89PNG\r\n\x1a\n") and data[12:16] == b"IHDR":
+            if len(data) < 24:
+                raise MediaError("invalid_image", "truncated png header")
             w, h = struct.unpack(">II", data[16:24])
             mime = "image/png"
         elif data.startswith(b"\xff\xd8\xff"):
             w, h = _jpeg_size(data)
             mime = "image/jpeg"
         elif data[:6] in (b"GIF87a", b"GIF89a"):
+            if len(data) < 10:
+                raise MediaError("invalid_image", "truncated gif header")
             w, h = struct.unpack("<HH", data[6:10])
             mime = "image/gif"
         elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
@@ -107,7 +117,7 @@ def sniff_image(data: bytes) -> ImageInfo:
             mime = "image/webp"
         else:
             raise MediaError("unsupported_format", "not a PNG / JPEG / GIF / WEBP image")
-    except struct.error:
+    except (struct.error, IndexError):
         raise MediaError("invalid_image", "corrupt image header") from None
     if w <= 0 or h <= 0:
         raise MediaError("invalid_image", "image has no size")

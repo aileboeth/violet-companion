@@ -694,3 +694,180 @@ def test_chat_samples_are_well_formed():
     for sample in samples["samples"]:
         assert sample["id"] and sample["setup"] is not None and sample["turns"] and sample["expect"]
         assert all(t["role"] in ("user", "violet") for t in sample["turns"])
+
+
+# ---------------------------------------------------------------------------
+# DailyLife persistence, doing/paraphrase matching, weekend classes, onboarding call
+# ---------------------------------------------------------------------------
+
+def test_daily_life_persists_happened_events_when_warmth_drops(tmp_path, violetdb, monkeypatch):
+    monkeypatch.setenv("VIOLET_DATA_DIR", str(tmp_path / "data"))
+    from datetime import date, datetime, timedelta, timezone
+    from ai import persona_templates as pt
+    from ai.daily_life import DailyLife, SOURCE
+    from ai.profile_store import Profile
+
+    monkeypatch.setenv("VIOLET_DAILY_LIFE", "1")
+    pt.switch(violetdb, "violet", "keep")
+    tz_cn = timezone(timedelta(hours=8))
+    today = date(2026, 11, 19)
+    now = datetime(2026, 11, 19, 21, 30, tzinfo=tz_cn)
+    monkeypatch.setattr(violetdb, "now", lambda: now.isoformat())
+
+    # High warmth (Stage 2 -> 3 items, no quiet day): materialize today's 3 items
+    pt.set_stage(None, 2)
+    dl_warm = DailyLife(violetdb)
+    warm_view = dl_warm.day(today, now)
+    assert len(warm_view["done"]) == 3 and not warm_view["quiet"]
+    warm_ids = {int(e["id"]) for e in warm_view["done"]}
+
+    # Warmth drops to 0 (explicit distance) and quiet_day_probability=1.0 makes plan_for() return []
+    Profile(violetdb).preferences.set_explicit(
+        "closeness", "distance", evidence="保持点距离", user_message="我们保持点距离"
+    )
+    dl_cool = DailyLife(violetdb)
+    dl_cool.daily = {**dl_cool.daily, "quiet_day_probability": 1.0}
+    assert dl_cool.plan_for(today, tz_cn) == []
+    cool_view = dl_cool.day(today, now)
+    assert not cool_view["quiet"]
+    assert {int(e["id"]) for e in cool_view["done"]} == warm_ids
+    assert all(e["source"] == SOURCE and e.get("slot_label") and e.get("doing") for e in cool_view["done"])
+
+
+def test_daily_life_mid_doing_window_warmth_shift_preserves_stored_doing_and_done(tmp_path, violetdb, monkeypatch):
+    """When warmth_level shifts mid-doing-window so plan_for() rolls a different item/time for the same slot,
+    DailyLife.day() must derive view['doing'] (and later view['done']) strictly from the already-stored DB row."""
+    monkeypatch.setenv("VIOLET_DATA_DIR", str(tmp_path / "data"))
+    from datetime import date, datetime, timedelta, timezone
+    from ai import persona_templates as pt
+    from ai.daily_life import DailyLife
+
+    monkeypatch.setenv("VIOLET_DAILY_LIFE", "1")
+    pt.switch(violetdb, "stepsister", "keep")
+    tz_cn = timezone(timedelta(hours=8))
+    today = date(2026, 11, 19)
+    start_at = datetime(2026, 11, 19, 19, 0, tzinfo=tz_cn)
+    mid_now = datetime(2026, 11, 19, 19, 20, tzinfo=tz_cn)
+    after_now = datetime(2026, 11, 19, 20, 0, tzinfo=tz_cn)
+    monkeypatch.setattr(violetdb, "now", lambda: mid_now.isoformat())
+
+    original_item = {
+        "slot": "evening", "label": "晚上",
+        "done": "煲了一锅玉米排骨汤，厨房里全是香味", "doing": "在厨房看汤",
+        "start": start_at, "minutes": 45, "uid": "daily:2026-11-19:evening",
+    }
+    rerolled_item = {
+        "slot": "evening", "label": "晚上",
+        "done": "晚上看了一集恋爱剧，剧情很假", "doing": "在看一部恋爱剧",
+        "start": datetime(2026, 11, 19, 20, 30, tzinfo=tz_cn), "minutes": 45, "uid": "daily:2026-11-19:evening",
+    }
+
+    dl = DailyLife(violetdb)
+    # 1. Materialize under initial warmth (mid-doing-window at 19:20)
+    monkeypatch.setattr(dl, "plan_for", lambda d, tz: [original_item])
+    v1 = dl.day(today, mid_now)
+    assert v1["doing"] is not None
+    assert v1["doing"]["doing"] == "在厨房看汤"
+    assert v1["doing"]["done"] == "煲了一锅玉米排骨汤，厨房里全是香味"
+    assert v1["doing"]["label"] == "晚上"
+    assert v1["doing"]["start"] == start_at
+    stored_id = v1["doing"]["event"]["id"]
+
+    # 2. Warmth shifts mid-doing-window -> plan_for() returns a completely different item & start time for same uid
+    monkeypatch.setattr(dl, "plan_for", lambda d, tz: [rerolled_item])
+    v2 = dl.day(today, mid_now)
+    assert v2["doing"] is not None
+    assert v2["doing"]["event"]["id"] == stored_id
+    assert v2["doing"]["doing"] == "在厨房看汤"
+    assert v2["doing"]["done"] == "煲了一锅玉米排骨汤，厨房里全是香味"
+    assert v2["doing"]["label"] == "晚上"
+    assert v2["doing"]["start"] == start_at
+
+    # 2b. Even for a legacy DB row lacking doing/label in source_detail, never leak rerolled item's doing
+    violetdb.execute("UPDATE life_events SET source_detail = ? WHERE id = ?", ('{"slot": "evening"}', stored_id))
+    v2_legacy = dl.day(today, mid_now)
+    assert v2_legacy["doing"] is not None
+    assert v2_legacy["doing"]["doing"] == "在厨房看汤"
+    assert v2_legacy["doing"]["done"] == "煲了一锅玉米排骨汤，厨房里全是香味"
+    assert v2_legacy["doing"]["label"] == "晚上"
+
+    # 3. Once the original 45m window ends (20:00), view['done'] STILL carries original doing/done (not rerolled)
+    monkeypatch.setattr(violetdb, "now", lambda: after_now.isoformat())
+    v3 = dl.day(today, after_now)
+    assert v3["doing"] is None
+    assert len(v3["done"]) == 1
+    assert v3["done"][0]["id"] == stored_id
+    assert v3["done"][0]["content"] == "煲了一锅玉米排骨汤，厨房里全是香味"
+    assert v3["done"][0]["doing"] == "在厨房看汤"
+    assert v3["done"][0]["slot_label"] == "晚上"
+
+
+def test_mentions_life_matches_doing_and_natural_paraphrases():
+    from ai.daily_life import mentions_life
+
+    # Natural Gemini paraphrases & doing-vs-done wording that previously missed under strict 0.25 bigram ratio
+    assert mentions_life(
+        "下午削苹果差点把皮削断，结果屏住气居然一整条连下来了，本来还想顺手显摆一下的",
+        "切苹果的时候差点削断皮，最后居然连着削完了",
+    )
+    assert mentions_life("刚还在厨房看排骨汤呢", "煲了一锅玉米排骨汤，厨房里全是香味")
+    assert mentions_life("开着小夜灯在听慢歌", "关掉大灯只留了盏小夜灯，听了几首慢歌")
+    assert mentions_life("今晚其实挺闲的，刚听完那几首慢歌就发着呆", "关掉大灯只留了盏小夜灯，听了几首慢歌")
+    assert mentions_life("早上自己冲咖啡手一抖水倒太多，喝起来淡得跟白开水似的", "手冲了一杯咖啡，不小心倒多了水")
+    assert mentions_life("今天睡懒觉起晚了，慢悠悠啃完早饭才清醒", "起得有点晚，慢吞吞吃了早饭")
+
+    # Unrelated messages must stay False (no over-matching)
+    assert not mentions_life("你吃早饭了吗", "起得有点晚，慢吞吞吃了早饭")
+    assert not mentions_life("今天天气真不错", "切苹果的时候差点削断皮，最后居然连着削完了")
+    assert not mentions_life("我刚在厨房煎了个牛排", "煲了一锅玉米排骨汤，厨房里全是香味")
+    assert not mentions_life("我刚在厨房煎了个牛排", "煎鸡蛋的时候翻面翻碎了一个，自己吃掉了")
+    assert not mentions_life("我在宿舍楼下散步", "在公园散了会儿步，吹了吹晚风")
+
+
+def test_daily_life_skips_school_classes_on_weekends(tmp_path, violetdb, monkeypatch):
+    monkeypatch.setenv("VIOLET_DATA_DIR", str(tmp_path / "data"))
+    from datetime import date, timedelta, timezone
+    from ai import persona_templates as pt
+    from ai.daily_life import DailyLife
+
+    monkeypatch.setenv("VIOLET_DAILY_LIFE", "1")
+    pt.switch(violetdb, "stepsister", "keep")
+    pt.set_stage(None, 2)  # force 3 items/day, no quiet days
+    dl = DailyLife(violetdb)
+    tz_cn = timezone(timedelta(hours=8))
+
+    # Sample 10 consecutive weekends (20 Sat/Sun days): none may pick 早课 / 高数 / 上完课
+    start = date(2026, 10, 10)  # Saturday
+    assert start.weekday() == 5
+    for w in range(10):
+        for offset in (0, 1):
+            d = start + timedelta(days=w * 7 + offset)
+            plan = dl.plan_for(d, tz_cn)
+            assert len(plan) == 3
+            for item in plan:
+                text = f"{item['done']} {item['doing']}"
+                assert not any(tok in text for tok in ("早课", "高数", "上完课")), (d, item)
+
+
+def test_onboarding_skips_address_name_when_persona_defines_relation_call(tmp_path, monkeypatch, violetdb):
+    monkeypatch.setenv("VIOLET_DATA_DIR", str(tmp_path / "data"))
+    from ai import persona_templates as pt
+    from ai.onboarding import OnboardingPlanner
+    from ai.profile_store import Profile
+
+    profile = Profile(violetdb)
+    planner = OnboardingPlanner(violetdb, profile.facts)
+
+    # Default violet has no relation.call -> asks address_name first
+    pt.switch(violetdb, "violet", "keep")
+    assert planner.next_key().key == "address_name"
+
+    # stepsister (relation.call = 哥/姐) & junior (前辈) -> skip address_name
+    pt.switch(violetdb, "stepsister", "keep")
+    assert planner.next_key().key != "address_name"
+    pt.switch(violetdb, "junior", "keep")
+    assert planner.next_key().key != "address_name"
+
+    # childhood (relation.call = {}) -> still asks address_name
+    pt.switch(violetdb, "childhood", "keep")
+    assert planner.next_key().key == "address_name"

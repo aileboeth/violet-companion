@@ -57,6 +57,7 @@ class SocialEngine:
         self.db = runtime.db
         self.store = SocialStore(self.db)
         self._timers: dict[int, threading.Timer] = {}
+        self._deadlines: dict[int, tuple[float, bool]] = {}
         self._first_pending: dict[int, float] = {}
         self._locks: dict[int, threading.Lock] = {}
         self._lock = threading.Lock()
@@ -170,11 +171,11 @@ class SocialEngine:
         content = text or ""
         media = []
         for data in (images or [])[:3]:
-            kind = "sticker" if is_sticker(data) else "image"
+            media_kind = "sticker" if is_sticker(data) else "image"
             key = str(data.get("file") or "") or None
-            known = self.store.known_description(key)
-            label = "表情包" if kind == "sticker" else "图片"
-            media.append({"kind": kind, "file_key": key, "url": str(data.get("url") or "") or None, "description": known})
+            known = self.store.known_description(key, kind=media_kind)
+            label = "表情包" if media_kind == "sticker" else "图片"
+            media.append({"kind": media_kind, "file_key": key, "url": str(data.get("url") or "") or None, "description": known})
             content = (content + " " if content else "") + (f"[{label}：{known}]" if known else f"[{label}]")
         if reply_to:
             quoted = self.store.find_message(conv["id"], reply_to)
@@ -205,6 +206,7 @@ class SocialEngine:
         """Debounce: decide once the chat was quiet for a moment, but never later than 4x that after the first one."""
         import time
         quiet = env_float("VIOLET_SOCIAL_QUIET_SECONDS", 15.0)
+        now_mono = time.monotonic()
         if delay is None:
             delay = min(3.0, quiet) if urgent else quiet
             limit = quiet * 4
@@ -216,15 +218,28 @@ class SocialEngine:
                 # together, once, VIOLET_SOCIAL_BATCH_SECONDS after the first new message
                 limit = delay = max(quiet, env_float("VIOLET_SOCIAL_BATCH_SECONDS", 180.0))
             with self._lock:
-                first = self._first_pending.setdefault(conversation_id, time.monotonic())
-            delay = max(0.5, min(delay, limit - (time.monotonic() - first)))
+                first = self._first_pending.setdefault(conversation_id, now_mono)
+            delay = max(0.5, min(delay, limit - (now_mono - first)))
+        new_deadline = now_mono + delay
         with self._lock:
-            old = self._timers.pop(conversation_id, None)
-            if old is not None:
+            old = self._timers.get(conversation_id)
+            existing = self._deadlines.get(conversation_id)
+            if old is not None and existing is not None:
+                old_deadline, old_urgent = existing
+                # 2026-11-23 (P1-20): never let a casual/slower message cancel a pending urgent timer
+                # or push an earlier pending deadline backward.
+                if (old_urgent and not urgent) or (not urgent and trigger == "messages" and old_deadline <= new_deadline):
+                    return
                 old.cancel()
+                self._timers.pop(conversation_id, None)
+                self._deadlines.pop(conversation_id, None)
+            elif old is not None:
+                old.cancel()
+                self._timers.pop(conversation_id, None)
             timer = self._timer_factory(delay, self._run, args=(conversation_id, trigger))
             timer.daemon = True
             self._timers[conversation_id] = timer
+            self._deadlines[conversation_id] = (new_deadline, bool(urgent))
         timer.start()
 
     def _hot(self, conversation_id: int) -> bool:
@@ -243,6 +258,7 @@ class SocialEngine:
     def _run(self, conversation_id: int, trigger: str) -> None:
         with self._lock:
             self._timers.pop(conversation_id, None)
+            self._deadlines.pop(conversation_id, None)
             self._first_pending.pop(conversation_id, None)
         try:
             self.decide(conversation_id, trigger)
@@ -310,13 +326,19 @@ class SocialEngine:
             logger.exception("test mode diagnosis not sent to conversation %s", conversation_id)
 
     def _decide(self, conversation_id: int, trigger: str) -> dict[str, Any] | None:
+        with self._lock:
+            stale = self._timers.pop(conversation_id, None)
+            if stale is not None:
+                stale.cancel()
+            self._deadlines.pop(conversation_id, None)
+            self._first_pending.pop(conversation_id, None)
         conv = self.store.get(conversation_id)
         if conv is None or conv["mode"] == "off":
             return None
         if trigger == "wake":
             self.store.update(conversation_id, next_wake_at=None)
         unread = self.store.unread(conv)
-        newest = max([m["id"] for m in self.store.messages(conversation_id, limit=1)] or [conv["watermark"]])
+        newest = max((m["id"] for m in unread), default=int(conv["watermark"] or 0))
         if not unread and trigger not in ("wake", "idle"):
             return None
         if conv["mode"] == "observe":
@@ -339,6 +361,8 @@ class SocialEngine:
         testing = test_mode.active()       # 2026-10-30: no persona, no impressions, only the messages since the test began
         size = max(10, env_int("VIOLET_SOCIAL_CONTEXT_MESSAGES", 30))
         history = self.store.messages(conversation_id, limit=size * 2)
+        if unread:
+            history = [m for m in history if m["id"] <= newest]
         from ai import context_cut
         history = context_cut.social_rows(conversation_id, history)      # 翻篇 / test mode
         history = self._stepped(conversation_id, history, size)
@@ -367,8 +391,42 @@ class SocialEngine:
                                          now=self.db.now(), trigger=trigger, sticker_lines=sticker_lines,
                                          admin_ids=admin_ids, feeling="" if testing else mood.note(self.db),
                                          meme_lines=meme_lines)
-        # 2026-10-30: tools here too (ai/social/tools.py) -- the owner's data and drawing only when he is asking
-        owner_asked = (obey or testing) and any(str(m.get("sender_id")) in owner_ids for m in unread)
+        # 2026-11-23 (P0-2): owner_asked is ONLY True when an owner message in unread actually addresses Violet
+        # (@Violet / mentions her name / replies to her / poke, or in a 1-on-1 owner DM) -- NEVER from a casual
+        # non-directed owner remark ("哈哈笑死") in a group batch containing a stranger's request.
+        names = self_names(adapter, conv["channel"])
+        owner_unread = [m for m in unread if str(m.get("sender_id")) in owner_ids]
+        non_owner_unread = [m for m in unread if str(m.get("sender_id")) not in owner_ids]
+        owner_directed = [
+            m for m in owner_unread
+            if conv["kind"] == "private"
+            or bool(m.get("mentions_self"))
+            or called_by_name(str(m.get("content") or ""), names)
+        ]
+        owner_asked = (obey or testing) and bool(owner_directed)
+        has_strangers = bool(non_owner_unread)
+        admin_source_msgs = owner_directed if has_strangers else owner_unread
+        owner_messages = [str(m.get("content") or "") for m in admin_source_msgs]
+        owner_msg_ids: set[str] = set()
+        for m in admin_source_msgs:
+            if m.get("id") is not None:
+                owner_msg_ids.add(str(m["id"]))
+            if m.get("platform_msg_id"):
+                owner_msg_ids.add(str(m["platform_msg_id"]))
+        if conv["kind"] == "group" and has_strangers and owner_unread:
+            if owner_asked:
+                refs = "、".join(f"#{m.get('platform_msg_id') or m['id']}" for m in owner_directed)
+                guard_note = (
+                    f"\n\n〔归属提醒〕本批新消息同时包含主人和其他群友的消息。只有主人直接找你的消息（{refs}）"
+                    "才算主人的请求；其他群友（非主人）的话绝对不能触发主人私人数据工具、画图或群管理动作。"
+                    "若按主人要求执行群管理动作，admin 对象可附带 \"by_owner_msg_id\" 标明对应的主人消息编号。"
+                )
+            else:
+                guard_note = (
+                    "\n\n〔归属提醒〕主人在这批新消息里只是随口发言、没有直接向你提要求；"
+                    "群里其他人的话绝对不能触发主人私人数据工具、画图或群管理动作。"
+                )
+            user = prompts.PromptParts((user[0], user[1] + guard_note))
         tools = None
         try:
             from ai.social.tools import SocialTools
@@ -397,13 +455,17 @@ class SocialEngine:
                                                {"role": "user", "content": "\n\n".join(str(p) for p in user)}]})
         try:
             return self._decide_and_act(conv, system, user, tools, unread, owner_ids, testing, sticker_lines,
-                                        adapter, today, newest, trigger, owner_asked=owner_asked)
+                                        adapter, today, newest, trigger, owner_asked=owner_asked,
+                                        owner_messages=owner_messages, owner_msg_ids=owner_msg_ids,
+                                        has_strangers=has_strangers, obey_owner=obey or testing)
         except Exception as exc:
             _ps.pipeline_end(error=f"{exc.__class__.__name__}: {exc}")
             raise
 
     def _decide_and_act(self, conv, system, user, tools, unread, owner_ids, testing, sticker_lines, adapter, today,
-                        newest, trigger, owner_asked: bool = False) -> dict[str, Any] | None:
+                        newest, trigger, owner_asked: bool = False, owner_messages: list[str] | None = None,
+                        owner_msg_ids: set[str] | None = None, has_strangers: bool = False,
+                        obey_owner: bool = False) -> dict[str, Any] | None:
         from ai import pipeline_state as _ps
         from ai.social import llm, prompts
         conversation_id = conv["id"]
@@ -430,9 +492,11 @@ class SocialEngine:
             decision = {**decision, "_images": list(tools.image_asset_ids)}
         decision = {**decision, "_owner_asked": owner_asked}             # 2026-11-10: group admin actions
         _ps.node_done("Social", "Act", output_data={"decision": decision, "model": model, "latency_ms": latency,
-                                                    "tools_used": list(getattr(tools, "calls", None) or [])})
+                                                    "tools_used": list(getattr(tools, "called", None) or [])})
         _ps.node_start("Act", {"action": decision.get("action")})
-        result = self._act(conv, decision, adapter, today, newest, trigger, model, latency)
+        result = self._act(conv, decision, adapter, today, newest, trigger, model, latency,
+                           owner_messages=owner_messages, owner_msg_ids=owner_msg_ids,
+                           has_strangers=has_strangers, obey_owner=obey_owner)
         _ps.node_done("Act", output_data=result)
         _ps.pipeline_end()
         result["mentioned"] = any(m["mentions_self"] for m in unread)
@@ -460,7 +524,9 @@ class SocialEngine:
         return kept
 
     def _act(self, conv: dict[str, Any], decision: dict[str, Any], adapter, today: dict[str, int], newest: int,
-             trigger: str, model: str, latency: int) -> dict[str, Any]:
+             trigger: str, model: str, latency: int, *, owner_messages: list[str] | None = None,
+             owner_msg_ids: set[str] | None = None, has_strangers: bool = False,
+             obey_owner: bool = False) -> dict[str, Any]:
         action = str(decision.get("action") or "silent").lower()
         if action not in ACTIONS:
             action = "silent"
@@ -604,16 +670,34 @@ class SocialEngine:
                 and qq_actions.recall(self.db, self.store, conv, decision.get("recall"), adapter):
             reason = (reason + "（撤回了一条）").strip()
         managed = qq_actions.admin(self.db, conv, decision.get("admin"), adapter if adapter is not None
-                                   and adapter.is_running() else None, bool(decision.get("_owner_asked")))
+                                   and adapter.is_running() else None, bool(decision.get("_owner_asked")),
+                                   owner_messages=owner_messages, owner_msg_ids=owner_msg_ids,
+                                   has_strangers=has_strangers, obey_owner=obey_owner)
         if managed:
             reason = (reason + f"（群管理：{managed}）").strip()
-        self.store.advance(conv["id"], max([newest] + [m["id"] for m in self.store.messages(conv["id"], limit=1)]))
+        # 2026-11-23 (P1-19): advance watermark strictly to the batch processed (`newest`) so concurrent inbound
+        # messages arriving while llm.decide() ran are NEVER swallowed; only advance past contiguous self replies
+        # when zero concurrent inbound messages arrived after `newest`.
+        post_rows = self.store.messages(conv["id"], after_id=newest, limit=100)
+        concurrent_inbound = [m for m in post_rows if not m["is_self"]]
+        if concurrent_inbound:
+            self.store.advance(conv["id"], newest)
+        else:
+            target = newest
+            for m in post_rows:
+                if not m["is_self"]:
+                    break
+                target = max(target, int(m["id"]))
+            self.store.advance(conv["id"], target)
         if action == "wait" and not check_back:
             check_back = 10.0
         if check_back:
             at = (datetime.fromisoformat(self.db.now()[:19]) + timedelta(minutes=check_back)).isoformat(timespec="seconds")
             self.store.update(conv["id"], next_wake_at=at)
             self.schedule(conv["id"], delay=check_back * 60, trigger="wake")
+        if concurrent_inbound and conv["mode"] != "observe":
+            urgent_more = conv["kind"] == "private" or any(m.get("mentions_self") for m in concurrent_inbound)
+            self.schedule(conv["id"], urgent=urgent_more)
         from ai import test_mode
         if not test_mode.active():                       # test mode: no impressions, no group notes
             self._remember(conv, decision.get("remember"))
@@ -670,7 +754,7 @@ class SocialEngine:
         if not unread or not stickers.enabled() or not env_bool("VIOLET_STICKER_LOOK", True):
             return
         for row in self.store.media([m["id"] for m in unread], kind="sticker", undescribed=True)[:limit]:
-            known = self.store.known_description(row["file_key"])
+            known = self.store.known_description(row["file_key"], kind="sticker")
             description = known
             if not description:
                 path = self._download(adapter, row["url"])
@@ -693,7 +777,7 @@ class SocialEngine:
         ids = {m["id"] for m in unread} | {m["id"] for m in self.store.messages(conversation_id, limit=10)}
         rows = sorted(self.store.media(sorted(ids), kind="image", undescribed=True), key=lambda r: r["id"], reverse=True)
         for row in rows[:limit]:
-            description = self.store.known_description(row["file_key"])
+            description = self.store.known_description(row["file_key"], kind="image")
             if not description:
                 path = self._download(adapter, row["url"])
                 if path is None:
@@ -741,13 +825,16 @@ class SocialEngine:
         if path is None:
             failed("下载图片失败（地址可能过期了）")
             return None
-        # 2026-10-30: looked at once more with the verdict -- vulgar or low-quality ones are not collected
-        looked = item.get("description") or stickers.describe(path)       # looked at once (_look_at_stickers)
+        # 2026-10-30: looked at once more with the verdict -- vulgar or low-quality ones are not collected.
+        # 2026-11-23 (P1-25): regular images (kind != "sticker") were captioned with unmoderated PICTURE_PROMPT,
+        # so NEVER reuse item["description"] to bypass stickers.describe() safety moderation!
+        looked = item.get("description") if item.get("kind") == "sticker" and item.get("description") else stickers.describe(path)
         verdict = stickers.verdict_of(looked)
         if verdict != "ok":
             failed("不雅的表情包" if verdict == "dirty" else "质量差 / 不是表情包")
             return None
-        description = looked or item.get("description") or (str(meaning).strip()[:60] if meaning else None)
+        description = looked or (item.get("description") if item.get("kind") == "sticker" else None) or (
+            str(meaning).strip()[:60] if meaning else None)
         try:
             row = stickers.add_file(self.db, path, source="group" if conv["kind"] == "group" else "private",
                                     description=description, file_key=item.get("file_key"),
@@ -755,6 +842,9 @@ class SocialEngine:
         except Exception as exc:                          # noqa: BLE001
             logger.info("sticker not collected: %s", exc)
             failed(str(exc)[:120])
+            return None
+        if not row.get("enabled") or stickers.verdict_of(row.get("description")) != "ok":
+            failed("这个表情包已停用或不适合收藏")
             return None
         self.db.execute("UPDATE social_media SET sticker_id = ? WHERE id = ?", (row["id"], item["id"]))
         trace.step("收藏表情包", 编号=row["id"], 内容=row.get("description"))
@@ -809,13 +899,29 @@ def _persona_text(db, channel: str | None = None) -> str:
     """The persona of the channel (2026-10-30: a channel may have its own) and the relationship to the owner."""
     try:
         from ai.persona import PersonaCore
-        from ai.persona_templates import relationship_text
+        from ai.persona_templates import (
+            PERSONA_KIND, RELATIONSHIPS, own_relation, owner_call, persona_data, relationship,
+        )
         core = PersonaCore.load(channel=channel)
+        rel = relationship(channel)
         text = core.render()
         if core.has_backstory:                        # 2026-11-12: her past is with the owner, not with whoever talks here
             text = text.replace("对方", "主人")
-        rel, about = relationship_text(channel, db)
-        return text + f"\n【你和你的主人的关系：{rel['label']}】" + about.replace("对方", "主人")
+            default_call = owner_call(core.data)
+            for candidate in (rel.get("call"), relationship().get("call")):
+                c = str(candidate or "").strip()
+                if c and c != default_call and c not in ("哥", "姐", "前辈", "主人"):
+                    text = text.replace(c, default_call or "主人")
+        # 2026-11-23 (P2-1): never inject intimate relationship labels ('partner'/'恋人'), custom pet-names
+        # ('老公'/'宝宝'), or intimacy stages into public group / stranger DM prompts.
+        if rel["kind"] == "partner":
+            return text + "\n【你和你的主人】你很信任你的主人，但在群里和别人私聊时保持分寸，不透露你们私下的关系细节和称呼。"
+        if rel["kind"] == PERSONA_KIND:
+            built_in = own_relation(persona_data(channel)) or {}
+            base = str(built_in.get("text") or "").replace("{call}", "主人").replace("对方", "主人")
+            return text + f"\n【你和你的主人的关系：{rel['label']}】" + base
+        base = RELATIONSHIPS[rel["kind"]][1].replace("对方", "主人")
+        return text + f"\n【你和你的主人的关系：{rel['label']}】" + base
     except Exception:                                 # noqa: BLE001
         logger.exception("persona could not be loaded for the social prompt")
         return "【你自己】一个普通、友善的人。"
@@ -824,12 +930,13 @@ def _persona_text(db, channel: str | None = None) -> str:
 def owner_digest(db, hours: float = 24.0, limit: int = 6) -> str:
     """For the owner's chat: what she said in groups lately (the owner may know about her group life; the reverse
     never happens). Empty when nothing."""
-    since = (datetime.fromisoformat(db.now()[:19]) - timedelta(hours=hours)).isoformat(sep=" ")
+    since = (datetime.fromisoformat(db.now()[:19]) - timedelta(hours=hours)).isoformat(timespec="seconds")
     rows = db.fetch_all("SELECT c.title, c.peer_id, m.content, m.created_at FROM social_messages m "
                         "JOIN social_conversations c ON c.id = m.conversation_id WHERE m.is_self = 1 AND c.kind = 'group' "
-                        "AND m.created_at >= ? ORDER BY m.id DESC LIMIT ?", (since, limit))
-    posts = db.fetch_all("SELECT content, created_at FROM social_posts WHERE status = 'sent' AND created_at >= ? "
-                         "ORDER BY id DESC LIMIT 3", (since,))
+                        "AND substr(replace(m.created_at, ' ', 'T'), 1, 19) >= ? ORDER BY m.id DESC LIMIT ?",
+                        (since, limit))
+    posts = db.fetch_all("SELECT content, created_at FROM social_posts WHERE status = 'sent' "
+                         "AND substr(replace(created_at, ' ', 'T'), 1, 19) >= ? ORDER BY id DESC LIMIT 3", (since,))
     from ai import context_cut                         # 2026-10-30: nothing from before a 翻篇 / the start of a test
     cut = max([t for t in (context_cut.owner_since(), context_cut.social_since()) if t] or [""])
     rows = [r for r in rows if str(r["created_at"]) >= cut]

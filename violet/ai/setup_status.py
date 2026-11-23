@@ -67,6 +67,8 @@ def classify_error(exc: BaseException) -> tuple[str, str]:
     status = getattr(exc, "status_code", None)
     if name == "LLMNotConfigured":
         return "not_configured", "还没有填写 API 地址或 API Key"
+    if name == "EmptyCompletionError":
+        return "empty_response", "模型返回了空结果（可能触发了安全过滤）"
     if name == "AuthenticationError" or status == 401:
         return "auth", "API Key 不对或已失效（接口返回 401）"
     if name == "PermissionDeniedError" or status == 403:
@@ -97,13 +99,13 @@ def test_model(chat_agent, data_dir=None, model: str | None = None) -> dict[str,
         if cfg is None:
             raise RuntimeError("chat agent has no configuration")
         client = chat_agent._get_client(cfg)
-        from ai.model_params import apply as apply_model_params
-        response = client.chat.completions.create(**apply_model_params({
-            "model": chosen, "messages": [{"role": "user", "content": "请只回复两个字：在的"}], "max_tokens": 16,
-            "temperature": 0}))
+        from ai.model_params import create as create_with_params, strip_think
+        response = create_with_params(client, {
+            "model": chosen, "messages": [{"role": "user", "content": "请只回复两个字：在的"}], "max_tokens": 256,
+            "temperature": 0})
         content = ""
         try:
-            content = (response.choices[0].message.content or "").strip()
+            content = strip_think(response.choices[0].message.content or "").strip()
         except (AttributeError, IndexError, TypeError):
             pass
         result.update(ok=True, kind="ok", message="模型服务可以正常使用" + ("" if content else "（回复是空的，但调用成功了）"))
@@ -117,14 +119,23 @@ def test_model(chat_agent, data_dir=None, model: str | None = None) -> dict[str,
     return result
 
 
+def _clean_model_id(item: Any) -> str | None:
+    mid = getattr(item, "id", None) or (item.get("id") if isinstance(item, dict) else None)
+    if not isinstance(mid, str):
+        return None
+    mid = mid.strip()
+    if mid.startswith("models/"):
+        mid = mid[len("models/"):]
+    return mid or None
+
+
 def list_models(chat_agent) -> dict[str, Any]:
     """The model names the API offers (OpenAI-compatible GET /models), to pick from instead of typing them."""
     cfg = getattr(chat_agent, "_config", None)
     try:
         client = chat_agent._get_client(cfg)
         page = client.models.list()
-        names = sorted({getattr(m, "id", None) or (m.get("id") if isinstance(m, dict) else None)
-                        for m in getattr(page, "data", page) or []} - {None})
+        names = sorted({_clean_model_id(m) for m in getattr(page, "data", page) or []} - {None})
         return {"ok": True, "models": names[:500]}
     except Exception as exc:  # noqa: BLE001
         kind, message = classify_error(exc)

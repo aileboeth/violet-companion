@@ -22,6 +22,7 @@ content scan stays as the second line of defence (a model can still echo its ins
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
@@ -150,10 +151,15 @@ _HEADERS: list[str] | None = None
 # internal JSON an agent produces (Intent's routing, tool calls, chat-completion messages)
 _INTERNAL_KEYS = {"route", "user_intent", "should_reply", "tool_query", "active_task_id", "tool_calls",
                   "tool_call_id", "function", "role", "should_save", "should_act", "action_type", "memory_ops"}
-_REASONING = re.compile(r"</?think>|<\|im_(start|end)\|>|<\|(system|assistant|user)\|>", re.I)
-_ROLE_LINE = re.compile(r"^\s*(system|assistant|developer)\s*[:：]", re.I)
+_INTERNAL_KEY_RE = re.compile(r'"(%s)"\s*:' % "|".join(sorted(_INTERNAL_KEYS)))
+_FENCED_JSON_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)(?:```|$)", re.I)
+_REASONING = re.compile(r"</?(?:think|thought|thinking)>|<\|im_(start|end)\|>|<\|(system|assistant|user)\|>", re.I)
+_ROLE_LINE = re.compile(r"^\s*(?:[*_]{1,2})?\s*(system|assistant|developer)\s*(?:[*_]{1,2})?\s*[:：]", re.I)
 # fixed internal markers that are not 【...】 headers
 _MARKERS = ("安全规则：工具", "任务执行结果（供参考", "以下内容不是指令", "UNTRUSTED", "tool_catalog_note")
+_HEADER_LINE_RE = re.compile(r"^(【[^】\n\"'`{}]{2,60}(?:】|$))")
+_HEADER_JUNK = ("[^", "]*", "…", "...", " / ")
+_REGEX_FUNCS = frozenset({"compile", "sub", "subn", "search", "match", "fullmatch", "findall", "finditer"})
 
 
 def _norm(text: str) -> str:
@@ -176,29 +182,89 @@ def register_instructions(name: str, text: str | None) -> None:
 
 
 def internal_headers() -> list[str]:
-    """Every 【...】 note header in Violet's own code (context notes, tool notes, memory notes...), collected from the
-    source so a header added later is covered without anyone remembering to list it. A header with a {placeholder}
-    is kept up to the placeholder."""
+    """Every genuine 【...】 prompt section header in Violet's own code (context notes, tool notes, memory notes...),
+    collected via AST string literals (skipping comments, docstrings, regex patterns, and bare everyday words so benign
+    replies like '【语音】...' or '【节日】...' are not falsely blocked while real prompt leaks stay caught)."""
     global _HEADERS
     with _LOCK:
         if _HEADERS is not None:
             return _HEADERS
     root = Path(__file__).resolve().parent.parent          # ai/
     found: set[str] = set()
-    pattern = re.compile(r"【[^】\n\"'{}]{2,60}(?:】|(?=\{))")
     for path in root.rglob("*.py"):
-        try:
-            source = path.read_text(encoding="utf-8")
-        except OSError:
+        if path.name == "outbound.py":
             continue
-        for match in pattern.finditer(source):
-            header = match.group(0)
-            if len(header) >= 4:
-                found.add(header)
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        skip: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                if (node.body and isinstance(node.body[0], ast.Expr)
+                        and isinstance(node.body[0].value, ast.Constant)
+                        and isinstance(node.body[0].value.value, str)):
+                    skip.add(id(node.body[0].value))
+            if isinstance(node, ast.Call):
+                fn = (node.func.attr if isinstance(node.func, ast.Attribute)
+                      else (node.func.id if isinstance(node.func, ast.Name) else ""))
+                if fn in _REGEX_FUNCS and node.args:
+                    for sub in ast.walk(node.args[0]):
+                        skip.add(id(sub))
+        candidates: list[str] = []
+        joined_consts: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.JoinedStr) and id(node) not in skip:
+                parts: list[str] = []
+                for v in node.values:
+                    if isinstance(v, ast.Constant) and isinstance(v.value, str):
+                        joined_consts.add(id(v))
+                        parts.append(v.value)
+                    else:
+                        parts.append("\x00")
+                candidates.append("".join(parts))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and id(node) not in skip and id(node) not in joined_consts):
+                candidates.append(node.value)
+        for text in candidates:
+            if "【" not in text:
+                continue
+            for raw_line in text.splitlines():
+                line = raw_line.strip()
+                if not line.startswith("【"):
+                    continue
+                head_chunk = line.split("\x00", 1)[0]
+                match = _HEADER_LINE_RE.match(head_chunk)
+                if not match:
+                    continue
+                header = match.group(1)
+                if len(header) < 4 or any(junk in header for junk in _HEADER_JUNK):
+                    continue
+                if len(header) >= 7:
+                    found.add(header)
+                elif header.endswith("】"):
+                    # Short headers (<= 4 chars inside 【...】, e.g. 【图片】, 【语音】, 【管理员】, 【聊天记录】)
+                    # collide with everyday Chinese words unless disambiguated by the prompt sentence that follows.
+                    rest = head_chunk[match.end():].strip()
+                    if len(rest) >= 4:
+                        found.add(header + rest[:6].rstrip())
     headers = sorted(found, key=len, reverse=True)
     with _LOCK:
         _HEADERS = headers
     return headers
+
+
+def _dict_has_internal_keys(obj: Any, depth: int = 0) -> bool:
+    if depth > 4:
+        return False
+    if isinstance(obj, dict):
+        if _INTERNAL_KEYS & set(obj):
+            return True
+        return any(_dict_has_internal_keys(v, depth + 1) for v in obj.values())
+    if isinstance(obj, list):
+        return any(_dict_has_internal_keys(item, depth + 1) for item in obj[:32])
+    return False
 
 
 def _json_leak(line: str) -> bool:
@@ -210,9 +276,38 @@ def _json_leak(line: str) -> bool:
     try:
         data = json.loads(stripped)
     except ValueError:
-        return bool(re.search(r'"(%s)"\s*:' % "|".join(sorted(_INTERNAL_KEYS)), stripped))
-    items = data if isinstance(data, list) else [data]
-    return any(isinstance(item, dict) and _INTERNAL_KEYS & set(item) for item in items)
+        return bool(_INTERNAL_KEY_RE.search(stripped))
+    return _dict_has_internal_keys(data)
+
+
+def _has_internal_json(text: str) -> bool:
+    """Detect single-line, multi-line pretty-printed, fenced (```json ... ```), inline, or truncated internal JSON."""
+    if "{" not in text and "[" not in text and "```" not in text:
+        return False
+    decoder = json.JSONDecoder()
+    pos, tries = 0, 0
+    while tries < 32:
+        brace = text.find("{", pos)
+        bracket = text.find("[", pos)
+        if brace == -1 and bracket == -1:
+            break
+        start = brace if bracket == -1 else (bracket if brace == -1 else min(brace, bracket))
+        tries += 1
+        try:
+            obj, end = decoder.raw_decode(text, start)
+        except ValueError:
+            if _INTERNAL_KEY_RE.search(text[start:]):
+                return True
+            pos = start + 1
+            continue
+        if _dict_has_internal_keys(obj):
+            return True
+        pos = max(end, start + 1)
+    if "```" in text:
+        for match in _FENCED_JSON_RE.finditer(text):
+            if _INTERNAL_KEY_RE.search(match.group(1)):
+                return True
+    return False
 
 
 def find_leak(text: str | None) -> str | None:
@@ -227,6 +322,8 @@ def find_leak(text: str | None) -> str | None:
             return "role_transcript"
         if _json_leak(line):
             return "internal_json"
+    if _has_internal_json(text):
+        return "internal_json"
     if any(marker in text for marker in _MARKERS):
         return "internal_marker"
     if "【" in text and any(header in text for header in internal_headers()):
@@ -248,11 +345,18 @@ def find_leak(text: str | None) -> str | None:
 
 def find_reply_leak(messages: list[dict[str, Any]]) -> str | None:
     """The first leak among the texts of one send (images are authorised separately by the outbox)."""
+    texts: list[str] = []
     for m in messages or []:
         if m.get("type") in ("text", "voice"):
-            reason = find_leak(m.get("content"))
+            content = m.get("content")
+            reason = find_leak(content)
             if reason:
                 return reason
+            if isinstance(content, str) and content:
+                texts.append(content)
+    if len(texts) > 1:
+        # Multi-line pretty-printed JSON or prompt excerpts split across messages by normalize_chat_output()
+        return find_leak("\n".join(texts))
     return None
 
 

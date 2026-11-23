@@ -101,6 +101,11 @@ def _norm(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------------------------- the wiki file
+def _ro_uri(path: Path) -> str:
+    """Percent-encoded read-only SQLite file URI so '#' / '?' / '%' in paths never truncate or create files."""
+    return Path(path).resolve().as_uri() + "?mode=ro"
+
+
 def _connect(path: Path, write: bool = False) -> sqlite3.Connection:
     if write:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,7 +117,7 @@ def _connect(path: Path, write: bool = False) -> sqlite3.Connection:
                 conn.execute(f"ALTER TABLE memes ADD COLUMN {col} TEXT")
         conn.commit()
     else:
-        conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True, timeout=10, check_same_thread=False)
+        conn = sqlite3.connect(_ro_uri(path), uri=True, timeout=10, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -334,11 +339,12 @@ def lookup(db, query: str, limit: int = 3) -> list[dict[str, Any]]:
         conn = _connect(wiki_path())
         try:
             seen = {o["title"] for o in out}
+            ql_like = ql.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             queries = [
                 ("SELECT * FROM memes WHERE lower(title) = ?", (ql,)),
                 ("SELECT * FROM memes WHERE aliases IS NOT NULL AND instr(',' || lower(aliases) || ',', ',' || ? || ',') > 0 "
                  "LIMIT 2", (ql,)),
-                ("SELECT * FROM memes WHERE lower(title) LIKE ? || '%' ORDER BY length(title) LIMIT 2", (ql,)),
+                ("SELECT * FROM memes WHERE lower(title) LIKE ? || '%' ESCAPE '\\' ORDER BY length(title) LIMIT 2", (ql_like,)),
                 ("SELECT * FROM memes WHERE length(title) >= 2 AND instr(?, lower(title)) > 0 ORDER BY length(title) DESC "
                  "LIMIT 2", (ql,)),
                 ("SELECT * FROM memes WHERE keywords IS NOT NULL AND instr(' ' || lower(keywords) || ' ', ' ' || ? || ' ') > 0 "
@@ -674,18 +680,20 @@ def stop() -> None:
 def import_file(src: Path) -> dict[str, Any]:
     """A meme file in the DSH plugin's format (or one of ours) becomes the wiki file: its rows are merged in (an entry
     already here with more text keeps it). Raises ValueError when it is not one."""
+    conn: sqlite3.Connection | None = None
     try:
-        conn = sqlite3.connect(f"file:{Path(src).as_posix()}?mode=ro", uri=True)
+        conn = sqlite3.connect(_ro_uri(Path(src)), uri=True, timeout=10)
         conn.row_factory = sqlite3.Row
         cols = {r[1] for r in conn.execute("PRAGMA table_info(memes)")}
+        if "title" not in cols:
+            raise ValueError("不是词库文件：没有 memes 表")
+        wanted = [c for c in _WIKI_COLUMNS if c in cols]
+        rows = [dict(r) for r in conn.execute(f"SELECT {', '.join(wanted)} FROM memes")]
     except sqlite3.Error as exc:
         raise ValueError(f"不是词库文件：{exc}") from None
-    if "title" not in cols:
-        conn.close()
-        raise ValueError("不是词库文件：没有 memes 表")
-    wanted = [c for c in _WIKI_COLUMNS if c in cols]
-    rows = [dict(r) for r in conn.execute(f"SELECT {', '.join(wanted)} FROM memes")]
-    conn.close()
+    finally:
+        if conn is not None:
+            conn.close()
     dst = _connect(wiki_path(), write=True)
     added = merged = 0
     try:
@@ -693,11 +701,12 @@ def import_file(src: Path) -> dict[str, Any]:
             title = str(r.get("title") or "").strip()
             if not title:
                 continue
+            r["title"] = title
             old = dst.execute("SELECT * FROM memes WHERE title = ?", (title,)).fetchone()
             if old is None:
                 dst.execute(f"INSERT INTO memes ({', '.join(wanted)}) VALUES ({', '.join('?' * len(wanted))})",
                             [r.get(c) for c in wanted])
-                if "detail_at" not in r and r.get("usage"):
+                if not r.get("detail_at") and r.get("usage"):
                     dst.execute("UPDATE memes SET detail_at = ? WHERE title = ?", (_now_text(), title))
                 added += 1
             else:

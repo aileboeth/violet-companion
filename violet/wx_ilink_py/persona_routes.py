@@ -354,6 +354,8 @@ def register_persona_routes(app: Flask, violetdb, all_agents=None) -> None:
             raw = str((resp.choices[0].message.content if resp.choices else "") or "").strip()
         except Exception:
             raw = ""
+        from ai.model_params import strip_think
+        raw = strip_think(raw).strip()
         normalized = normalize_chat_output(raw, sticker_for_label=None, sticker_for_description=None)
         out_lines = [str(m.get("content") or "") for m in normalized.get("messages") or [] if m.get("content")]
         if not out_lines and raw:

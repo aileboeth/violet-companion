@@ -1,8 +1,10 @@
 {
   "_comment": [
     "Per-model request parameter policy (ai/model_params.py). The defaults reproduce the current behaviour.",
+    "Supports exact model names and wildcard globs (e.g. \"gemini-3*\").",
+    "Supported per-model fields: send_temperature, default_temperature, max_tokens_field, allowed_extra_params, default_reasoning_effort, extra_body.",
     "Add a model entry ONLY after a real test call showed what it accepts, and note how it was verified, e.g.:",
-    "\"some-model\": {\"send_temperature\": false, \"max_tokens_field\": \"max_completion_tokens\", \"_verified\": \"2026-xx-xx test call, relay log #...\"}",
+    "\"gemini-3*\": {\"default_temperature\": 1.0, \"default_reasoning_effort\": \"low\", \"_verified\": \"2026-xx-xx test call\"}",
     "Nothing is filled in for any real model yet: none has been verified."
   ],
   "defaults": {

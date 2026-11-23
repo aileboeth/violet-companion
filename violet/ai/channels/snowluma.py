@@ -26,6 +26,7 @@ import os
 import re
 import threading
 import time
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any
@@ -520,10 +521,11 @@ class SnowLumaChannel(ChannelAdapter):
             self.call("group_poke" if kind == "group" else "friend_poke", params, timeout=10)
 
     def _for_owner(self, event: dict[str, Any], segments: list[dict[str, Any]]) -> bool:
+        from ai.channels.identity import BIND_RE
         peer = str(event.get("user_id") or "")
         text = "".join(str((s.get("data") or {}).get("text") or "") for s in segments
                        if isinstance(s, dict) and s.get("type") == "text").strip()
-        if text.startswith("/bind"):
+        if BIND_RE.match(text) or re.match(r"^(?:/bind|绑定)(?:\s|$)", text, re.I):
             return True
         runtime = self.runtime
         identities = getattr(runtime, "identities", None)
@@ -831,19 +833,40 @@ class SnowLumaChannel(ChannelAdapter):
         url = str(part.data.get("url") or "")
         if not re.match(r"^https?://", url):
             raise QQError("image has no download address")
+        from urllib.parse import urlsplit
+        from ai.web.netguard import NetPolicy, SafeFetcher, WebPolicyError, internal_hosts, is_public_ip
+        host = (urlsplit(url).hostname or "").strip("[]")
         try:
-            response = self.session.get(url, timeout=(10, 60), stream=True)
-            response.raise_for_status()
-            self.media_dir.mkdir(parents=True, exist_ok=True)
-            target, size = self.media_dir / (hashlib.sha256(url.encode("utf-8")).hexdigest()[:24] + ".jpg"), 0
-            with open(target, "wb") as fh:
-                for chunk in response.iter_content(65536):
-                    size += len(chunk)
-                    if size > MAX_DOWNLOAD:
-                        raise QQError("image too large")
-                    fh.write(chunk)
+            import ipaddress
+            ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            if not is_public_ip(host):
+                raise QQError("image download refused: non_public_ip")
+        policy = NetPolicy(
+            max_bytes=MAX_DOWNLOAD,
+            connect_timeout=10.0,
+            read_timeout=60.0,
+            total_timeout=70.0,
+            max_redirects=5,
+            blocked_hosts=internal_hosts(),
+        )
+        accept = ("image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/bmp",
+                  "application/octet-stream", "")
+        try:
+            fetched = SafeFetcher(policy).fetch(url, accept_types=accept)
+        except WebPolicyError as exc:
+            raise QQError(f"image download refused: {exc.code}") from None
+        self.media_dir.mkdir(parents=True, exist_ok=True)
+        target = self.media_dir / (hashlib.sha256(url.encode("utf-8")).hexdigest()[:24] + ".jpg")
+        tmp = self.media_dir / f".{target.stem}.{uuid.uuid4().hex[:8]}.tmp"
+        try:
+            tmp.write_bytes(fetched.body)
+            os.replace(tmp, target)
             return target
-        except requests.RequestException as exc:
+        except OSError as exc:
+            tmp.unlink(missing_ok=True)
             raise QQError(safe_error(exc)) from None
 
     def probe(self) -> dict[str, Any]:

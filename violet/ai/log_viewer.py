@@ -13,10 +13,12 @@ text; the raw file is never served.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import unquote, urlsplit
 
 TAIL_BYTES = 2 * 1024 * 1024
 MAX_LIMIT = 1000
@@ -25,11 +27,65 @@ _RECORD = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:,\d{3})?) (DEBUG|
                      r"\[([^\]]+)\](?: ?\[turn ([\w.-]+)\])? ?(.*)$")
 _LONG_RANDOM = re.compile(r"\b(?=[A-Za-z0-9_-]*\d)(?=[A-Za-z0-9_-]*[A-Za-z])[A-Za-z0-9_-]{40,}\b")
 _BOT_TOKEN = re.compile(r"\bbot\d+:[A-Za-z0-9_-]{20,}")
+_PROVIDER_KEY_RE = re.compile(
+    r"\b(?:"
+    r"AIza[0-9A-Za-z_-]{30,}"
+    r"|sk-ant-[A-Za-z0-9_-]{16,}"
+    r"|sk-(?:proj-|live-|test-|svcacct-)?[A-Za-z0-9_-]{20,}"
+    r"|xai-[A-Za-z0-9_-]{20,}"
+    r"|gh[pousr]_[A-Za-z0-9_]{20,}"
+    r"|github_pat_[A-Za-z0-9_]{20,}"
+    r"|BSA[A-Za-z0-9_-]{24,}"
+    r")\b"
+)
+_URL_CREDS_RE = re.compile(r"([A-Za-z][A-Za-z0-9+.-]{1,15}://)([^/\s@:]+):([^/\s@]+)@")
+_AUTH_SCHEME_RE = re.compile(r"(?i)\b(Basic|Token|Digest)\s+[A-Za-z0-9._~+/=-]{6,}")
+_COOKIE_HEADER_RE = re.compile(r"(?i)(?<![A-Za-z0-9_-])(Set-Cookie|Cookie)(\s*:\s*)([^\r\n]+)")
+_SESSION_COOKIE_RE = re.compile(r"(?i)\b(violet_admin_session|sessionid|session_id|csrftoken)=([^;\s'\"<>]+)")
+_EXTRA_PARAM_RE = re.compile(
+    r"(?i)\b([A-Za-z0-9_-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|ws[_-]?token|"
+    r"bot[_-]?token|device[_-]?secret|client[_-]?secret|session[_-]?secret|vnc[_-]?password|"
+    r"password|passwd|secret|token))=([^&\s'\"<>,;}\]]+)"
+)
+_JSON_SECRET_RE = re.compile(
+    r"(?i)([\"']?(?:x-goog-api-key|x-api-key|x-auth-token|api[_-]?key|access[_-]?token|refresh[_-]?token|"
+    r"auth[_-]?token|ws[_-]?token|bot[_-]?token|device[_-]?secret|client[_-]?secret|session[_-]?secret|"
+    r"vnc[_-]?password|password|passwd|secret|token|proxy-authorization|authorization)[\"']?\s*:\s*)"
+    r"([\"'])(?!(?:Bearer|Basic|Token|Digest)\s+<redacted>\2|<redacted>\2)([^\"'\r\n]+)\2"
+)
+_COLON_SECRET_RE = re.compile(
+    r"(?i)(?<![A-Za-z0-9_-])(x-goog-api-key|x-api-key|x-auth-token|api[_-]?key|access[_-]?token|"
+    r"refresh[_-]?token|auth[_-]?token|ws[_-]?token|bot[_-]?token|device[_-]?secret|client[_-]?secret|"
+    r"session[_-]?secret|vnc[_-]?password|password|passwd|secret|proxy-authorization|authorization)"
+    r"(\s*:\s*)(?!(?:Bearer|Basic|Token|Digest)\s+<redacted>|<redacted>|[\"'])([^\s\"',;}\]\r\n]+)"
+)
+_PROXY_ENV_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")
+_SECRET_FIELD_RE = re.compile(r"(token|secret|password|passwd|key)", re.I)
 
 
 def log_path() -> Path | None:
     value = (os.environ.get("VIOLET_LOG_FILE") or "").strip()
     return Path(value) if value else None
+
+
+def _add_secret(found: set[str], value: Any) -> None:
+    if not isinstance(value, str):
+        return
+    s = value.strip()
+    if not s:
+        return
+    found.add(s)
+    parts = s.split(None, 1)
+    if len(parts) == 2 and parts[0].lower() in ("bearer", "basic", "token", "digest") and parts[1].strip():
+        found.add(parts[1].strip())
+
+
+def _read_json_dict(path: Path) -> dict[str, Any]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
 
 
 def known_secrets(data_dir: str | os.PathLike[str] | None = None) -> list[str]:
@@ -40,29 +96,74 @@ def known_secrets(data_dir: str | os.PathLike[str] | None = None) -> list[str]:
         found.update(environment_secrets())
     except Exception:
         pass
+    for env_name in _PROXY_ENV_VARS:
+        raw_proxy = (os.environ.get(env_name) or "").strip()
+        if not raw_proxy:
+            continue
+        try:
+            parts = urlsplit(raw_proxy)
+            if parts.password:
+                found.add(parts.password)
+                decoded = unquote(parts.password)
+                if decoded:
+                    found.add(decoded)
+        except ValueError:
+            pass
     base = Path(data_dir or os.environ.get("VIOLET_DATA_DIR") or "./data")
+    control = base / "control"
     try:
         from ai.control_config import ControlStore
-        found.update(v for v in ControlStore(base).secret_values().values() if isinstance(v, str))
+        cs = ControlStore(base)
+        for v in cs.secret_values().values():
+            _add_secret(found, v)
+        sec_doc = _read_json_dict(cs.secrets_path)
+        for prev_list in (sec_doc.get("previous") or {}).values():
+            if isinstance(prev_list, list):
+                for item in prev_list:
+                    _add_secret(found, item)
     except Exception:
         pass
     try:
         from ai.channels.manager import ChannelStore
         store = ChannelStore(base)
         for cid in store.channels():
-            found.update(v for v in store.secrets(cid).values() if isinstance(v, str))
+            for v in store.secrets(cid).values():
+                _add_secret(found, v)
     except Exception:
         pass
-    try:
-        found.add((base / "admin_token").read_text(encoding="utf-8").strip())
-    except OSError:
-        pass
+    # MCP server auth headers & web search keys (<data>/control/mcp_secrets.json)
+    mcp_sec = _read_json_dict(control / "mcp_secrets.json")
+    for hdrs in (mcp_sec.get("servers") or {}).values():
+        if isinstance(hdrs, dict):
+            for v in hdrs.values():
+                _add_secret(found, v)
+    for v in (mcp_sec.get("web") or {}).values():
+        _add_secret(found, v)
+    # Root-exported service credentials (snowluma.json, mcp-relay.json)
+    for fname in ("snowluma.json", "mcp-relay.json"):
+        doc = _read_json_dict(control / fname)
+        for k, v in doc.items():
+            if _SECRET_FIELD_RE.search(str(k)):
+                _add_secret(found, v)
+    for token_file in (base / "admin_token", control / "session_secret"):
+        try:
+            _add_secret(found, token_file.read_text(encoding="utf-8"))
+        except OSError:
+            pass
     return sorted((s for s in found if s and len(s) >= 6), key=len, reverse=True)
 
 
 def redact(text: str, secrets: Iterable[str]) -> str:
     from ai.mcp import scrub_secrets
     text = scrub_secrets(text, list(secrets))
+    text = _URL_CREDS_RE.sub(r"\1<redacted>@", text)
+    text = _COOKIE_HEADER_RE.sub(r"\1\2<redacted>", text)
+    text = _SESSION_COOKIE_RE.sub(r"\1=<redacted>", text)
+    text = _AUTH_SCHEME_RE.sub(r"\1 <redacted>", text)
+    text = _EXTRA_PARAM_RE.sub(r"\1=<redacted>", text)
+    text = _JSON_SECRET_RE.sub(r"\1\2<redacted>\2", text)
+    text = _COLON_SECRET_RE.sub(r"\1\2<redacted>", text)
+    text = _PROVIDER_KEY_RE.sub("<redacted>", text)
     text = _BOT_TOKEN.sub("bot<redacted>", text)
     return _LONG_RANDOM.sub("<redacted>", text)
 

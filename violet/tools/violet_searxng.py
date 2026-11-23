@@ -26,6 +26,7 @@ import os
 import random
 import secrets
 import shutil
+import stat
 import subprocess
 import tarfile
 import time
@@ -327,22 +328,185 @@ def _pick_port(port_free: Callable[[int, str], bool], rng: random.Random | None)
     raise SearxngError("找不到空闲端口")
 
 
-def _write_owned(path: Path, text: str, user: str | None, mode: int = 0o640) -> None:
-    """root writes into the service account's folder: a fresh file (O_EXCL), renamed into place, owned by the account."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.unlink(missing_ok=True)
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        if user and hasattr(os, "fchown"):
+def _is_link_or_junction(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    isjunction = getattr(os.path, "isjunction", None)
+    if isjunction is not None:
+        try:
+            if isjunction(path):
+                return True
+        except OSError:
+            pass
+    if os.name == "nt":
+        try:
+            st = os.lstat(path)
+            if getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _resolve_ids(user: str | None) -> tuple[int | None, int | None]:
+    if not user:
+        return None, None
+    try:
+        import pwd
+        account = pwd.getpwnam(user)
+        return account.pw_uid, account.pw_gid
+    except (ImportError, KeyError):
+        return None, None
+
+
+def _ensure_safe_dir(directory: Path, root: Path | None = None) -> list[Path]:
+    created: list[Path] = []
+    if root is not None:
+        try:
+            rel = directory.relative_to(root)
+        except ValueError as exc:
+            raise OSError(f"refusing to write outside {root}: {directory}") from exc
+        if ".." in rel.parts:
+            raise OSError(f"unsafe relative path: {directory}")
+        if _is_link_or_junction(root):
+            raise OSError(f"refusing to traverse symlink: {root}")
+        if not root.exists():
+            root.mkdir(parents=True, exist_ok=True)
+            created.append(root)
+        if _is_link_or_junction(root) or not root.is_dir():
+            raise OSError(f"not a safe directory: {root}")
+        cur = root
+        for part in rel.parts:
+            cur = cur / part
+            if _is_link_or_junction(cur):
+                raise OSError(f"refusing to traverse symlink: {cur}")
+            if not cur.exists():
+                os.mkdir(cur)
+                created.append(cur)
+            if _is_link_or_junction(cur) or not cur.is_dir():
+                raise OSError(f"not a safe directory: {cur}")
+        return created
+    if directory.name == "control" and _is_link_or_junction(directory.parent):
+        raise OSError(f"refusing to traverse symlink: {directory.parent}")
+    if _is_link_or_junction(directory):
+        raise OSError(f"refusing to traverse symlink: {directory}")
+    if not directory.exists():
+        directory.mkdir(parents=True, exist_ok=True)
+        created.append(directory)
+    if _is_link_or_junction(directory) or not directory.is_dir():
+        raise OSError(f"not a safe directory: {directory}")
+    return created
+
+
+def _open_dir_fd_nofollow(directory: Path, root: Path | None = None) -> int:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if root is None:
+        return os.open(directory, flags)
+    dfd = os.open(root, flags)
+    try:
+        for part in directory.relative_to(root).parts:
+            nxt = os.open(part, flags, dir_fd=dfd)
+            os.close(dfd)
+            dfd = nxt
+    except Exception:
+        os.close(dfd)
+        raise
+    return dfd
+
+
+def _safe_unlink(path: Path, *, root: Path | None = None) -> None:
+    if root is not None:
+        try:
+            rel = path.relative_to(root)
+        except ValueError:
+            return
+        if ".." in rel.parts or _is_link_or_junction(root):
+            return
+        cur = root
+        for part in rel.parts[:-1]:
+            cur = cur / part
+            if _is_link_or_junction(cur) or not cur.exists():
+                return
+    elif _is_link_or_junction(path.parent) or (path.parent.name == "control" and _is_link_or_junction(path.parent.parent)):
+        return
+    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set())
+                  and os.unlink in getattr(os, "supports_dir_fd", set()))
+    if use_dir_fd:
+        try:
+            dfd = _open_dir_fd_nofollow(path.parent, root=root)
+        except OSError:
+            return
+        try:
+            os.unlink(path.name, dir_fd=dfd)
+        except OSError:
+            pass
+        finally:
+            os.close(dfd)
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _write_owned(path: Path, text: str, user: str | None, mode: int = 0o640, *, root: Path | None = None) -> None:
+    """root writes into the service account's folder without following any file or directory symlink/junction."""
+    created = _ensure_safe_dir(path.parent, root=root)
+    uid, gid = _resolve_ids(user)
+    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set())
+                  and os.replace in getattr(os, "supports_dir_fd", set()))
+    tmp_name = f".{path.name}.{secrets.token_hex(6)}.tmp"
+    open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    if use_dir_fd:
+        dfd = _open_dir_fd_nofollow(path.parent, root=root)
+        try:
+            if path.parent in created and uid is not None and hasattr(os, "fchown"):
+                try:
+                    os.fchown(dfd, uid, gid if gid is not None else -1)
+                except OSError:
+                    pass
+            fd = os.open(tmp_name, open_flags, mode, dir_fd=dfd)
             try:
-                import pwd
-                account = pwd.getpwnam(user)
-                os.fchown(fh.fileno(), account.pw_uid, account.pw_gid)
-            except (ImportError, KeyError, OSError):
-                pass
-        fh.write(text)
-    os.replace(tmp, path)
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    if hasattr(os, "fchmod"):
+                        try:
+                            os.fchmod(fh.fileno(), mode)
+                        except OSError:
+                            pass
+                    if uid is not None and hasattr(os, "fchown"):
+                        try:
+                            os.fchown(fh.fileno(), uid, gid if gid is not None else -1)
+                        except OSError:
+                            pass
+                    fh.write(text)
+                os.replace(tmp_name, path.name, src_dir_fd=dfd, dst_dir_fd=dfd)
+            except Exception:
+                try:
+                    os.unlink(tmp_name, dir_fd=dfd)
+                except OSError:
+                    pass
+                raise
+        finally:
+            os.close(dfd)
+        return
+    if _is_link_or_junction(path.parent):
+        raise OSError(f"refusing to traverse symlink: {path.parent}")
+    tmp = path.parent / tmp_name
+    fd = os.open(tmp, open_flags, mode)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        if _is_link_or_junction(path.parent) or _is_link_or_junction(tmp):
+            raise OSError(f"refusing to replace through symlink: {path}")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 # ------------------------------------------------------------------------------------------------ commands
@@ -460,7 +624,7 @@ def _export(layout: Any, state: dict[str, Any], tested: dict[str, Any]) -> None:
               "engines_text": describe(config), "search_ok": tested["results"] > 0,
               "last_results": tested["results"], "last_note": tested.get("note"), "tested_at": int(time.time()),
               "catalog": [{"name": k, "label": v[0], "region": v[1]} for k, v in ENGINES.items()]}
-    _write_owned(export_path(layout.data), json.dumps(export, ensure_ascii=False), state.get("user"))
+    _write_owned(export_path(layout.data), json.dumps(export, ensure_ascii=False), state.get("user"), root=layout.data)
 
 
 def _installed(state: dict[str, Any], unit_path: Path) -> dict[str, Any]:
@@ -499,14 +663,31 @@ def read_request(data: Path) -> dict[str, Any]:
     following a link, at most 4 KB, and only engine names from ENGINES survive (normalize)."""
     path = request_path(data)
     try:
-        if path.is_symlink() or not path.is_file():
+        if _is_link_or_junction(data) or _is_link_or_junction(data / "control") or _is_link_or_junction(path) or not path.is_file():
             raise SearxngError("没有收到要用的搜索引擎")
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        try:
-            raw = os.read(fd, 4096)
-        finally:
-            os.close(fd)
-        path.unlink(missing_ok=True)
+        use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                      and os.open in getattr(os, "supports_dir_fd", set()))
+        if use_dir_fd:
+            dfd = _open_dir_fd_nofollow(path.parent, root=data)
+            try:
+                fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=dfd)
+                try:
+                    raw = os.read(fd, 4096)
+                finally:
+                    os.close(fd)
+                try:
+                    os.unlink(path.name, dir_fd=dfd)
+                except OSError:
+                    pass
+            finally:
+                os.close(dfd)
+        else:
+            fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                raw = os.read(fd, 4096)
+            finally:
+                os.close(fd)
+            _safe_unlink(path, root=data)
         data_ = json.loads(raw.decode("utf-8"))
     except (OSError, ValueError):
         raise SearxngError("要用的搜索引擎读不出来") from None
@@ -560,7 +741,7 @@ def uninstall(layout: Any, state: dict[str, Any], *, run: Callable[..., Any] = s
         elif cache.exists():
             shutil.rmtree(cache, ignore_errors=True)
     state.pop("searxng", None)
-    export_path(layout.data).unlink(missing_ok=True)
+    _safe_unlink(export_path(layout.data), root=layout.data)
     return removed
 
 

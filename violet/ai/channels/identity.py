@@ -142,8 +142,10 @@ class IdentityStore:
                         (status, self.db.now() if status == "bound" else None, actor if status == "bound" else None,
                          identity_id))
         if status == "admin" and row["status"] != "admin":
+            from ai import memory_scope
             from ai.social.store import SocialStore     # what it said in the owner's chat goes to its own window
-            SocialStore(self.db).adopt_owner_messages(row["channel"], row["peer_id"], row.get("display_name"))
+            with memory_scope.use(memory_scope.for_channel(row["channel"])):
+                SocialStore(self.db).adopt_owner_messages(row["channel"], row["peer_id"], row.get("display_name"))
         return self.db.fetch_one("SELECT * FROM channel_identities WHERE id = ?", (identity_id,))
 
     def create_pairing_code(self, channel: str | None = None) -> dict[str, Any]:

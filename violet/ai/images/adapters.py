@@ -122,16 +122,21 @@ class HttpAdapterBase:
         return headers
 
     def _post(self, path: str, request: AdapterRequest, *, json_body: dict | None = None,
-              data: dict | None = None, files: list | None = None) -> dict[str, Any]:
+              data: dict | None = None, files: list | None = None,
+              extra_headers: dict[str, str] | None = None) -> dict[str, Any]:
         if not self.entry.base_url.lower().startswith(("https://", "http://")):
             raise AdapterError("config", "provider base_url is not http(s)")
         timeout = httpx.Timeout(self.entry.timeout, connect=min(10.0, self.entry.timeout))
         from ai.agents.base_agent import _local_address
+        headers = self._headers(request)
+        if extra_headers:
+            for hk, hv in extra_headers.items():
+                headers.setdefault(str(hk), str(hv))
         try:
             # 0.7.6: the system proxy is used like the chat agents use it (not for an address on this machine / LAN)
             with httpx.Client(timeout=timeout, follow_redirects=False, trust_env=not _local_address(self.entry.base_url),
                               transport=_TRANSPORT_FACTORY(self.entry)) as client:
-                response = client.post(self.entry.base_url.rstrip("/") + path, headers=self._headers(request),
+                response = client.post(self.entry.base_url.rstrip("/") + path, headers=headers,
                                        json=json_body, data=data, files=files)
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
             raise AdapterError("connect", f"cannot reach provider ({exc.__class__.__name__})", "no", True) from None
@@ -224,7 +229,26 @@ class OpenAIImagesAdapter(HttpAdapterBase):
 
 
 def _data_url(img: InputImage) -> str:
-    return f"data:{img.mime};base64,{base64.b64encode(img.data).decode('ascii')}"
+    mime, data = img.mime, img.data
+    if mime.lower() == "image/gif" or data.startswith(b"GIF8"):
+        from ai.vision import gif_first_frame_to_png
+        converted = gif_first_frame_to_png(data)
+        if converted:
+            mime, data = "image/png", converted
+    return f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+
+
+def _prepare_chat_payload(body: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
+    """Apply model_params for a raw httpx POST: flatten extra_body into the top-level JSON body and extract
+    extra_headers into HTTP headers so literal 'extra_body'/'extra_headers' keys never leak onto the wire."""
+    from ai.model_params import apply as apply_model_params
+    applied = apply_model_params(body)
+    extra_headers = applied.pop("extra_headers", None)
+    extra_body = applied.pop("extra_body", None)
+    if isinstance(extra_body, dict):
+        for k, v in extra_body.items():
+            applied.setdefault(k, v)
+    return applied, (extra_headers if isinstance(extra_headers, dict) else {})
 
 
 class ChatCompletionsAdapter(HttpAdapterBase):
@@ -245,12 +269,13 @@ class ChatCompletionsAdapter(HttpAdapterBase):
             body["max_tokens"] = int(self.entry.options.get("max_tokens", 1500))
         for key, value in (self.entry.options.get("extra_body") or {}).items():
             body.setdefault(key, value)                    # e.g. {"modalities": ["image", "text"]} once confirmed
-        from ai.model_params import apply as apply_model_params
-        payload = self._post("/chat/completions", request, json_body=apply_model_params(body))
+        json_body, extra_headers = _prepare_chat_payload(body)
+        payload = self._post("/chat/completions", request, json_body=json_body, extra_headers=extra_headers)
         if request.kind == "vision_analyze" and _cut_short(payload) and body.get("max_tokens"):
             body["max_tokens"] = min(int(body["max_tokens"]) * 3, 6000)
+            retry_body, retry_headers = _prepare_chat_payload(body)
             try:
-                payload = self._post("/chat/completions", request, json_body=apply_model_params(body))
+                payload = self._post("/chat/completions", request, json_body=retry_body, extra_headers=retry_headers)
             except AdapterError:
                 pass                                       # keep the first (cut) answer rather than nothing
         usage, cost = _usage(payload)
@@ -258,19 +283,21 @@ class ChatCompletionsAdapter(HttpAdapterBase):
             message = payload["choices"][0]["message"]
         except (KeyError, IndexError, TypeError):
             raise AdapterError("unknown_response", "no choices[0].message", "yes") from None
+        from ai.model_params import strip_think
         if request.kind == "vision_analyze":
             text = message.get("content")
             if isinstance(text, list):
                 text = "".join(p.get("text", "") for p in text if isinstance(p, dict))
-            text = tidy_vision_text(text) if isinstance(text, str) else ""
+            text = tidy_vision_text(strip_think(text)) if isinstance(text, str) else ""
             if not text:
                 raise AdapterError("empty_response", "vision model returned no text", "yes")
             return AdapterOutput(text=text, usage=usage, provider_cost=cost)
         images = extract_chat_images(message)
         if not images:
             raise AdapterError("unknown_response", "no recognised image in the chat response", "yes")
-        return AdapterOutput(images=images, text=message.get("content") if isinstance(message.get("content"), str) else None,
-                             usage=usage, provider_cost=cost)
+        raw_content = message.get("content")
+        cleaned_content = strip_think(raw_content).strip() if isinstance(raw_content, str) else None
+        return AdapterOutput(images=images, text=cleaned_content or None, usage=usage, provider_cost=cost)
 
 
 def _cut_short(payload: Any) -> bool:

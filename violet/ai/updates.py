@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import threading
 import time
 from pathlib import Path
@@ -91,16 +92,22 @@ def automatic(root: Path = PROJECT_ROOT) -> dict[str, Any]:
 
 def request_update(by: str = "manual", root: Path = PROJECT_ROOT) -> dict[str, Any]:
     """Ask the root update service to run now. Raises PermissionError when this installation has none."""
-    if not automatic(root)["available"]:
-        raise PermissionError(automatic(root)["reason"])
+    info = automatic(root)
+    if not info["available"]:
+        raise PermissionError(info["reason"])
+    from ai.root_tasks import busy, mark_queued
+    if busy("update"):
+        return {"requested": True, "already_running": True}
     path = request_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     if by != "auto":                                # 0.7.0: the progress dialog starts from "queued"
-        from ai.root_tasks import mark_queued
         mark_queued("update", "update")
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text("auto" if by == "auto" else "manual", encoding="utf-8")
-    os.replace(tmp, path)
+    tmp = path.with_name(f".{path.name}.{secrets.token_hex(4)}.tmp")
+    try:
+        tmp.write_text("auto" if by == "auto" else "manual", encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return {"requested": True}
 
 

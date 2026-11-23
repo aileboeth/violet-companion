@@ -102,6 +102,8 @@ class WeekRule:
 def parse_weeks(text: str) -> WeekRule:
     """'1-16', '1-16单', '第1-16周(双)', '1-8,10-16', '1,3,5,7', '2-16 even' -> WeekRule (canonical form)."""
     raw = str(text or "").strip()
+    if len(raw) > 256:
+        raise ValueError("周次写法太长了")
     parity = "all"
     for marker, value in (("单", "odd"), ("odd", "odd"), ("双", "even"), ("even", "even")):
         if marker in raw.lower():
@@ -116,13 +118,19 @@ def parse_weeks(text: str) -> WeekRule:
             continue
         bounds = part.split("-")
         if len(bounds) == 1 and bounds[0].isdigit():
+            if len(bounds[0]) > 4:
+                raise ValueError(f"周次要在 1–{MAX_WEEK} 之间")
             a = b = int(bounds[0])
         elif len(bounds) == 2 and all(x.isdigit() for x in bounds):
+            if len(bounds[0]) > 4 or len(bounds[1]) > 4:
+                raise ValueError(f"周次要在 1–{MAX_WEEK} 之间")
             a, b = int(bounds[0]), int(bounds[1])
         else:
             raise ValueError("周次写法不认识（例如 1-16、1-16单、1-8,10-16）")
         if a > b:
             raise ValueError("周次范围要从小到大")
+        if a < 1 or b > MAX_WEEK:
+            raise ValueError(f"周次要在 1–{MAX_WEEK} 之间")
         listed.update(range(a, b + 1))
     if parity != "all":
         listed = {w for w in listed if (w % 2 == 1) == (parity == "odd")}

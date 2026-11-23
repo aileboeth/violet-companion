@@ -28,13 +28,15 @@ SCHEMAS = [
         "name": "find_stickers",
         "description": "翻全部收藏的表情包（常用列表里没找到合适的时用）；找到后在回复里单独一行写 [[表情:编号]] 发送。",
         "parameters": {"type": "object", "properties": {
-            "query": {"type": "string", "description": "可选：想找的情绪、画面或文字"}}}}},
+            "query": {"type": "string", "description": "可选：想找的情绪、画面或文字"}},
+            "required": []}}},
     {"type": "function", "function": {
         "name": "save_sticker",
         "description": "收藏对方最近发来的图片或表情包（对方让你收或你喜欢时用）。",
         "parameters": {"type": "object", "properties": {
             "image_number": {"type": "integer", "description": "可选：图片编号，不填取最近一张"},
-            "meaning": {"type": "string", "description": "可选：适合什么时候用（20 字以内）"}}}}},
+            "meaning": {"type": "string", "description": "可选：适合什么时候用（20 字以内）"}},
+            "required": []}}},
 ]
 
 
@@ -50,7 +52,8 @@ def _words(query: str) -> list[str]:
 def find(db, args: dict[str, Any]) -> str:
     if not stickers.enabled():
         return _answer(ok=False, error_code="STICKERS_OFF", message="表情包功能关着")
-    rows = stickers.listing(db, enabled_only=True, limit=500)
+    rows = [r for r in stickers.listing(db, enabled_only=True, limit=500)
+            if stickers.verdict_of(r.get("description")) == "ok"]
     if not rows:
         return _answer(ok=True, count=0, stickers=[], message="收藏里还没有表情包。对方发来表情包时可以用 save_sticker 收藏。")
     words = _words(str(args.get("query") or ""))
@@ -98,10 +101,21 @@ def save(db, ctx: dict[str, Any], args: dict[str, Any]) -> str:
     except Exception as exc:                                  # noqa: BLE001 -- told to the model, never raised
         trace.step("收藏表情包", 来源="你发的", 结果="没收藏", 原因=str(exc)[:120])
         return _answer(ok=False, error_code="SAVE_FAILED", message=f"没收藏成功：{str(exc)[:120]}")
-    if not saved.get("description"):
-        described = stickers.describe(path)
-        if described:
-            saved = stickers.update(db, saved["id"], description=described) or saved
+    # 2026-11-23 (P1-25): enforce moderation verdict on save_sticker too; disable vulgar/junk rows.
+    described = stickers.describe(path)
+    verdict = stickers.verdict_of(described)
+    if verdict != "ok":
+        saved = stickers.update(db, saved["id"], description=described, enabled_flag=False) or saved
+        why = "不雅的表情包" if verdict == "dirty" else "质量差 / 不是表情包"
+        trace.step("收藏表情包", 来源="你发的", 编号=saved["id"], 结果="没启用", 原因=why, 说明=described)
+        return _answer(ok=False, error_code="STICKER_REJECTED", number=saved["id"],
+                       message=f"这张图审核未通过（{why}），已停用，不能发。")
+    if not saved.get("description") and described:
+        saved = stickers.update(db, saved["id"], description=described) or saved
+    if not saved.get("enabled") or stickers.verdict_of(saved.get("description")) != "ok":
+        trace.step("收藏表情包", 来源="你发的", 编号=saved["id"], 结果="没启用", 原因="已停用或不适合发送")
+        return _answer(ok=False, error_code="STICKER_REJECTED", number=saved["id"],
+                       message="这个表情包之前已停用或不适合发送，不能重新启用。")
     trace.step("收藏表情包", 来源="你发的", 编号=saved["id"], 结果="已收藏", 说明=saved.get("description"))
     return _answer(ok=True, number=saved["id"], description=saved.get("description"),
                    message=f"收藏好了，编号 {saved['id']}，以后在回复里单独一行写 [[表情:{saved['id']}]] 就能发。")

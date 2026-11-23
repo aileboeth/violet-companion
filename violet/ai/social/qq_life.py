@@ -74,15 +74,23 @@ def like_owner(db, adapter) -> int:
     return given
 
 
-def _comment(db, text: str) -> str:
+def _comment(db, text: str, channel: str | None = None) -> str:
+    from ai import memory_scope
     from ai.social import llm
     from ai.social.engine import _persona_text
-    try:
-        decision, _model, _ = llm.decide(_persona_text(db, "napcat") + "\n\n" + COMMENT_RULES,
-                                         f"主人的说说：{text[:400]}\n\n决定评论什么，只输出 JSON。")
-    except llm.SocialLLMError as exc:
-        logger.info("no qzone comment: %s", exc)
-        return ""
+    ch = str(channel or "napcat")
+    with memory_scope.use(memory_scope.for_channel(ch)):
+        try:
+            decision, _model, _ = llm.call_decide(
+                _persona_text(db, ch) + "\n\n" + COMMENT_RULES,
+                f"主人的说说：{text[:400]}\n\n决定评论什么，只输出 JSON。",
+                source="qzone",
+                allow_plain_text=False,
+            )
+        except llm.SocialLLMError as exc:
+            logger.info("no qzone comment: %s", exc)
+            trace.step("QQ 小互动", 做什么="评论你的说说", 结果="失败", 原因=str(exc)[:120])
+            return ""
     return " ".join(str(decision.get("comment") or "").split())[:60]
 
 
@@ -124,7 +132,7 @@ def owner_posts(db, adapter, rng: random.Random | None = None) -> dict[str, int]
         trace.step("QQ 小互动", 做什么="给你的说说点赞", 结果="点了", 说说=trace.text(feed.get("content") or ""))
         text = str(feed.get("content") or "").strip()
         if text and not out["commented"] and rng.random() < COMMENT_CHANCE:
-            comment = _comment(db, text)
+            comment = _comment(db, text, channel=getattr(adapter, "channel_id", None))
             if comment:
                 try:
                     adapter.qzone_comment(tid, uin, comment)
@@ -142,20 +150,27 @@ def signature(db, adapter) -> str | None:
     day = now.date().isoformat()
     if not 9 <= now.hour <= 22 or _done(db, "signature", day):
         return None
-    _mark(db, "signature", day)
-    from ai import mood
+    ch = str(getattr(adapter, "channel_id", None) or "napcat")
+    from ai import memory_scope, mood
     from ai.social import llm
     from ai.social.engine import _persona_text
     from ai.social.qzone import _material
-    lines = [f"现在是 {db.now()[:16].replace('T', ' ')}。", mood.note(db) or "",
-             "", "【你最近的生活】", *(_material(db) or ["（这几天没有记下特别的事）"]), "", "决定改不改，只输出 JSON。"]
-    try:
-        decision, _model, _ = llm.decide(_persona_text(db, "napcat") + "\n\n" + SIGN_RULES, "\n".join(lines))
-    except llm.SocialLLMError as exc:
-        logger.info("no signature: %s", exc)
-        return None
+    with memory_scope.use(memory_scope.for_channel(ch)):
+        lines = [f"现在是 {db.now()[:16].replace('T', ' ')}。", mood.note(db) or "",
+                 "", "【你最近的生活】", *(_material(db) or ["（这几天没有记下特别的事）"]), "", "决定改不改，只输出 JSON。"]
+        try:
+            decision, _model, _ = llm.call_decide(
+                _persona_text(db, ch) + "\n\n" + SIGN_RULES,
+                "\n".join(lines),
+                source="qzone",
+                allow_plain_text=False,
+            )
+        except llm.SocialLLMError as exc:
+            logger.info("no signature: %s", exc)
+            return None
     text = " ".join(str(decision.get("text") or "").split())[:40]
     if not decision.get("change") or not text:
+        _mark(db, "signature", day)
         trace.step("QQ 签名", 结果="这次不改")
         return None
     try:
@@ -163,7 +178,7 @@ def signature(db, adapter) -> str | None:
     except Exception as exc:                                 # noqa: BLE001
         trace.step("QQ 签名", 结果="失败", 原因=str(exc)[:120])
         return None
-    db.execute("UPDATE social_done SET detail = ? WHERE kind = 'signature' AND key = ?", (text, day))
+    _mark(db, "signature", day, text)
     trace.step("QQ 签名", 结果="改了", 内容=text)
     return text
 

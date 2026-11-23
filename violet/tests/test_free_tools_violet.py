@@ -280,7 +280,7 @@ def test_the_group_decision_looks_it_up_then_answers(monkeypatch):
     decision, model, _ = llm.decide("sys", "user", tools=tools)
     assert decision["messages"] == ["你手机还有 76% 的电"] and calls[0]["tools"]
     assert calls[1]["messages"][-1] == {"role": "tool", "tool_call_id": calls[1]["messages"][-2]["tool_calls"][0]["id"],
-                                        "content": '{"ok": true, "level": 76}'}
+                                        "name": "android-phone__battery", "content": '{"ok": true, "level": 76}'}
 
 
 def test_a_picture_she_drew_goes_to_the_group(db, monkeypatch, tmp_path):

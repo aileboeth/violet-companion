@@ -71,28 +71,43 @@ def _qq(runtime):
 
 
 def _material(db) -> list[str]:
-    since = (datetime.fromisoformat(db.now()[:19]) - timedelta(days=3)).isoformat(sep=" ")
-    rows = db.fetch_all("SELECT content, occurred_at FROM life_events WHERE status = 'happened' AND occurred_at >= ? "
-                        "ORDER BY occurred_at DESC LIMIT 6", (since,))
+    now_dt = datetime.fromisoformat(db.now()[:19])
+    since = (now_dt - timedelta(days=3)).isoformat(timespec="seconds")
+    until = now_dt.isoformat(timespec="seconds")
+    rows = db.fetch_all(
+        "SELECT content, occurred_at FROM life_events WHERE status = 'happened' "
+        "AND substr(replace(occurred_at, ' ', 'T'), 1, 19) >= ? "
+        "AND substr(replace(occurred_at, ' ', 'T'), 1, 19) <= ? "
+        "ORDER BY occurred_at DESC LIMIT 6",
+        (since, until),
+    )
     return [f"- {str(r['occurred_at'])[5:16]} {r['content']}" for r in rows]
 
 
-def compose(db) -> dict[str, Any]:
+def compose(db, channel: str | None = None) -> dict[str, Any]:
     """{"post": bool, "text": str, "reason": str, "model": str}. Raises QzoneError."""
+    from ai import memory_scope
     from ai.social import llm
     from ai.social.engine import _persona_text
-    recent = db.fetch_all("SELECT content, created_at FROM social_posts WHERE status = 'sent' ORDER BY id DESC LIMIT 5")
-    now = db.now()
-    lines = [f"现在是 {now[:16].replace('T', ' ')}。", "", "【你最近的生活】", *(_material(db) or ["（这几天没有记下特别的事）"]),
-             "", "【你最近发过的动态】", *([f"- {str(r['created_at'])[5:16]} {r['content']}" for r in recent] or ["（还没发过）"]),
-             "", "决定这次发不发，只输出 JSON。"]
-    try:
-        decision, model, _ = llm.decide(_persona_text(db, "napcat") + "\n\n" + COMPOSE_RULES, "\n".join(lines))
-    except llm.SocialLLMError as exc:
-        raise QzoneError(str(exc)) from None
-    text = " ".join(str(decision.get("text") or "").split())[:300]
-    return {"post": bool(decision.get("post")) and bool(text), "text": text,
-            "reason": str(decision.get("reason") or "")[:200], "model": model}
+    ch = str(channel or "napcat")
+    with memory_scope.use(memory_scope.for_channel(ch)):
+        recent = db.fetch_all("SELECT content, created_at FROM social_posts WHERE status = 'sent' ORDER BY id DESC LIMIT 5")
+        now = db.now()
+        lines = [f"现在是 {now[:16].replace('T', ' ')}。", "", "【你最近的生活】", *(_material(db) or ["（这几天没有记下特别的事）"]),
+                 "", "【你最近发过的动态】", *([f"- {str(r['created_at'])[5:16]} {r['content']}" for r in recent] or ["（还没发过）"]),
+                 "", "决定这次发不发，只输出 JSON。"]
+        try:
+            decision, model, _ = llm.call_decide(
+                _persona_text(db, ch) + "\n\n" + COMPOSE_RULES,
+                "\n".join(lines),
+                source="qzone",
+                allow_plain_text=False,
+            )
+        except llm.SocialLLMError as exc:
+            raise QzoneError(str(exc)) from None
+        text = " ".join(str(decision.get("text") or "").split())[:300]
+        return {"post": bool(decision.get("post")) and bool(text), "text": text,
+                "reason": str(decision.get("reason") or "")[:200], "model": model}
 
 
 def record(db, channel: str, content: str, *, status: str, origin: str, tid: str | None = None,
@@ -157,7 +172,7 @@ def tick(runtime, rng: random.Random | None = None) -> dict[str, Any] | None:
         adapter = _qq(runtime)
         if adapter is None or not adapter.is_running():
             return None
-        idea = compose(runtime.db)
+        idea = compose(runtime.db, channel=getattr(adapter, "channel_id", None))
         if not idea["post"]:
             trace.step("QQ 动态", 结果="这次不发", 理由=idea["reason"])
             return None

@@ -407,3 +407,63 @@ def test_no_timetable_text_reaches_long_term_memory(make_world, clock, timetable
     w.scheduler.tick()
     assert w.db.fetch_one("SELECT COUNT(*) AS n FROM event_memories")["n"] == 0
     assert w.db.fetch_one("SELECT COUNT(*) AS n FROM task_sessions")["n"] == 0
+
+
+def test_proactive_note_includes_structured_schedule_moment_details(make_world, clock, timetable):
+    store, ids = timetable
+    store.add_exam(ids["term"], name="线性代数（虚构）", exam_date="2026-09-10", kind="final",
+                   start="09:00", end="11:00", location=ROOM, seat=SEAT, notes=NOTE)
+    w = world(make_world, **ON)
+    started(w, clock, at(9, 18, 0))
+    context = w.scheduler._build_event_context(clock.now())
+    note = context["proactive_note"]
+    assert "线性代数（虚构）" in note and "期末考试" in note and "09:00" in note
+    assert "高数小测（虚构）" in note and "小测" in note and "10:00" in note
+    for secret in (TEACHER, ROOM, SEAT, NOTE):
+        assert secret not in note
+
+    from ai.proactive_scheduler import _format_schedule_moment
+    over_line = _format_schedule_moment({
+        "type": "classes_over_today", "last_end": "11:40", "classes_today": 2,
+        "note": "按课表，对方今天的课应该在这个时间之前上完了。",
+    })
+    assert "11:40" in over_line and "2 节课" in over_line and "今天的课" in over_line
+    dense_line = _format_schedule_moment({
+        "type": "dense_week", "full_days": 4, "classes_next_7_days": 17,
+        "note": "接下来几天课排得比较满（按课表）。",
+    })
+    assert "4 天满课" in dense_line and "17 节课" in dense_line and "排得比较满" in dense_line
+
+
+def test_exam_tomorrow_record_mentions_matches_generic_exam_wishes_without_false_positives(violetdb, clock, timetable):
+    from ai.schedule.awareness import record_mentions
+    store, ids = timetable
+    final_id = store.add_exam(ids["term"], name="高等数学", exam_date="2026-09-12", kind="final",
+                              start="09:00", end="11:00")
+    midterm_id = store.add_exam(ids["term"], name="大学英语", exam_date="2026-09-12", kind="midterm",
+                                start="14:00", end="16:00")
+    single_final = [{"id": f"schedule:exam:{final_id}", "type": "exam_tomorrow", "exam": "高等数学", "kind": "期末"}]
+
+    # Non-exam messages (including generic "加油" without 明天/考 and false-friend "考虑") MUST NOT mark it
+    for unrelated in ("今天天气真好", "今天也加油呀", "我在考虑买个新杯子", "下午吃了烤红薯"):
+        assert record_mentions(violetdb, single_final, None, unrelated, proactive_event_id=1) == [], unrelated
+    assert violetdb.list_topic_mentions(topic_key=f"schedule:exam:{final_id}") == []
+
+    # Generic exam wish (without course name or "期末") MUST mark it so it is never repeated
+    hit = record_mentions(violetdb, single_final, None, "对了，明天好像有场考试，提前祝你顺顺利利的", proactive_event_id=2)
+    assert hit == [f"schedule:exam:{final_id}"]
+    assert violetdb.list_topic_mentions(topic_key=f"schedule:exam:{final_id}")
+
+    # Tomorrow + encouragement without the character 考 also marks an offered exam
+    single_midterm = [{"id": f"schedule:exam:{midterm_id}", "type": "exam_tomorrow", "exam": "大学英语", "kind": "期中"}]
+    assert record_mentions(violetdb, single_midterm, None, "明天加油呀，放轻松", proactive_event_id=3) == [
+        f"schedule:exam:{midterm_id}"
+    ]
+
+    # When two exams are offered and one specific course is named, only that exam is marked
+    violetdb.execute("DELETE FROM topic_mentions")
+    both = single_final + single_midterm
+    assert record_mentions(violetdb, both, None, "明天高数期末加油呀", proactive_event_id=4) == [
+        f"schedule:exam:{final_id}"
+    ]
+    assert violetdb.list_topic_mentions(topic_key=f"schedule:exam:{midterm_id}") == []

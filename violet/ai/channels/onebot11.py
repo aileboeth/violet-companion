@@ -24,6 +24,7 @@ import ipaddress
 import json
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -220,20 +221,39 @@ class OneBotChannel(ChannelAdapter):
         url = str(part.data.get("url") or "")
         if not re.match(r"^https?://", url):
             raise OneBotError("image has no download address")
+        from ai.web.netguard import NetPolicy, SafeFetcher, WebPolicyError, internal_hosts, is_public_ip
+        host = (urlsplit(url).hostname or "").strip("[]")
         try:
-            response = self.session.get(url, timeout=(10, 60), stream=True)
-            response.raise_for_status()
-            self.media_dir.mkdir(parents=True, exist_ok=True)
-            name = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24] + ".jpg"
-            target, size = self.media_dir / name, 0
-            with open(target, "wb") as fh:
-                for chunk in response.iter_content(65536):
-                    size += len(chunk)
-                    if size > MAX_DOWNLOAD:
-                        raise OneBotError("image too large")
-                    fh.write(chunk)
+            ipaddress.ip_address(host)
+        except ValueError:
+            pass
+        else:
+            if not is_public_ip(host):
+                raise OneBotError("image download refused: non_public_ip")
+        policy = NetPolicy(
+            max_bytes=MAX_DOWNLOAD,
+            connect_timeout=10.0,
+            read_timeout=60.0,
+            total_timeout=70.0,
+            max_redirects=5,
+            blocked_hosts=internal_hosts(),
+        )
+        accept = ("image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp", "image/bmp",
+                  "application/octet-stream", "")
+        try:
+            fetched = SafeFetcher(policy).fetch(url, accept_types=accept)
+        except WebPolicyError as exc:
+            raise OneBotError(f"image download refused: {exc.code}") from None
+        self.media_dir.mkdir(parents=True, exist_ok=True)
+        name = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24] + ".jpg"
+        target = self.media_dir / name
+        tmp = self.media_dir / f".{target.stem}.{uuid.uuid4().hex[:8]}.tmp"
+        try:
+            tmp.write_bytes(fetched.body)
+            os.replace(tmp, target)
             return target
-        except requests.RequestException as exc:
+        except OSError as exc:
+            tmp.unlink(missing_ok=True)
             raise OneBotError(safe_error(exc)) from None
 
     def probe(self) -> dict[str, Any]:

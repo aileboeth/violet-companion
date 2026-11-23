@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import time
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 TASKS = ("relay-install", "relay-set-port", "searxng-install", "searxng-uninstall", "searxng-tune",
          "searxng-configure", "qq-install", "qq-uninstall", "qq-restart", "voice-install", "voice-uninstall")
@@ -53,9 +55,12 @@ def read_progress(name: str, now: float | None = None) -> dict[str, Any]:
 
 def _write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".page.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    tmp = path.with_name(f".{path.name}.{secrets.token_hex(4)}.page.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def mark_queued(name: str, task: str, step: str = "已提交，等待服务器开始…") -> dict[str, Any]:
@@ -76,6 +81,23 @@ def busy(name: str = "task") -> bool:
     return request.exists() or read_progress(name)["state"] in ("queued", "running")
 
 
+def _is_loopback_url(url: str, scheme: str) -> bool:
+    if not url or any(c.isspace() for c in url):
+        return False
+    try:
+        parts = urlparse(url)
+        port = parts.port
+    except ValueError:
+        return False
+    return (parts.scheme == scheme
+            and parts.hostname == "127.0.0.1"
+            and parts.username is None
+            and parts.password is None
+            and port is not None
+            and 0 < port < 65536
+            and parts.netloc == f"127.0.0.1:{port}")
+
+
 def searxng_export() -> dict[str, Any] | None:
     """What root wrote after installing the private SearXNG (<data>/control/searxng.json): {url, port, ...}."""
     try:
@@ -83,7 +105,7 @@ def searxng_export() -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     url = str(data.get("url") or "") if isinstance(data, dict) else ""
-    return data if url.startswith("http://127.0.0.1:") else None
+    return data if _is_loopback_url(url, "http") else None
 
 
 def voice_export() -> dict[str, Any] | None:
@@ -93,7 +115,7 @@ def voice_export() -> dict[str, Any] | None:
     except (OSError, ValueError):
         return None
     url = str(data.get("url") or "") if isinstance(data, dict) else ""
-    return data if url.startswith("http://127.0.0.1:") else None
+    return data if _is_loopback_url(url, "http") else None
 
 
 def snowluma_export() -> dict[str, Any] | None:
@@ -106,7 +128,7 @@ def snowluma_export() -> dict[str, Any] | None:
     if not isinstance(data, dict):
         return None
     try:
-        ok = str(data.get("ws_url") or "").startswith("ws://127.0.0.1:") and 0 < int(data.get("vnc_port") or 0) < 65536
+        ok = _is_loopback_url(str(data.get("ws_url") or ""), "ws") and 0 < int(data.get("vnc_port") or 0) < 65536
     except (TypeError, ValueError):
         ok = False
     return data if ok else None

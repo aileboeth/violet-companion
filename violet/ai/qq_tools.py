@@ -19,11 +19,11 @@ SCHEMAS = [
         "name": "qq_recall",
         "description": "撤回两分钟内在 QQ 发给对方的消息（对方要求或发错/发重时用）。",
         "parameters": {"type": "object", "properties": {
-            "count": {"type": "integer", "description": "撤回最近几条，默认 1，最多 5"}}}}},
+            "count": {"type": "integer", "description": "撤回最近几条，默认 1，最多 5"}},
+            "required": []}}},
     {"type": "function", "function": {
         "name": "qq_like",
-        "description": "给对方 QQ 名片点赞（对方要求时用）。",
-        "parameters": {"type": "object", "properties": {}}}},
+        "description": "给对方 QQ 名片点赞（对方要求时用）。"}},
 ]
 
 

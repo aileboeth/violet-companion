@@ -55,7 +55,7 @@ import time
 from collections import deque
 from datetime import timedelta
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from flask import Flask, jsonify, make_response, redirect, render_template_string, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -294,9 +294,7 @@ class AdminStore:
         return hmac.compare_digest((supplied or "").strip().lower().encode("utf-8"), expected.lower().encode("utf-8"))
 
     def set_username(self, name: str) -> None:
-        name = (name or "").strip()
-        if not USERNAME_RE.fullmatch(name):
-            raise ValueError("用户名要以字母开头，3–32 个字符，只能有字母、数字和 _ . -")
+        name = _validate_username(name)
         with self._lock:
             data = self.load()
             data.pop("unreadable", None)
@@ -310,17 +308,72 @@ class AdminStore:
 
     def set_entrance(self, value: str | None) -> str:
         """A new entrance (None = a random one; "" = no entrance). Every browser must come in through it again."""
-        if value is None:
-            value = generate_entrance()
-        value = value.strip().strip("/")
-        if value and (not ENTRANCE_RE.fullmatch(value) or value.lower() in RESERVED_ENTRANCES):
-            raise ValueError("安全入口要 6–64 个字符，只能有字母、数字、_ 和 -，也不能是程序自己用的路径")
+        value = _validate_entrance(value)
         with self._lock:
             data = self.load()
             data.pop("unreadable", None)
             data.update(entrance=value, entrance_changed_at=int(time.time()))
             self._save(data)
         return value
+
+    def update_account(self, *, username: str | None = None, change_username: bool = False,
+                       entrance: str | None = None, change_entrance: bool = False,
+                       password: str | None = None, change_password: bool = False) -> dict:
+        """Validate every requested field before mutating admin.json or incrementing session_version."""
+        with self._lock:
+            data = self.load()
+            cur_username = str(data.get("username") or "")
+            cur_entrance_raw = str(data.get("entrance") or "")
+            cur_entrance = (cur_entrance_raw
+                            if ENTRANCE_RE.fullmatch(cur_entrance_raw) and cur_entrance_raw.lower() not in RESERVED_ENTRANCES
+                            else "")
+
+            new_username: str | None = None
+            if change_username:
+                stripped_user = (username or "").strip()
+                if stripped_user != cur_username:
+                    new_username = _validate_username(stripped_user)
+
+            new_entrance: str | None = None
+            if change_entrance:
+                if entrance is None:
+                    new_entrance = _validate_entrance(None)
+                else:
+                    stripped_ent = entrance.strip().strip("/")
+                    if stripped_ent != cur_entrance:
+                        new_entrance = _validate_entrance(stripped_ent)
+
+            new_password: str | None = None
+            if change_password:
+                problem = password_problem(password or "")
+                if problem:
+                    raise ValueError(problem)
+                new_password = password or ""
+
+            changed: dict = {}
+            if new_username is None and new_entrance is None and new_password is None:
+                return changed
+
+            data.pop("unreadable", None)
+            bump_session = False
+            if new_username is not None:
+                data["username"] = new_username
+                changed["username"] = new_username
+                bump_session = True
+            if new_entrance is not None:
+                data["entrance"] = new_entrance
+                data["entrance_changed_at"] = int(time.time())
+                changed["entrance"] = new_entrance
+            if new_password is not None:
+                data["password_hash"] = generate_password_hash(new_password, method="scrypt")
+                data["password_set_at"] = int(time.time())
+                data["must_change"] = False
+                changed["password"] = True
+                bump_session = True
+            if bump_session:
+                data["session_version"] = int(data.get("session_version", 0)) + 1
+            self._save(data)
+            return changed
 
     def session_secret(self) -> bytes:
         path = self.dir / "session_secret"
@@ -333,6 +386,22 @@ class AdminStore:
         value = secrets.token_hex(32)
         _atomic_write(path, value + "\n")
         return bytes.fromhex(value)
+
+
+def _validate_username(name: str) -> str:
+    name = (name or "").strip()
+    if not USERNAME_RE.fullmatch(name):
+        raise ValueError("用户名要以字母开头，3–32 个字符，只能有字母、数字和 _ . -")
+    return name
+
+
+def _validate_entrance(value: str | None) -> str:
+    if value is None:
+        value = generate_entrance()
+    value = value.strip().strip("/")
+    if value and (not ENTRANCE_RE.fullmatch(value) or value.lower() in RESERVED_ENTRANCES):
+        raise ValueError("安全入口要 6–64 个字符，只能有字母、数字、_ 和 -，也不能是程序自己用的路径")
+    return value
 
 
 def generate_entrance(length: int = 12) -> str:
@@ -423,16 +492,33 @@ def _fingerprint(token: str) -> str:
 
 
 def _safe_next(value: str | None) -> str:
-    if value and value.startswith("/") and not value.startswith("//") and "\\" not in value:
+    if (value and value.startswith("/") and not value.startswith("//")
+            and "\\" not in value and not any(ord(c) < 32 or ord(c) == 127 for c in value)):
         return value
     return "/control"                    # Violet stage 3: the Control Center, not the old dashboard
 
 
+def _norm_origin_host(scheme: str, netloc: str) -> str:
+    s = scheme.lower()
+    h = netloc.lower()
+    if (s == "http" and h.endswith(":80")) or (s == "https" and h.endswith(":443")):
+        h = h.rsplit(":", 1)[0]
+    return h
+
+
+def _origin_matches(source: str) -> bool:
+    if not source or source.strip().lower() == "null":
+        return False
+    parts = urlsplit(source)
+    req_scheme = (request.scheme or "").lower()
+    if not parts.scheme or parts.scheme.lower() != req_scheme:
+        return False
+    return _norm_origin_host(parts.scheme, parts.netloc) == _norm_origin_host(req_scheme, request.host or "")
+
+
 def _same_origin() -> bool:
     source = request.headers.get("Origin") or request.headers.get("Referer")
-    if not source or source == "null":
-        return False
-    return urlsplit(source).netloc.lower() == (request.host or "").lower()
+    return _origin_matches(source or "")
 
 
 def _wants_html() -> bool:
@@ -560,7 +646,7 @@ def install_auth(app: Flask, token: str, data_dir: str | os.PathLike[str] | None
             # user's choice -- it is stronger than most chosen ones); `must_change` only says it is still in use
             return None
         if request.method == "GET" and _wants_html():
-            return redirect(f"/auth/login?next={request.full_path.rstrip('?')}")
+            return redirect(f"/auth/login?next={quote(request.full_path.rstrip('?'), safe='/')}")
         return jsonify({"error": "unauthorized"}), 401
 
     @app.after_request
@@ -598,7 +684,7 @@ def install_auth(app: Flask, token: str, data_dir: str | os.PathLike[str] | None
     @app.post("/auth/login")
     def auth_login():
         origin = request.headers.get("Origin")
-        if origin and origin != "null" and urlsplit(origin).netloc.lower() != (request.host or "").lower():
+        if origin is not None and not _origin_matches(origin):
             return jsonify({"error": "cross-origin request rejected"}), 403
         next_url = _safe_next(request.form.get("next"))
         key = _client_key()
@@ -641,20 +727,24 @@ def install_auth(app: Flask, token: str, data_dir: str | os.PathLike[str] | None
         if not (_token_ok(current) or store.verify_password(current)):
             limiter.failed(key)
             return jsonify({"error": "当前密码不正确"}), 403
-        changed: dict = {}
+        change_username = "username" in body
+        change_entrance = bool(body.get("entrance_random")) or ("entrance" in body)
+        new_entrance = None if body.get("entrance_random") else str(body.get("entrance") or "")
+        change_password = "password" in body and body.get("password") is not None
         try:
-            if "username" in body and str(body["username"]).strip() != store.username():
-                store.set_username(str(body["username"]))          # ends every other session
-                changed["username"] = store.username()
-            if body.get("entrance_random") or "entrance" in body:
-                new = None if body.get("entrance_random") else str(body.get("entrance") or "")
-                if new is None or new.strip().strip("/") != store.entrance():
-                    changed["entrance"] = store.set_entrance(new)
+            changed = store.update_account(
+                username=str(body["username"]) if change_username else None,
+                change_username=change_username,
+                entrance=new_entrance,
+                change_entrance=change_entrance,
+                password=str(body["password"]) if change_password else None,
+                change_password=change_password,
+            )
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         if "entrance" in changed:
             _mark_entrance(changed["entrance"])                      # this browser keeps its access
-        if "username" in changed and request.environ.get("violet.auth") == "session":
+        if ("username" in changed or "password" in changed) and request.environ.get("violet.auth") == "session":
             _start_session()
         if changed:
             logger.warning("dashboard account changed: %s", ", ".join(sorted(changed)))

@@ -13,6 +13,7 @@ route; "your memes" follow the page's persona picker (each persona has her own).
 
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -66,7 +67,7 @@ def register_meme_routes(app: Flask, violetdb) -> None:
             path.write_bytes(data)
             try:
                 return ok(memes.import_file(path))
-            except ValueError as exc:
+            except (ValueError, sqlite3.Error) as exc:
                 return bad(str(exc))
 
     @app.delete("/api/control/memes/wiki")

@@ -266,6 +266,17 @@ def _build(td: TermData, slot: Slot, nominal: date, placed_on: date, exc: dict[s
     return occ
 
 
+def _place_interval(day: date, wall_start: time, wall_end: time, zone_name: str) -> tuple[datetime, datetime, list[str]]:
+    start, note_a = local_moment(day, wall_start, zone_name)
+    end, note_b = local_moment(day, wall_end, zone_name)
+    notes = [n for n in (note_a, note_b) if n]
+    planned = datetime.combine(day, wall_end) - datetime.combine(day, wall_start)
+    if planned > timedelta(0) and end <= start:
+        end = (start.astimezone(timezone.utc) + planned).astimezone(start.tzinfo)
+        notes.append(f"结束时间受夏令时调整顺延至 {end.strftime('%H:%M')}")
+    return start, end, notes
+
+
 def _place_times(td: TermData, occ: Occurrence, day: date, start: time | None, end: time | None,
                  p_start: int | None, p_end: int | None) -> None:
     wall_start, wall_end, problem = _resolve_times(td, start, end, p_start, p_end)
@@ -274,9 +285,8 @@ def _place_times(td: TermData, occ: Occurrence, day: date, start: time | None, e
         if occ.occupies:
             occ.status = "invalid_time"
         return
-    occ.start, note_a = local_moment(day, wall_start, td.term.timezone)
-    occ.end, note_b = local_moment(day, wall_end, td.term.timezone)
-    occ.notes += [n for n in (note_a, note_b) if n]
+    occ.start, occ.end, notes = _place_interval(day, wall_start, wall_end, td.term.timezone)
+    occ.notes += notes
 
 
 def _regular(td: TermData, day: date, by_occ, notes: list[str]) -> tuple[list[Occurrence], str, str | None, date | None]:
@@ -346,9 +356,8 @@ def _exams(td: TermData, day: date) -> list[Occurrence]:
                          location=x.location, seat=x.seat, exam_kind=x.kind,
                          teacher=course.teacher if course else None)
         if x.start is not None and x.end is not None:
-            occ.start, a = local_moment(day, x.start, td.term.timezone)
-            occ.end, b = local_moment(day, x.end, td.term.timezone)
-            occ.notes += [n for n in (a, b) if n]
+            occ.start, occ.end, notes = _place_interval(day, x.start, x.end, td.term.timezone)
+            occ.notes += notes
         else:
             occ.notes.append("考试时间还不知道")
         out.append(occ)
@@ -424,7 +433,16 @@ def status_at(data: ScheduleData, moment: datetime, *, default_zone: str = "Asia
     if first.data_state != "active":
         return StatusResult(now_local, first.data_state, None, None, None, None, [], None, 0)
     timed = [i for i in first.items if i.occupies and i.start is not None]
-    current = [i for i in timed if i.start - before <= moment < i.end + after]
+    candidates = list(timed)
+    if after > timedelta(0):
+        prev = day(data, today - timedelta(days=1))
+        if prev.data_state == "active":
+            candidates = [i for i in prev.items if i.occupies and i.start is not None] + candidates
+    if before > timedelta(0):
+        nxt_day = day(data, today + timedelta(days=1))
+        if nxt_day.data_state == "active":
+            candidates = candidates + [i for i in nxt_day.items if i.occupies and i.start is not None]
+    current = [i for i in candidates if i.start - before <= moment < i.end + after]
     upcoming = [i for i in timed if i.start > moment]
     nxt = upcoming[0] if upcoming else None
     if nxt is None:

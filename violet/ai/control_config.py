@@ -90,10 +90,10 @@ SETTINGS: list[Setting] = [
     Setting("LLM_API_KEY", "API Key", "api", "secret", "now", "只能替换，不能查看；保存后立即用于新的调用"),
     # 2026-11-01 (token rework; user: GPT now, DeepSeek too, maybe Claude later -- "都做吧，可以选")
     Setting("VIOLET_LLM_PROVIDER", "模型服务商（用于缓存）", "api", "choice", "now",
-            "让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，xAI（Grok）会带会话缓存路由头，Claude 会标出可缓存的部分，DeepSeek 自动缓存；"
+            "让提示词缓存命中更多、更省钱：OpenAI 会带缓存分组参数，xAI（Grok）会带会话缓存路由头，Claude 会标出可缓存的部分，DeepSeek 和 Gemini 自动缓存（中转站会带会话路由头）；"
             "自动识别 = 按模型名判断；中转站不认这些参数时会自动不再发送", "auto",
             choices=(("auto", "自动识别"), ("openai", "OpenAI（GPT）"), ("grok", "xAI（Grok）"), ("deepseek", "DeepSeek"),
-                     ("claude", "Claude"), ("other", "其他"))),
+                     ("claude", "Claude"), ("gemini", "Google（Gemini）"), ("other", "其他"))),
     # 2026-11-02 (user: 支持不同渠道用不同的模型): the Chat model on one platform (its settings tab); empty = the Chat model
     Setting("VIOLET_MODEL_WECHAT", "微信上用的聊天模型", "wechat_model", "model", "now",
             "留空 = 用“模型服务”页的 Chat 模型。在微信上回复你、主动找你时用这个模型（记忆这些后台步骤不变）",
@@ -573,7 +573,7 @@ class ControlStore:
             if tmp.exists():
                 tmp.unlink(missing_ok=True)
 
-    def _restore(self, path: Path, raw: bytes | None) -> None:
+    def _restore(self, path: Path, raw: bytes | None, secret: bool = False) -> None:
         """Put a file back exactly as it was (or remove it if it did not exist)."""
         if raw is None:
             path.unlink(missing_ok=True)
@@ -581,6 +581,11 @@ class ControlStore:
         tmp = path.with_name(path.name + f".{_secrets.token_hex(4)}.tmp")
         try:
             tmp.write_bytes(raw)
+            if secret:
+                try:
+                    os.chmod(tmp, 0o600)
+                except OSError:
+                    pass
             os.replace(tmp, path)
         finally:
             tmp.unlink(missing_ok=True)
@@ -668,10 +673,13 @@ class ControlStore:
                     f.write(json.dumps(entry, ensure_ascii=False) + "\n")
             except Exception:
                 logger.exception("saving control settings failed; the previous settings were put back")
-                for path, raw in ((self.settings_path, raw_settings), (self.secrets_path, raw_secrets),
-                                  (self.history_path, raw_history)):
+                for path, raw, is_secret in (
+                    (self.settings_path, raw_settings, False),
+                    (self.secrets_path, raw_secrets, True),
+                    (self.history_path, raw_history, False),
+                ):
                     try:
-                        self._restore(path, raw)
+                        self._restore(path, raw, secret=is_secret)
                     except Exception:
                         logger.exception("restoring %s failed", path.name)
                 if apply is not None:

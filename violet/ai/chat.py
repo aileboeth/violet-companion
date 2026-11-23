@@ -567,39 +567,49 @@ def _run_pipeline(
         tool_notes = tool_notes_from(chat_result.get("messages") or [])
         known = {m.get("id") for m in recalled_memories}
         recalled_memories += [m for m in extract_tool_memories(chat_result) if m.get("id") not in known]
-        # a link in the reply must come from this turn's tools, the user's words or the recent conversation
-        from ai.web.citations import checked_reply
-        recent = [r.get("content") for r in violetdb.get_recent_messages(limit=30)]
-        chat_result = checked_reply(chat_result, user_message, recent)
+        raw_content = chat_result.get("content")
+        is_empty_reply = (not isinstance(raw_content, str) or not raw_content.strip()) and not chat_result.get("image_asset_ids")
+        if chat_result.get("failed") or is_empty_reply:
+            finish_reason = chat_result.get("finish_reason")
+            reason = str(chat_result.get("error") or (
+                f"empty model response (finish_reason={finish_reason})" if finish_reason else "empty model response"
+            ))
+            errors["chat"] = reason
+            chat_result = {**chat_result, "failed": True, "error": chat_result.get("error") or reason}
+        else:
+            # a link in the reply must come from this turn's tools, the user's words or the recent conversation
+            from ai.web.citations import checked_reply
+            recent = [r.get("content") for r in violetdb.get_recent_messages(limit=30)]
+            chat_result = checked_reply(chat_result, user_message, recent)
 
-        def used(server: str) -> bool:
-            return any(isinstance(m, dict) and m.get("role") == "tool"
-                       and str(m.get("content") or "").startswith(f"【外部工具数据｜来源 {server}/")
-                       for m in chat_result.get("messages") or [])
-        guard_flags = {"turn_used_web": used("violet-web")}
-        if used("violet-schedule"):
-            guard_flags["turn_used_schedule"] = True
-        first = chat_result
-        guarded, violations = (chat_result.get("content", ""), []) if testing else guard_reply(
-            chat_result.get("content", ""),
-            regenerate=lambda note: rewrite_reply(
-                chat_agent, user_message, chat_context, first, first.get("content", ""),
-                "里面有和已记录的事实对不上的说法：" + note + "。没有记录的事不要说自己做过，计划不要说成已经完成，"
-                "不要编造家人、工作、学校等背景"),
-            **guard_flags,
-        )
-        if violations:
-            chat_result = {**chat_result, "content": guarded, "consistency_violations": [v.check for v in violations]}
-            if not guarded.strip():
-                errors["chat"] = "consistency: every line contradicted recorded facts"
-                chat_result["failed"] = True
-        if not chat_result.get("failed") and not testing:
-            before = chat_result.get("content", "")
-            content, follow_up = enforce_follow_up_preference(
-                user_message, before,
-                regenerate=lambda note: rewrite_reply(chat_agent, user_message, chat_context, first, before, note))
-            if follow_up is not None:
-                chat_result = {**chat_result, "content": content, "follow_up_check": follow_up}
+            def used(server: str) -> bool:
+                return any(isinstance(m, dict) and m.get("role") == "tool"
+                           and str(m.get("content") or "").startswith(f"【外部工具数据｜来源 {server}/")
+                           for m in chat_result.get("messages") or [])
+            guard_flags = {"turn_used_web": used("violet-web")}
+            if used("violet-schedule"):
+                guard_flags["turn_used_schedule"] = True
+            first = chat_result
+            guarded, violations = (chat_result.get("content", ""), []) if testing else guard_reply(
+                chat_result.get("content", ""),
+                regenerate=lambda note: rewrite_reply(
+                    chat_agent, user_message, chat_context, first, first.get("content", ""),
+                    "里面有和已记录的事实对不上的说法：" + note + "。没有记录的事不要说自己做过，计划不要说成已经完成，"
+                    "不要编造家人、工作、学校等背景"),
+                **guard_flags,
+            )
+            if violations:
+                chat_result = {**chat_result, "content": guarded, "consistency_violations": [v.check for v in violations]}
+                if not guarded.strip():
+                    errors["chat"] = "consistency: every line contradicted recorded facts"
+                    chat_result["failed"] = True
+            if not chat_result.get("failed") and not testing:
+                before = chat_result.get("content", "")
+                content, follow_up = enforce_follow_up_preference(
+                    user_message, before,
+                    regenerate=lambda note: rewrite_reply(chat_agent, user_message, chat_context, first, before, note))
+                if follow_up is not None:
+                    chat_result = {**chat_result, "content": content, "follow_up_check": follow_up}
     except Exception as exc:
         logger.exception("ChatAgent failed")
         errors["chat"] = f"{exc.__class__.__name__}: {exc}"
@@ -701,10 +711,31 @@ def _run_proactive_pipeline(
             "phone_note": phone_note,
         },
     )
-    raw_content = chat_result.get("content", "")
-    _ps.node_done("Chat", output_data={"messages": chat_result.get("messages", []), "content": raw_content})
+    raw_content = chat_result.get("content")
+    _ps.node_done("Chat", output_data={"messages": chat_result.get("messages", []), "content": raw_content or "",
+                                       "error": chat_result.get("error")})
 
-    payload = chat_payload(raw_content if isinstance(raw_content, str) else "", images=False)
+    is_empty_reply = not isinstance(raw_content, str) or not raw_content.strip()
+    if chat_result.get("failed") or is_empty_reply:
+        finish_reason = chat_result.get("finish_reason")
+        reason = str(chat_result.get("error") or (
+            f"empty model response (finish_reason={finish_reason})" if finish_reason else "empty model response"
+        ))[:500]
+        event_id = violetdb.add_proactive_event(
+            event_type=event_type,
+            status="failed",
+            action_type="none",
+            reason=reason,
+            decision={"should_act": False, "action_type": "none", "reason": reason},
+            metadata=event_context,
+            scheduled_at=event_context.get("scheduled_at"),
+        )
+        state["event_id"] = event_id
+        visualize_pipeline_end()
+        _ps.pipeline_end(error=reason)
+        return {"event_id": event_id, "chat": chat_result, "should_send": False, "error": reason}
+
+    payload = chat_payload(raw_content, images=False)
     if not payload.get("should_send", False):
         reason = "ChatAgent decided not to send"
         event_id = violetdb.add_proactive_event(
@@ -743,7 +774,8 @@ def _run_proactive_pipeline(
 
     touched = find_touched_topic(raw_content, restricted)
     if touched is not None:
-        reason = f"policy: generated message touches restricted topic (memory {touched.get('memory_id') or touched.get('topic_key')})"
+        ref = touched.get("memory_id") or touched.get("topic_key") or touched.get("content")
+        reason = f"policy: generated message touches restricted topic (memory {ref})"
         logger.info(reason)
         event_id = violetdb.add_proactive_event(
             event_type=event_type,
@@ -785,6 +817,44 @@ def _run_proactive_pipeline(
 # Proactive policy helpers
 # ---------------------------------------------------------------------------
 
+WEB_DOMAIN_ALIASES: dict[str, tuple[str, ...]] = {
+    "douban.com": ("豆瓣",),
+    "thepaper.cn": ("澎湃",),
+    "zhihu.com": ("知乎",),
+    "bilibili.com": ("b站", "哔哩哔哩"),
+    "weibo.com": ("微博",),
+    "weibo.cn": ("微博",),
+    "36kr.com": ("36氪",),
+    "ithome.com": ("it之家",),
+    "xinhuanet.com": ("新华社", "新华网"),
+}
+
+
+def _domain_mentioned(domain: str | None, reply_text: str) -> bool:
+    dom = (domain or "").strip().lower()
+    if not dom or not reply_text:
+        return False
+    low = reply_text.lower()
+    if dom in low:
+        return True
+    for suffix, aliases in WEB_DOMAIN_ALIASES.items():
+        if dom == suffix or dom.endswith("." + suffix):
+            if any(alias in low for alias in aliases):
+                return True
+    return False
+
+
+def _offered_text_overlap(reply_text: str, text: str, *, min_ratio: float = 0.10, min_hits: int = 2) -> bool:
+    from ai.memory_model import RECALL_STOP_BIGRAMS, _bigrams
+    target = _bigrams(text) - RECALL_STOP_BIGRAMS
+    if not target:
+        return False
+    hits = target & (_bigrams(reply_text) - RECALL_STOP_BIGRAMS)
+    if len(hits) >= max(3, min_hits):
+        return True
+    return len(hits) >= min_hits and (len(hits) / len(target)) >= min_ratio
+
+
 def note_web_mentions(reply_text: str, used_finding_ids: list[int] | None = None) -> list[int]:
     """Findings Violet talked about in a sent reply count as shared (never offered proactively again).
 
@@ -804,8 +874,12 @@ def note_web_mentions(reply_text: str, used_finding_ids: list[int] | None = None
     shared = []
     for f in violetdb.fetch_all("SELECT * FROM web_findings WHERE status = 'active' AND updated_at >= ?", (since,)):
         if f["id"] in used:
-            mentioned = f["domain"] in reply_text or mentions_topic(reply_text, f["title"]) or \
-                bool(f["summary"] and touches_topic(reply_text, f["summary"]))
+            mentioned = (
+                _domain_mentioned(f["domain"], reply_text)
+                or mentions_topic(reply_text, f["title"])
+                or _offered_text_overlap(reply_text, f["title"])
+                or bool(f["summary"] and touches_topic(reply_text, f["summary"]))
+            )
         else:
             mentioned = touches_topic(reply_text, f["title"])
         if mentioned:
@@ -825,9 +899,21 @@ def find_touched_topic(text: str, restricted: list[dict[str, Any]]) -> dict[str,
     """Last line of defence: block a proactive message that clearly talks about a restricted topic."""
     if not text or not env_bool("VIOLET_PROACTIVE_TOPIC_GUARD", True):
         return None
+    from ai.memory_model import _bigrams
+    text_grams = _bigrams(text)
     for topic in restricted:
-        if touches_topic(text, topic.get("content") or ""):
+        content = (topic.get("content") or "").strip()
+        if not content:
+            continue
+        if touches_topic(text, content):
             return topic
+        topic_grams = _bigrams(content)
+        if len(topic_grams) == 1:
+            if topic_grams & text_grams:
+                return topic
+        elif not topic_grams and re.fullmatch(r"[A-Za-z0-9]{2}", content):
+            if re.search(rf"(?<![A-Za-z0-9]){re.escape(content)}(?![A-Za-z0-9])", text, re.I):
+                return topic
     return None
 
 

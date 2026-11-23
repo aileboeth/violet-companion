@@ -21,6 +21,25 @@ from ai import trace
 
 logger = logging.getLogger("violet.social.qq_actions")
 ADMIN_DOS = {"ban": "禁言", "unban": "解除禁言", "card": "改群名片", "essence": "设精华", "notice": "发群公告"}
+_ADMIN_CUES: dict[str, tuple[str, ...]] = {
+    "ban": ("禁言", "小黑屋", "关禁闭", "mute", "ban"),
+    "unban": ("解除禁言", "解禁", "取消禁言", "解封", "放出来", "unban", "unmute"),
+    "card": ("群名片", "名片", "群昵称", "头衔", "改名", "card"),
+    "essence": ("精华", "加精", "设精", "essence"),
+    "notice": ("公告", "群公告", "notice"),
+}
+
+
+def _owner_requested_admin(do: str, owner_messages: list[str]) -> bool:
+    """True when at least one owner message in this batch explicitly mentions the requested admin action."""
+    cues = _ADMIN_CUES.get(do, ())
+    for raw in owner_messages:
+        text = str(raw or "").lower()
+        if any(cue in text for cue in cues):
+            return True
+        if do == "unban" and "解除" in text and "禁言" in text:
+            return True
+    return False
 
 
 def _id(value: Any) -> str:
@@ -126,15 +145,31 @@ def _run(adapter, action: dict[str, Any]) -> None:
                         card=action.get("card") or "", message_id=action.get("message_id"), text=action.get("text") or "")
 
 
-def admin(db, conv: dict[str, Any], value: Any, adapter, owner_asked: bool) -> str | None:
+def admin(db, conv: dict[str, Any], value: Any, adapter, owner_asked: bool, *,
+          owner_messages: list[str] | None = None, owner_msg_ids: set[str] | None = None,
+          has_strangers: bool = False, obey_owner: bool | None = None) -> str | None:
     """Carry out (or ask about) one admin action. Returns what happened, or None when nothing was tried."""
     if not isinstance(value, dict) or not value:
         return None
     from ai import permissions
     level = permissions.level("qq_group_admin")
     action = _clean(conv, value) if conv["kind"] == "group" else None
-    if action is None or level == "forbid" or not owner_asked or adapter is None or not hasattr(adapter, "group_admin"):
-        why = ("设置里不允许" if level == "forbid" else "不是主人这次要求的" if not owner_asked
+    # 2026-11-23 (P0-2): strict attribution in group batches.
+    # - In a mixed batch (non-owner messages present): require owner_asked (owner directly addressed Violet),
+    #   validate by_owner_msg_id if supplied, AND require the owner's directed message(s) to match this admin action.
+    # - In a pure owner-only batch (no strangers): allow when owner_asked OR when obey_owner is on and the owner's
+    #   own message explicitly requested this admin action (never a casual remark like "哈哈笑死").
+    attributed = bool(owner_asked)
+    if action is not None and owner_messages is not None:
+        by_id = _id(value.get("by_owner_msg_id") or value.get("owner_message"))
+        if by_id and owner_msg_ids is not None and by_id not in owner_msg_ids:
+            attributed = False
+        elif has_strangers:
+            attributed = bool(owner_asked) and _owner_requested_admin(action["do"], owner_messages)
+        elif not attributed:
+            attributed = bool(obey_owner) and _owner_requested_admin(action["do"], owner_messages)
+    if action is None or level == "forbid" or not attributed or adapter is None or not hasattr(adapter, "group_admin"):
+        why = ("设置里不允许" if level == "forbid" else "不是主人这次要求的" if not attributed
                else "QQ 没有连接" if adapter is None else "看不懂要做什么")
         trace.step("群管理", 会话=conv["id"], 结果="没做", 原因=why, 内容=trace.text(value))
         return None

@@ -29,11 +29,11 @@ from datetime import timedelta
 from typing import Any
 
 from ai.memory_model import parse_time
+from ai.model_params import extract_json_object, provider as model_provider
 
 logger = logging.getLogger("violet.aux_llm")
 
 _EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="violet-aux-llm")
-_JSON_BLOCK_RE = re.compile(r"\{.*\}", re.S)
 
 
 class AuxLLMError(RuntimeError):
@@ -49,7 +49,7 @@ class AuxLLMConfig:
     purpose: str
     model: str
     timeout_seconds: float = 20.0
-    max_output_tokens: int = 300
+    max_output_tokens: int = 1024
     temperature: float = 0.3
     max_attempts: int = 2
     max_calls_per_day: int = 10
@@ -58,18 +58,7 @@ class AuxLLMConfig:
 
 
 def parse_json_object(text: str | None) -> dict[str, Any]:
-    if not text:
-        raise ValueError("empty output")
-    try:
-        value = json.loads(text)
-    except json.JSONDecodeError:
-        match = _JSON_BLOCK_RE.search(text)
-        if not match:
-            raise ValueError("no JSON object in output")
-        value = json.loads(match.group(0))
-    if not isinstance(value, dict):
-        raise ValueError("output is not a JSON object")
-    return value
+    return extract_json_object(text)
 
 
 class AuxLLM:
@@ -134,15 +123,22 @@ class AuxLLM:
         if not self.config.model:
             raise AuxLLMError("no model configured")
         last_error = "no attempt"
-        for attempt in range(1, max(1, self.config.max_attempts) + 1):
+        max_tokens = int(self.config.max_output_tokens)
+        if model_provider(self.config.model) == "gemini" and max_tokens < 1024:
+            max_tokens = 1024
+        total_attempts = max(1, self.config.max_attempts)
+        attempt = 0
+        bumped_for_length = False
+        while attempt < total_attempts:
+            attempt += 1
             if not self.budget_left(new_request=attempt == 1):
                 raise BudgetExceeded(f"{self.config.purpose}: daily/weekly budget used up")
             started = time.monotonic()
-            from ai.model_params import apply as apply_model_params
-            params = apply_model_params({"model": self.config.model, "messages": messages,
-                                         "temperature": self.config.temperature,
-                                         "max_tokens": self.config.max_output_tokens})
-            future = _EXECUTOR.submit(lambda: self._client().chat.completions.create(**params))
+            from ai.model_params import create as create_with_params
+            req = {"model": self.config.model, "messages": messages,
+                   "temperature": self.config.temperature,
+                   "max_tokens": max_tokens}
+            future = _EXECUTOR.submit(lambda r=req: create_with_params(self._client(), r))
             try:
                 response = future.result(timeout=self.config.timeout_seconds)
             except FutureTimeout:
@@ -157,12 +153,23 @@ class AuxLLM:
             latency = int((time.monotonic() - started) * 1000)
             from ai import usage
             usage.record("aux", self.config.model, getattr(response, "usage", None), db=getattr(self, "db", None))
+            choices = getattr(response, "choices", None) or []
+            if not choices:
+                last_error = "invalid output: empty choices from model"
+                self._record("invalid", latency, getattr(response, "usage", None), last_error, attempt=attempt)
+                continue
+            finish_reason = str(getattr(choices[0], "finish_reason", "") or "").lower()
             try:
-                content = response.choices[0].message.content
+                content = choices[0].message.content
                 value = parse_json_object(content)
             except Exception as exc:
                 last_error = f"invalid output: {exc}"
                 self._record("invalid", latency, getattr(response, "usage", None), last_error, attempt=attempt)
+                if finish_reason in ("length", "max_tokens") and not bumped_for_length:
+                    bumped_for_length = True
+                    max_tokens = max(max_tokens * 2, 2048)
+                    if attempt == total_attempts:
+                        total_attempts += 1
                 continue
             self._record("ok", latency, getattr(response, "usage", None), attempt=attempt)
             return value

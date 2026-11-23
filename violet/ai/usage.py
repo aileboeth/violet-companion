@@ -53,6 +53,16 @@ def numbers(usage: Any) -> tuple[int, int, int]:
     return prompt, completion, int(cached or 0)
 
 
+def reasoning_tokens(usage: Any) -> int:
+    """Thinking/reasoning token count from completion_tokens_details (or flat field); 0 when missing."""
+    val = _get(_get(usage, "completion_tokens_details"), "reasoning_tokens")
+    if val is None:
+        val = _get(usage, "reasoning_tokens")
+    if val is None:
+        val = _get(usage, "thoughts_token_count")
+    return int(val or 0)
+
+
 def record(source: str, model: str | None, usage: Any, db=None) -> None:
     if usage is None:
         return
@@ -61,6 +71,10 @@ def record(source: str, model: str | None, usage: Any, db=None) -> None:
             from ai.chat import violetdb as db
         from ai.settings import CURRENT_TURN
         prompt, completion, cached = numbers(usage)
+        thinking = reasoning_tokens(usage)
+        if thinking:
+            logger.debug("usage %s (%s): prompt=%d completion=%d cached=%d reasoning=%d",
+                         source, model, prompt, completion, cached, thinking)
         db.execute("INSERT INTO llm_usage (created_at, source, model, prompt_tokens, completion_tokens, cached_tokens, "
                    "turn_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
                    (db.now(), source, (model or "")[:120] or None, prompt, completion, cached, CURRENT_TURN.get()))

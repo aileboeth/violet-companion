@@ -350,7 +350,7 @@ def _plan_findings() -> list[dict[str, Any]]:
     try:
         from ai.tool_manager import discover
         catalog = discover()
-        orphans = [t.name for t in catalog.tools.values() if not ({"chat", "proactive"} & set(t.agents))]
+        orphans = [t.name for t in catalog.tools.values() if "proactive" in t.agents and "chat" not in t.agents]
         if orphans:
             out.append(_finding("tools", "tool_not_planned", "info",
                                 f"这些工具只授权给了主动消息，聊天时她用不了：{'、'.join(orphans[:6])}",

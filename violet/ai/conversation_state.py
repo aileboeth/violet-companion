@@ -116,14 +116,16 @@ class TopicTracker:
                 "evaluated": [(m["id"], m["source"]) for m in pending]}
 
     def _starts_new_conversation(self) -> bool:
-        last_eve = self.db.get_latest_message_at(role="assistant")
+        from ai import context_cut
+        last_eve = self.db.get_latest_message_at(role="assistant", since=context_cut.owner_floor() or None)
         if not last_eve:
             return True
         gap = (parse_time(self.db.now()) - parse_time(last_eve)).total_seconds() / 60
         return gap >= env_float("VIOLET_USER_INITIATED_GAP_MINUTES", 30)
 
     def _in_active_exchange(self) -> bool:
-        last_eve = self.db.get_latest_message_at(role="assistant")
+        from ai import context_cut
+        last_eve = self.db.get_latest_message_at(role="assistant", since=context_cut.owner_floor() or None)
         if not last_eve:
             return False
         gap = (parse_time(self.db.now()) - parse_time(last_eve)).total_seconds() / 60
@@ -216,15 +218,21 @@ class TopicTracker:
         return result
 
     def cold_streak(self) -> int:
-        """Proactive chat messages sent since the user's last engaged turn."""
+        """Proactive chat messages sent since the user's last engaged turn (and after any context cut)."""
+        from ai import context_cut
         since = self.db.get_proactive_setting(LAST_ENGAGED_KEY)
+        cut = context_cut.owner_floor()
         params: list[Any] = ["sent", "commitment_reminder"]
-        clause = ""
+        clauses: list[str] = []
         if since:
-            clause = "AND created_at > ?"
+            clauses.append("created_at > ?")
             params.append(since)
+        if cut:
+            clauses.append("created_at >= ?")
+            params.append(cut)
+        extra = f"AND {' AND '.join(clauses)}" if clauses else ""
         row = self.db.fetch_one(
-            f"SELECT COUNT(*) AS c FROM proactive_events WHERE status = ? AND event_type != ? {clause}",
+            f"SELECT COUNT(*) AS c FROM proactive_events WHERE status = ? AND event_type != ? {extra}",
             params,
         )
         return int(row["c"]) if row else 0

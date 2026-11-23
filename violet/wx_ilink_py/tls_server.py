@@ -52,8 +52,8 @@ class ThreadedTLSServer(ThreadedWSGIServer):
                 pass
 
 
-_HOST_RE = re.compile(r"^(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]{1,253})(:\d{1,5})?$")
-_PATH_RE = re.compile(r"^/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,2000}$")
+_HOST_RE = re.compile(r"\A(\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9.-]{1,253})(:\d{1,5})?\Z")
+_PATH_RE = re.compile(r"\A/[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,2000}\Z")
 
 
 def _redirect_to_https(conn: socket.socket, port: int) -> None:
@@ -75,10 +75,11 @@ def _redirect_to_https(conn: socket.socket, port: int) -> None:
     host = ""
     for line in lines[1:]:
         name, _, value = line.partition(b":")
-        if name.strip().lower() == b"host":
-            host = value.strip().decode("latin-1")
+        if name.strip(b" \t").lower() == b"host":
+            host = value.strip(b" \t").decode("latin-1")
             break
-    if host and _HOST_RE.match(host) and _PATH_RE.match(path):
+    if (host and "\r" not in host and "\n" not in host and "\r" not in path and "\n" not in path
+            and _HOST_RE.fullmatch(host) and _PATH_RE.fullmatch(path)):
         if ":" not in host.rsplit("]", 1)[-1]:              # no port given (a proxy in front): keep ours
             host = f"{host}:{port}"
         location = f"https://{host}{path}"

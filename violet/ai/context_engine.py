@@ -345,20 +345,47 @@ class ContextEngine:
             rel, text, data, now_stage = {"kind": "close", "call": ""}, "", {}, None
             together = lambda _d: None                      # noqa: E731
             _fill = lambda t, _d, _c=None: t                # noqa: E731
+        distance_view = None
+        describe_fn = None
+        if env_bool("VIOLET_RELATIONSHIP_STATE", True):
+            try:
+                from ai.relationship import assess, describe
+                view = assess(self.db)
+                if view.stage == "distance":
+                    distance_view = view
+                    describe_fn = describe
+            except Exception:                               # noqa: BLE001
+                logger.exception("relationship view unavailable")
         lines: list[str] = []
         if rel["kind"] == "close":
-            if now_stage and not now_stage["auto"] and now_stage["index"] >= 1:
-                lines += self._records_lines()
+            if distance_view is not None and describe_fn is not None:
+                self._relationship = distance_view
+                row = self._first_message_row()
+                if row and row["first"]:
+                    from ai.memory_model import parse_time
+                    known = parse_time(self.db.now()) - parse_time(row["first"])
+                    if known >= timedelta(days=1):
+                        lines.append(f"- 第一次聊天在 {_clock(row['first'])}（{_span(known)}前），之后有 {row['days']} 天聊过天")
+                lines.append(describe_fn(distance_view))
             else:
-                lines += self._closeness_lines(now_stage)
-            if now_stage:
-                sample_hint = (f"这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{_fill(now_stage['sample'], data, rel['call'])}」"
-                               if now_stage.get("sample") else "")
-                lines.append(f"- 你们现在的阶段（{now_stage['index'] + 1}/{len(now_stage['labels'])}，{now_stage['label']}）："
-                             f"{_fill(now_stage['text'], data, rel['call'])}{sample_hint}"
-                             "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
+                if now_stage and not now_stage["auto"] and now_stage["index"] >= 1:
+                    lines += self._records_lines()
+                else:
+                    lines += self._closeness_lines(now_stage)
+                if now_stage:
+                    sample_hint = (f"这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{_fill(now_stage['sample'], data, rel['call'])}」"
+                                   if now_stage.get("sample") else "")
+                    lines.append(f"- 你们现在的阶段（{now_stage['index'] + 1}/{len(now_stage['labels'])}，{now_stage['label']}）："
+                                 f"{_fill(now_stage['text'], data, rel['call'])}{sample_hint}"
+                                 "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
             if rel["call"]:
                 lines.append(f"- 你称呼对方“{rel['call']}”（偶尔叫，不要句句带）。")
+        elif rel["kind"] == "persona" and distance_view is not None and describe_fn is not None:
+            self._relationship = distance_view
+            first, *rest = text.split("\n")
+            lines += [f"- {first}"] + [x for x in rest if x and not x.startswith("- 你们现在的阶段")]
+            lines.append(describe_fn(distance_view))
+            lines += self._records_lines()
         else:
             first, *rest = text.split("\n")
             lines += [f"- {first}"] + [x for x in rest if x]
@@ -477,20 +504,20 @@ class ContextEngine:
 
         def rank(m: dict[str, Any]) -> tuple:
             return (bool(hint and recall_terms(hint, m["content"])), float(m.get("importance") or 0),
-                    int(m.get("mention_count") or 0), m.get("updated_at") or "")
+                    float(m.get("forget_weight") or 0), int(m.get("mention_count") or 0),
+                    m.get("updated_at") or "", int(m.get("id") or 0))
         facts.sort(key=rank, reverse=True)
         selected = facts[:max(0, facts_limit)]
-        # Keep deterministic order on the chosen facts so matching a different hint word never shuffles the cached prefix.
-        selected.sort(key=lambda m: (float(m.get("importance") or 0), int(m.get("mention_count") or 0),
-                                     m.get("updated_at") or "", int(m.get("id") or 0)), reverse=True)
-        upcoming.sort(key=lambda pair: pair[0])
+        # Keep deterministic order by id so neither hint matches nor mention bumps shuffle the cached prefix.
+        selected.sort(key=lambda m: int(m.get("id") or 0))
+        upcoming.sort(key=lambda pair: (pair[0], int(pair[1].get("id") or 0)))
         return selected, [m for _, m in upcoming[:max(0, events_limit)]]
 
     def _standing_section(self, call_context: dict[str, Any]) -> tuple[_Section, set[int]]:
         from ai.memory_model import WEEKDAYS, is_date_only, parse_time
-        hint = " ".join(str(call_context.get(k) or "") for k in ("phone_note", "_user_message"))
         try:
-            facts, upcoming = self.standing_memories(hint)
+            # _standing_section lives in the stable (cached) prefix: never rank by per-turn user_message or phone_note.
+            facts, upcoming = self.standing_memories("")
         except Exception:                                   # noqa: BLE001 -- never break a reply over this
             logger.exception("standing memories unavailable")
             return _Section("standing", 1, self.STANDING_HEADER, []), set()
@@ -813,11 +840,12 @@ class ContextEngine:
         session = [parse_time(m["created_at"]) for m in self._session_messages() if m.get("created_at")]
         earlier = earlier_messages(self.db, min(session) if session else now)
 
-        def said(content: str, row: dict[str, Any] | None = None, told: bool = False) -> str:
-            if any(mentions_life(r, content, config) for r in violet_said):
+        def said(content: str, row: dict[str, Any] | None = None, told: bool = False, doing: str | None = None) -> str:
+            if any(mentions_life(r, content, config, doing=doing) for r in violet_said):
                 return "（这次聊天里已经说过了，别再重复；对方问起再接着聊）"
             if (row and row.get("shared_with_user_at")) or told or (
-                    row and row.get("occurred_at") and violet_told(content, parse_time(row["occurred_at"]), earlier, config)):
+                    row and row.get("occurred_at")
+                    and violet_told(content, parse_time(row["occurred_at"]), earlier, config, doing=doing)):
                 return "（之前跟对方提过）"
             return ""
 
@@ -826,18 +854,18 @@ class ContextEngine:
         if days:
             today, yesterday = days[-1], (days[-2] if len(days) > 1 else None)
             for ev in today["done"]:
-                lines.append({"text": f"- 今天{ev['slot_label']}：{ev['content']}（已发生）{said(ev['content'], ev)}",
+                lines.append({"text": f"- 今天{ev['slot_label']}：{ev['content']}（已发生）{said(ev['content'], ev, doing=ev.get('doing'))}",
                               "content": ev["content"]})
             doing = today["doing"]
             if doing:
-                lines.append({"text": f"- 现在：{doing['doing']}（正在做）{said(doing['done'], doing['event'])}",
+                lines.append({"text": f"- 现在：{doing['doing']}（正在做）{said(doing['done'], doing['event'], doing=doing['doing'])}",
                               "content": doing["done"]})
             elif today["quiet"]:
                 lines.append({"text": "- 今天：没做什么特别的，普普通通的一天；现在也没在忙什么", "content": ""})
             else:
                 lines.append({"text": "- 现在：没在做什么特别的事", "content": ""})
             for ev in (yesterday or {}).get("done", [])[:2]:
-                lines.append({"text": f"- 昨天{ev['slot_label']}：{ev['content']}（已发生）{said(ev['content'], ev)}",
+                lines.append({"text": f"- 昨天{ev['slot_label']}：{ev['content']}（已发生）{said(ev['content'], ev, doing=ev.get('doing'))}",
                               "content": ev["content"]})
         interests = config.get("interests") or {}
         for event in [e for e in store.recent_happened(days=7) if e["source"] != SOURCE][-3:]:

@@ -28,6 +28,7 @@ import csv
 import hashlib
 import io
 import json
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -181,7 +182,11 @@ def _slot_fields(parsed: Parsed, raw: dict[str, Any], label: dict[str, Any]) -> 
         ok = False
     periods = raw.get("periods")
     if periods in (None, "") and (raw.get("period_start") not in (None, "") or raw.get("period_end") not in (None, "")):
-        periods = f"{raw.get('period_start')}-{raw.get('period_end') or raw.get('period_start')}"
+        p_start = raw.get("period_start")
+        p_end = raw.get("period_end")
+        if p_end in (None, ""):
+            p_end = p_start
+        periods = f"{p_start}-{p_end}"
     has_time = raw.get("start") not in (None, "") or raw.get("end") not in (None, "")
     has_periods = periods not in (None, "")
     out["periods"] = None
@@ -237,7 +242,7 @@ def parse_csv(content: str, file_name: str, term: dict[str, Any] | None) -> Pars
         for row in reader:
             line = reader.line_num
             cells = [unescape_cell(c.strip()) for c in row]
-            if not any(cells) or cells[0].startswith("#"):
+            if not any(cells) or (cells[0].startswith("#") and (header is None or not any(cells[1:]))):
                 continue
             if header is None:
                 header = _csv_header(parsed, cells, line)
@@ -360,8 +365,14 @@ def _scalar(parsed: Parsed, obj: dict[str, Any], name: str, where: str, *aliases
     for key in (name, *aliases):
         if key in obj:
             value = obj[key]
-            if value is None or isinstance(value, bool):
-                return None if value is None else value
+            if value is None:
+                return None
+            if isinstance(value, bool):
+                parsed.error("要是文字或数字", where=where, field_name=name)
+                return None
+            if isinstance(value, float) and not math.isfinite(value):
+                parsed.error("数字无效", where=where, field_name=name)
+                return None
             if isinstance(value, (int, float)):
                 return value
             if not isinstance(value, str):

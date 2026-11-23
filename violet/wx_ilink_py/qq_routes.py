@@ -295,7 +295,9 @@ def register_qq_routes(app: Flask, violetdb, runtime) -> None:
         if not row.get("description"):
             described = stickers.describe(stickers.path_of(row))
             if described:
-                row = stickers.update(violetdb, row["id"], description=described) or row
+                verdict = stickers.verdict_of(described)
+                row = stickers.update(violetdb, row["id"], description=described,
+                                      enabled_flag=None if verdict == "ok" else False) or row
         return ok(sticker_public(row))
 
     @app.post("/api/control/stickers/import-qq")
@@ -357,8 +359,10 @@ def register_qq_routes(app: Flask, violetdb, runtime) -> None:
     @app.post("/api/control/qzone/draft")
     def control_qzone_draft():
         from ai.social import qzone
+        qq = qzone._qq(runtime) if runtime is not None else None
+        channel_id = str(getattr(qq, "channel_id", None) or CHANNEL_ID)
         try:
-            idea = qzone.compose(violetdb)
+            idea = qzone.compose(violetdb, channel=channel_id)
         except qzone.QzoneError as exc:
             return bad(str(exc))
         return ok(idea)

@@ -41,6 +41,7 @@ import re
 import secrets
 import shutil
 import socket
+import stat
 import subprocess
 import time
 import urllib.request
@@ -153,16 +154,172 @@ def onebot_config(token: str, previous: dict[str, Any] | None = None) -> dict[st
     return value
 
 
-def _write_json(path: Path, value: Any, uid: int | None, gid: int | None, mode: int = 0o600) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.unlink(missing_ok=True)
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        if uid is not None and hasattr(os, "fchown"):
-            os.fchown(fh.fileno(), uid, gid if gid is not None else -1)
-        json.dump(value, fh, ensure_ascii=False, indent=1)
-    os.replace(tmp, path)
+def _is_link_or_junction(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    isjunction = getattr(os.path, "isjunction", None)
+    if isjunction is not None:
+        try:
+            if isjunction(path):
+                return True
+        except OSError:
+            pass
+    if os.name == "nt":
+        try:
+            st = os.lstat(path)
+            if getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _ensure_safe_dir(directory: Path, root: Path | None = None) -> list[Path]:
+    created: list[Path] = []
+    if root is not None:
+        try:
+            rel = directory.relative_to(root)
+        except ValueError as exc:
+            raise OSError(f"refusing to write outside {root}: {directory}") from exc
+        if ".." in rel.parts:
+            raise OSError(f"unsafe relative path: {directory}")
+        if _is_link_or_junction(root):
+            raise OSError(f"refusing to traverse symlink: {root}")
+        if not root.exists():
+            root.mkdir(parents=True, exist_ok=True)
+            created.append(root)
+        if _is_link_or_junction(root) or not root.is_dir():
+            raise OSError(f"not a safe directory: {root}")
+        cur = root
+        for part in rel.parts:
+            cur = cur / part
+            if _is_link_or_junction(cur):
+                raise OSError(f"refusing to traverse symlink: {cur}")
+            if not cur.exists():
+                os.mkdir(cur)
+                created.append(cur)
+            if _is_link_or_junction(cur) or not cur.is_dir():
+                raise OSError(f"not a safe directory: {cur}")
+        return created
+    if directory.name == "control" and _is_link_or_junction(directory.parent):
+        raise OSError(f"refusing to traverse symlink: {directory.parent}")
+    if _is_link_or_junction(directory):
+        raise OSError(f"refusing to traverse symlink: {directory}")
+    if not directory.exists():
+        directory.mkdir(parents=True, exist_ok=True)
+        created.append(directory)
+    if _is_link_or_junction(directory) or not directory.is_dir():
+        raise OSError(f"not a safe directory: {directory}")
+    return created
+
+
+def _open_dir_fd_nofollow(directory: Path, root: Path | None = None) -> int:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if root is None:
+        return os.open(directory, flags)
+    dfd = os.open(root, flags)
+    try:
+        for part in directory.relative_to(root).parts:
+            nxt = os.open(part, flags, dir_fd=dfd)
+            os.close(dfd)
+            dfd = nxt
+    except Exception:
+        os.close(dfd)
+        raise
+    return dfd
+
+
+def _safe_unlink(path: Path, *, root: Path | None = None) -> None:
+    if root is not None:
+        try:
+            rel = path.relative_to(root)
+        except ValueError:
+            return
+        if ".." in rel.parts or _is_link_or_junction(root):
+            return
+        cur = root
+        for part in rel.parts[:-1]:
+            cur = cur / part
+            if _is_link_or_junction(cur) or not cur.exists():
+                return
+    elif _is_link_or_junction(path.parent) or (path.parent.name == "control" and _is_link_or_junction(path.parent.parent)):
+        return
+    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set())
+                  and os.unlink in getattr(os, "supports_dir_fd", set()))
+    if use_dir_fd:
+        try:
+            dfd = _open_dir_fd_nofollow(path.parent, root=root)
+        except OSError:
+            return
+        try:
+            os.unlink(path.name, dir_fd=dfd)
+        except OSError:
+            pass
+        finally:
+            os.close(dfd)
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _write_json(path: Path, value: Any, uid: int | None, gid: int | None, mode: int = 0o600, *,
+                root: Path | None = None) -> None:
+    created = _ensure_safe_dir(path.parent, root=root)
+    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set())
+                  and os.replace in getattr(os, "supports_dir_fd", set()))
+    tmp_name = f".{path.name}.{secrets.token_hex(6)}.tmp"
+    open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    if use_dir_fd:
+        dfd = _open_dir_fd_nofollow(path.parent, root=root)
+        try:
+            if path.parent in created and uid is not None and hasattr(os, "fchown"):
+                try:
+                    os.fchown(dfd, uid, gid if gid is not None else -1)
+                except OSError:
+                    pass
+            fd = os.open(tmp_name, open_flags, mode, dir_fd=dfd)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    if hasattr(os, "fchmod"):
+                        try:
+                            os.fchmod(fh.fileno(), mode)
+                        except OSError:
+                            pass
+                    if uid is not None and hasattr(os, "fchown"):
+                        os.fchown(fh.fileno(), uid, gid if gid is not None else -1)
+                    json.dump(value, fh, ensure_ascii=False, indent=1)
+                os.replace(tmp_name, path.name, src_dir_fd=dfd, dst_dir_fd=dfd)
+            except Exception:
+                try:
+                    os.unlink(tmp_name, dir_fd=dfd)
+                except OSError:
+                    pass
+                raise
+        finally:
+            os.close(dfd)
+        return
+    if _is_link_or_junction(path.parent):
+        raise OSError(f"refusing to traverse symlink: {path.parent}")
+    tmp = path.parent / tmp_name
+    fd = os.open(tmp, open_flags, mode)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            if uid is not None and hasattr(os, "fchown"):
+                os.fchown(fh.fileno(), uid, gid if gid is not None else -1)
+            json.dump(value, fh, ensure_ascii=False, indent=1)
+        if _is_link_or_junction(path.parent) or _is_link_or_junction(tmp):
+            raise OSError(f"refusing to replace through symlink: {path}")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
 def _ids(name: str | None) -> tuple[int | None, int | None]:
@@ -211,7 +368,7 @@ def remove_napcat(layout: Any, state: dict[str, Any], run: Callable[..., Any] = 
     if _home_of(ACCOUNT, run) == base and run(["userdel", ACCOUNT], capture_output=True).returncode == 0:
         removed.append(f"系统账号 {ACCOUNT}（NapCat）")
     state.pop("napcat", None)
-    (layout.data / "control" / "napcat.json").unlink(missing_ok=True)
+    _safe_unlink(layout.data / "control" / "napcat.json", root=layout.data)
     return removed
 
 
@@ -732,7 +889,8 @@ def install(layout: Any, state: dict[str, Any], *, port_free: Callable[[int, str
             current = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
         except (OSError, ValueError):
             current = None
-        _write_json(path, onebot_config(ws_token, current if isinstance(current, dict) else None), uid, gid, 0o640)
+        _write_json(path, onebot_config(ws_token, current if isinstance(current, dict) else None), uid, gid, 0o640,
+                    root=base)
     for sub, mode in (("data", 0o750), ("qq-config", 0o700), ("qq-data", 0o700)):
         (base / sub).mkdir(parents=True, exist_ok=True)
         if uid is not None:
@@ -776,7 +934,7 @@ def export(layout: Any, state: dict[str, Any]) -> None:
              "config_dir": str(folder(layout) / "data" / "config"), "image": info.get("image"),
              "installed_at": info.get("installed_at")}
     uid, gid = _ids(state.get("user"))
-    _write_json(export_path(layout.data), value, uid, gid, 0o640)
+    _write_json(export_path(layout.data), value, uid, gid, 0o640, root=layout.data)
 
 
 def restart(state: dict[str, Any], run: Callable[..., Any] = subprocess.run) -> None:
@@ -813,7 +971,7 @@ def uninstall(layout: Any, state: dict[str, Any], *, run: Callable[..., Any] = s
     if _home_of(ACCOUNT, run) == base and run(["userdel", ACCOUNT], capture_output=True).returncode == 0:
         removed.append(f"系统账号 {ACCOUNT}")
     state.pop("snowluma", None)
-    export_path(layout.data).unlink(missing_ok=True)
+    _safe_unlink(export_path(layout.data), root=layout.data)
     return removed
 
 

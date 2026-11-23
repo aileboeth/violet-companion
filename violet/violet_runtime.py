@@ -128,6 +128,7 @@ class TurnBuffer:
         self._entries: list[_Entry] = []
         self._flushing = False
         self._timer: threading.Timer | None = None
+        self._gen: int = 0
         self._flush_requested_at: float | None = None
 
     def set_delays(self, normal: float, extra: float) -> None:
@@ -140,6 +141,7 @@ class TurnBuffer:
 
     def cancel(self) -> None:
         with self._lock:
+            self._gen += 1
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
@@ -158,10 +160,11 @@ class TurnBuffer:
 
     def flush_now(self) -> None:
         with self._lock:
+            self._gen += 1
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
-        self._flush()
+        self._flush(gen=None)
 
     def _delay_locked(self) -> float:
         texts = [e.text for e in self._entries if e.text is not None]
@@ -170,14 +173,18 @@ class TurnBuffer:
     def _schedule_locked(self, delay: float) -> float:
         if self._timer is not None:
             self._timer.cancel()
+        self._gen += 1
+        gen = self._gen
         self._flush_requested_at = None
-        self._timer = self._timer_factory(delay, self._flush)
+        self._timer = self._timer_factory(delay, lambda g=gen: self._flush(g))
         self._timer.daemon = True
         self._timer.start()
         return delay
 
-    def _flush(self) -> None:
+    def _flush(self, gen: int | None = None) -> None:
         with self._lock:
+            if gen is not None and gen != self._gen:
+                return
             if not self._entries:
                 self._timer = None
                 return
@@ -186,7 +193,9 @@ class TurnBuffer:
                 if self._flush_requested_at is None:
                     self._flush_requested_at = time.monotonic()
                 if time.monotonic() - self._flush_requested_at < self.media_wait_max:
-                    self._timer = self._timer_factory(0.3, self._flush)
+                    self._gen += 1
+                    next_gen = self._gen
+                    self._timer = self._timer_factory(0.3, lambda g=next_gen: self._flush(g))
                     self._timer.daemon = True
                     self._timer.start()
                     return
@@ -264,13 +273,22 @@ def _response_error(response: Any) -> str | None:
     return None
 
 
+def is_uncertain_send_error(exc: BaseException) -> bool:
+    """Errors where the request reached (or may have reached) the server, so delivery is unknown."""
+    if isinstance(exc, (requests.ReadTimeout, TimeoutError)) and not isinstance(exc, requests.ConnectTimeout):
+        return True
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return exc.response.status_code == 504
+    return False
+
+
 def is_retryable_send_error(exc: BaseException) -> bool:
     # ConnectTimeout / connection refused: the request never reached the server.
-    # ReadTimeout is NOT retried: the message may already have been delivered.
+    # ReadTimeout and HTTP 504 are NOT retried: the message may already have been delivered.
     if isinstance(exc, requests.ConnectionError):
         return True
     if isinstance(exc, requests.HTTPError) and exc.response is not None:
-        return exc.response.status_code in (502, 503, 504)
+        return exc.response.status_code in (502, 503)
     return False
 
 
@@ -478,9 +496,10 @@ class MessageSender:
                 if attempt < self.max_attempts and is_retryable_send_error(exc):
                     self.sleep(self.retry_delay * attempt)
                     continue
-                logger.error("image send failed (outbound #%s, asset %s): %s", outbound_id, asset["id"], last_error)
-                self.db.update_outbound_message(outbound_id, status="failed", error=last_error)
-                store.mark_send(asset["id"], "failed", last_error)
+                status = "unknown" if is_uncertain_send_error(exc) else "failed"
+                logger.error("image send %s (outbound #%s, asset %s): %s", status, outbound_id, asset["id"], last_error)
+                self.db.update_outbound_message(outbound_id, status=status, error=last_error)
+                store.mark_send(asset["id"], status, last_error)
                 report.failed.append({**msg, "error": last_error})
                 return last_error
             label = f"[图片：{asset.get('caption') or 'AI 生成的图片'}]"
@@ -523,7 +542,10 @@ class MessageSender:
                 if rejected:
                     raise SendRejected(rejected)
             except Exception as exc:
-                self.db.update_outbound_message(outbound_id, status="failed", error=f"{exc.__class__.__name__}: {exc}"[:300])
+                status = "unknown" if is_uncertain_send_error(exc) else "failed"
+                self.db.update_outbound_message(outbound_id, status=status, error=f"{exc.__class__.__name__}: {exc}"[:300])
+                if status == "unknown":
+                    return
                 raise
             self.db.update_outbound_message(outbound_id, status="sent")
 
@@ -564,10 +586,11 @@ class MessageSender:
                 raise SendRejected(rejected)
         except Exception as exc:
             error = f"{exc.__class__.__name__}: {exc}"[:300]
-            logger.warning("sticker %s not sent: %s", sticker["id"], error)
-            self.db.update_outbound_message(outbound_id, status="failed", error=error)
+            status = "unknown" if is_uncertain_send_error(exc) else "failed"
+            logger.warning("sticker %s not sent (%s): %s", sticker["id"], status, error)
+            self.db.update_outbound_message(outbound_id, status=status, error=error)
             report.skipped.append({**msg, "error": error})      # not a failed reply: no fallback text for it
-            trace.step("发表情包", 编号=sticker["id"], 结果="失败", 原因=error)
+            trace.step("发表情包", 编号=sticker["id"], 结果="状态未知" if status == "unknown" else "失败", 原因=error)
             return
         message_id = self.db.add_assistant_message("text", label, channel=self.channel, peer_id=self.peer_id) if record_history else None
         self.db.update_outbound_message(outbound_id, status="sent", message_id=message_id)
@@ -637,10 +660,12 @@ class MessageSender:
                     logger.warning("send attempt %d/%d failed, retrying: %s", attempt, self.max_attempts, last_error)
                     self.sleep(self.retry_delay * attempt)
                     continue
-                logger.error("send failed (outbound #%s): %s", outbound_id, last_error)
-                self.db.update_outbound_message(outbound_id, status="failed", error=last_error)
+                status = "unknown" if is_uncertain_send_error(exc) else "failed"
+                logger.error("send %s (outbound #%s): %s", status, outbound_id, last_error)
+                self.db.update_outbound_message(outbound_id, status=status, error=last_error)
                 from ai import trace
-                trace.step("发送", 渠道=self.channel, 消息号=outbound_id, 结果="失败", 尝试次数=attempt, 原因=last_error)
+                trace.step("发送", 渠道=self.channel, 消息号=outbound_id,
+                           结果="状态未知" if status == "unknown" else "失败", 尝试次数=attempt, 原因=last_error)
                 return last_error
             message_id = self.db.add_assistant_message("text", content, channel=self.channel, peer_id=self.peer_id) if record_history else None
             self.db.update_outbound_message(outbound_id, status="sent", message_id=message_id)
@@ -943,7 +968,12 @@ class VioletRuntime:
             buffers_busy = any(b.has_pending() for (ch, _), b in list(self.buffers.items())
                                if self._scope_of_channel(ch) == scope)
             q = self.turn_queue if scope == "main" else self._scope_queues.get(scope)
-            return buffers_busy or bool(q is not None and q.unfinished_tasks > 0)
+            if buffers_busy or (q is not None and q.unfinished_tasks > 0):
+                return True
+            if scope != "main" and self.turn_queue.unfinished_tasks > 0:
+                with self.turn_queue.mutex:
+                    return any(self._scope_of_channel(t.channel or "wechat") == scope for t in self.turn_queue.queue)
+            return False
         return (any(b.has_pending() for b in list(self.buffers.values()))
                 or self.turn_queue.unfinished_tasks > 0
                 or any(q.unfinished_tasks > 0 for q in list(self._scope_queues.values())))
@@ -1382,18 +1412,25 @@ class VioletRuntime:
             if pipeline is not None and pipeline.get("errors"):
                 error = "; ".join(f"{k}: {v}" for k, v in pipeline["errors"].items())[:500]
 
+            chat_dict = (pipeline or {}).get("chat") or {}
+            chat_failed = bool(pipeline is None or pipeline.get("chat_failed") or chat_dict.get("failed"))
             if sender is None:
                 status = "failed"
                 self._bump("turns_failed")
-            elif pipeline is not None and not pipeline.get("chat_failed") and self._superseded(turn, conversation,
-                                                                                               pipeline):
+            elif pipeline is not None and not chat_failed and self._superseded(turn, conversation,
+                                                                               pipeline):
                 # 2026-11-02 (user: 牛头不对马嘴): new words came while she was writing -- this answer to the older
                 # ones is not sent; the next turn answers everything (these words are in its history already)
                 self._bump("replies_superseded")
                 trace.step("回复作废", 原因="她写回复的时候你又发了新消息，合在下一轮一起回")
-            elif pipeline is None or pipeline.get("chat_failed"):
+            elif chat_failed:
                 status = "failed"
                 self._bump("turns_failed")
+                if not error:
+                    finish_reason = chat_dict.get("finish_reason")
+                    error = str(chat_dict.get("error") or (
+                        f"empty model response (finish_reason={finish_reason})" if finish_reason else "chat failed"
+                    ))[:500]
                 report, sent_texts, error = self._send_fallback(sender, turn, error)
             else:
                 # phase 10: the reply is built in ONE place from the Chat agent's final content (outbound contract)
@@ -1417,6 +1454,15 @@ class VioletRuntime:
                         status = "failed"
                         self._bump("turns_send_failed")
                         error = f"send: {report.failed[0]['error'] if report.failed else 'cancelled'}"[:500]
+                elif not envelope.declined:
+                    status = "failed"
+                    self._bump("turns_failed")
+                    if not error:
+                        finish_reason = chat_dict.get("finish_reason")
+                        error = str(chat_dict.get("error") or (
+                            f"empty model response (finish_reason={finish_reason})" if finish_reason else "empty reply"
+                        ))[:500]
+                    report, sent_texts, error = self._send_fallback(sender, turn, error)
         self.db.update_inbound_messages(turn.inbound_ids, status=status, error=error)
         trace.step("这一轮结束", 结果=status, 错误=error, 回复=trace.text("\n".join(sent_texts)) if sent_texts else "没有发出回复",
                    记忆整理="已排队" if memory_job else None)

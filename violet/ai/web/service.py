@@ -26,10 +26,11 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from ai.mcp import redact_url
 from ai.settings import env_bool, env_float, env_int
-from ai.web.content import extract, parse_published
+from ai.web.content import extract, neutralize, parse_published
 from ai.web.findings import FindingsStore, domain_of
 from ai.web.netguard import SafeFetcher, WebPolicyError
 from ai.web.providers import SearchError, make_provider
@@ -161,13 +162,22 @@ class WebService:
         return values
 
     def leak_reason(self, text: str) -> str | None:
-        for name, pattern in PII_PATTERNS:
-            if pattern.search(text or ""):
-                return f"private_{name}"
-        if any(secret in (text or "") for secret in environment_secrets()):
-            return "secret"
-        if any(value in (text or "") for value in self.private_values()):
-            return "private_profile"
+        raw = text or ""
+        once = unquote(raw)
+        twice = unquote(once)
+        candidates = list(dict.fromkeys((raw, once, twice)))
+        for candidate in candidates:
+            for name, pattern in PII_PATTERNS:
+                if pattern.search(candidate):
+                    return f"private_{name}"
+        secrets = environment_secrets()
+        for candidate in candidates:
+            if any(secret in candidate for secret in secrets):
+                return "secret"
+        private = self.private_values()
+        for candidate in candidates:
+            if any(value in candidate for value in private):
+                return "private_profile"
         return None
 
     def _count(self, kind: str) -> int:
@@ -248,14 +258,18 @@ class WebService:
             if self.store is not None and self.store.domain_disabled(domain):
                 continue
             seen.add(r.url)
-            item = {"title": r.title[:200], "url": r.url, "domain": domain,
-                    "source": (getattr(r, "source", None) or domain)[:80], "snippet": r.snippet[:300],
-                    "published_at": parse_published(r.published_at), "published_verified": False}
+            clean_title, r_title = neutralize(r.title or "")
+            clean_snippet, r_snippet = neutralize(r.snippet or "")
+            inj_removed = r_title + r_snippet
+            item = {"title": clean_title[:200], "url": r.url, "domain": domain,
+                    "source": (getattr(r, "source", None) or domain)[:80], "snippet": clean_snippet[:300],
+                    "published_at": parse_published(r.published_at), "published_verified": False,
+                    "injection_removed": inj_removed}
             if record and self.store is not None:
                 item["finding_id"] = self.store.upsert(
                     url=r.url, title=item["title"], summary=item["snippet"], source_kind="search_result", origin=origin,
                     provider=getattr(self.provider, "name", None), query=query, published_at=item["published_at"],
-                    ttl_days=self.config.finding_ttl_days)
+                    injection_removed=inj_removed, ttl_days=self.config.finding_ttl_days)
                 if origin == "chat":
                     self.store.mark_used([item["finding_id"]])
             items.append(item)

@@ -899,29 +899,34 @@ class MemoryAgent(BaseAgent):
         # said at 01:03 was stored for the wrong day, as "2026-11-10（周一）")
         from ai.memory_model import clock_text, day_words, parse_time
         now = parse_time(violetdb.now())
-        turn = (f"当前时间：{clock_text(now)}\n日期：{day_words(now)}。写进记忆的日期和星期必须和这里一致；"
-                f"event_date 用 today / tomorrow 时按日历算，凌晨说的“明天”直接写日期\n\n{user_message}")
-        from ai.model_params import CACHE_MARK
+        header = (f"当前时间：{clock_text(now)}\n日期：{day_words(now)}。写进记忆的日期和星期必须和这里一致；"
+                  f"event_date 用 today / tomorrow 时按日历算，凌晨说的“明天”直接写日期")
+        from ai.model_params import CACHE_MARK, LATE_SYSTEM_LABEL
+        system_parts = [
+            self._config.reply_prompt,
+            who_is_who(),
+            MEMORY_RULES,
+            PROFILE_RULES,
+            *([FINISH_RULE] if self._finish_signal_offered() else []),
+            (
+                "记忆库里还没有任何事件记忆，不会有重复，不需要查询：直接按这一轮的内容决定要保存什么。"
+                if self._nothing_to_search() else
+                "如需判断是否与已有记忆重复或应合并，请先用 query_memory 主动查询关键词、同义词、上位词和相关概念。"
+                "例如：小狗/狗/犬类/宠物。"
+            ),
+            f"已有的核心记忆，切勿重复存储：{format_core_memories()}",
+            *profile_sections,
+            self._format_open_events(),
+            self._format_pending_commitments(),
+        ]
+        user_parts = [
+            header,
+            f"【参考资料：最近的聊天记录，只用于理解本轮，不要重复处理旧内容】\n{recent_messages}",
+        ]
+        if self._call_context.get("previous_writes"):
+            user_parts.append(LATE_SYSTEM_LABEL + self._previous_writes_note())
+        user_parts.append(user_message)
         return [
-            {"role": "system", "content": self._config.reply_prompt},
-            {"role": "system", "content": who_is_who()},
-            {"role": "system", "content": MEMORY_RULES},
-            {"role": "system", "content": PROFILE_RULES},
-            *([{"role": "system", "content": FINISH_RULE}] if self._finish_signal_offered() else []),
-            {
-                "role": "system",
-                "content": ("记忆库里还没有任何事件记忆，不会有重复，不需要查询：直接按这一轮的内容决定要保存什么。"
-                            if self._nothing_to_search() else
-                            "如需判断是否与已有记忆重复或应合并，请先用 query_memory 主动查询关键词、同义词、上位词和相关概念。"
-                            "例如：小狗/狗/犬类/宠物。"),
-            },
-            {"role": "system", "content": f'已有的核心记忆，切勿重复存储：{format_core_memories()}'},
-            *({"role": "system", "content": section} for section in profile_sections),
-            {"role": "system", "content": self._format_open_events()},
-            {"role": "system", "content": self._format_pending_commitments(), CACHE_MARK: True},
-            # Phase 3: history is reference data for this analysis, not a system instruction.
-            {"role": "user", "content": f"【参考资料：最近的聊天记录，只用于理解本轮，不要重复处理旧内容】\n{recent_messages}"},
-            *([{"role": "system", "content": self._previous_writes_note()}] if self._call_context.get("previous_writes")
-              else []),
-            {"role": "user", "content": turn},
+            {"role": "system", "content": "\n\n".join(p for p in system_parts if p), CACHE_MARK: True},
+            {"role": "user", "content": "\n\n".join(p for p in user_parts if p)},
         ]

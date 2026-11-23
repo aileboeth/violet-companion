@@ -89,6 +89,7 @@ class ProfileAudit:
 
 _REDACT_COLUMNS = (
     ("messages", "content"),
+    ("messages", "tool_notes"),
     ("inbound_messages", "content"),
     ("outbound_messages", "content"),
     ("memory_jobs", "user_message"),
@@ -96,7 +97,12 @@ _REDACT_COLUMNS = (
     ("memory_revisions", "old_content"),
     ("memory_revisions", "new_content"),
     ("event_memories", "content"),
+    ("commitments", "content"),
     ("commitments", "evidence"),
+    ("proactive_events", "reason"),
+    ("proactive_events", "decision"),
+    ("proactive_events", "sent_messages"),
+    ("proactive_events", "metadata"),
     ("user_profile_facts", "evidence"),
     ("user_situations", "evidence"),
     ("interaction_preferences", "evidence"),
@@ -716,8 +722,13 @@ class SituationStore:
         return self.db.fetch_all("SELECT * FROM user_situations ORDER BY observed_at DESC, id DESC LIMIT ?", (limit,))
 
     def set_enabled(self, situation_id: int, enabled: bool, actor: str = "dashboard") -> dict[str, Any]:
-        self.db.execute("UPDATE user_situations SET use_in_context = ?, status = CASE WHEN ? = 0 THEN 'disabled' ELSE status END, updated_at = ? WHERE id = ?",
-                        (1 if enabled else 0, 1 if enabled else 0, self.db.now(), situation_id))
+        flag = 1 if enabled else 0
+        self.db.execute(
+            "UPDATE user_situations SET use_in_context = ?, "
+            "status = CASE WHEN ? = 0 THEN 'disabled' WHEN status = 'disabled' THEN 'active' ELSE status END, "
+            "updated_at = ? WHERE id = ?",
+            (flag, flag, self.db.now(), situation_id),
+        )
         self.audit.log("situation", situation_id, "enable" if enabled else "disable", actor)
         return self.get(situation_id)
 

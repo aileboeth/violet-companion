@@ -212,9 +212,9 @@ VIOLET_LIFE_LLM_MODEL=
 # 语义一致性复核：off（默认）| on。只复核规则无法确定的“自身经历”句子；模型只给判断和证据，不能改生活记录。
 VIOLET_SEMANTIC_GUARD=off
 VIOLET_SEMANTIC_GUARD_MODEL=
-VIOLET_SEMANTIC_GUARD_TIMEOUT_SECONDS=8
+VIOLET_SEMANTIC_GUARD_TIMEOUT_SECONDS=15
 VIOLET_SEMANTIC_GUARD_MAX_ATTEMPTS=2
-VIOLET_SEMANTIC_GUARD_MAX_OUTPUT_TOKENS=300
+VIOLET_SEMANTIC_GUARD_MAX_OUTPUT_TOKENS=1024
 VIOLET_SEMANTIC_GUARD_MAX_CALLS_PER_DAY=60
 VIOLET_SEMANTIC_GUARD_MAX_TOKENS_PER_DAY=60000
 
@@ -255,10 +255,14 @@ VIOLET_IMAGE_QUALITY=medium
 # 2026-10-31: her voice (optional install: violet voice install)
 VIOLET_VOICE=1
 VIOLET_VOICE_MAX_CHARS=300
-# 2026-11-01: prompt caching -- auto | openai | grok | deepseek | claude | other; the history window keeps its start
+# 2026-11-01: prompt caching -- auto | openai | grok | deepseek | claude | gemini | other; the history window keeps its start
 VIOLET_LLM_PROVIDER=auto
-# Optional stable salt for Grok cache routing IDs (leave empty to derive per installation automatically)
+# Optional stable salt for Grok/Gemini cache routing IDs (leave empty to derive per installation automatically)
 VIOLET_CACHE_INSTANCE_ID=
+# Optional: 0 disables sticky session headers on Gemini relays; 1 forces them on even for direct googleapis.com
+# VIOLET_GEMINI_STICKY_HEADERS=
+# Optional: 1 = stream chat completions and reassemble chunks (helps avoid 100s relay/Cloudflare timeouts on slow thinking models)
+# VIOLET_LLM_STREAM=0
 # 2026-11-02: the Chat model on one platform (settings tab of that channel); empty = CHAT_LLM_MODEL
 VIOLET_MODEL_WECHAT=
 VIOLET_MODEL_QQ=

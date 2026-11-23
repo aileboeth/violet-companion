@@ -162,7 +162,9 @@ def test_telegram_updates_are_parsed_for_private_chats_only():
     sticker = FakeTelegram.private_text("", sticker={"emoji": "😂", "file_id": "x", "file_unique_id": "u1"})
     sticker.pop("text")
     part = parse_update({"update_id": 8, "message": sticker}, "tg").parts[0]
-    assert part.kind == "image" and part.data == {"file_id": "x", "sticker": True, "file": "u1", "emoji": "😂"}
+    assert part.kind == "image"
+    assert {"file_id": "x", "sticker": True, "file": "u1", "emoji": "😂"}.items() <= part.data.items()
+    assert part.data.get("dedup_key")
     animated = FakeTelegram.private_text("", sticker={"emoji": "😂", "file_id": "a.tgs", "is_animated": True,
                                                       "thumbnail": {"file_id": "t"}})
     animated.pop("text")

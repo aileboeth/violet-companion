@@ -12,9 +12,11 @@ leaves this module is scrubbed (normalize.safe_error).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -149,15 +151,26 @@ class TelegramChannel(ChannelAdapter):
             response.raise_for_status()
             self.media_dir.mkdir(parents=True, exist_ok=True)
             suffix = Path(file_path).suffix[:8] or ".jpg"
-            target = self.media_dir / f"{part.data.get('dedup_key', 'x').replace(':', '_')}{suffix}"
+            if not re.fullmatch(r"\.[A-Za-z0-9]{1,7}", suffix):
+                suffix = ".jpg"
+            raw_key = str(part.data.get("dedup_key") or "").strip()
+            stem = (re.sub(r"[^A-Za-z0-9._-]", "_", raw_key)[:64] if raw_key
+                    else hashlib.sha256(str(file_id).encode("utf-8")).hexdigest()[:24])
+            target = self.media_dir / f"{stem}_{uuid.uuid4().hex[:8]}{suffix}"
+            tmp = self.media_dir / f".{target.name}.tmp"
             size = 0
-            with open(target, "wb") as fh:
-                for chunk in response.iter_content(65536):
-                    size += len(chunk)
-                    if size > MAX_DOWNLOAD:
-                        raise TelegramError("file too large")
-                    fh.write(chunk)
-            return target
+            try:
+                with open(tmp, "wb") as fh:
+                    for chunk in response.iter_content(65536):
+                        size += len(chunk)
+                        if size > MAX_DOWNLOAD:
+                            raise TelegramError("file too large")
+                        fh.write(chunk)
+                os.replace(tmp, target)
+                return target
+            except Exception:
+                tmp.unlink(missing_ok=True)
+                raise
         except requests.RequestException as exc:
             raise TelegramError(safe_error(exc)) from None
 
@@ -190,7 +203,12 @@ def parse_update(update: dict[str, Any], channel_id: str) -> InboundMessage | No
         sizes = [p for p in message["photo"] if isinstance(p, dict) and p.get("file_id")]
         if sizes:
             biggest = max(sizes, key=lambda p: int(p.get("file_size") or p.get("width", 0) or 0))
-            parts.append(Part("image", "", {"file_id": biggest["file_id"]}))
+            key = str(biggest.get("file_unique_id") or "") or hashlib.sha256(
+                str(biggest["file_id"]).encode("utf-8")).hexdigest()[:24]
+            parts.append(Part("image", "", {
+                "file_id": biggest["file_id"],
+                "dedup_key": f"tg:{channel_id}:{message.get('message_id')}:{key}",
+            }))
     if message.get("sticker"):
         sticker = message["sticker"]
         # 0.7.39 (user: telegram 的表情包她识别不到): the picture goes to the image model like a QQ sticker (and into
@@ -200,9 +218,12 @@ def parse_update(update: dict[str, Any], channel_id: str) -> InboundMessage | No
         thumb = sticker.get("thumbnail") or sticker.get("thumb") or {}
         file_id = sticker.get("file_id") if static else thumb.get("file_id")
         if file_id:
+            uniq = str(sticker.get("file_unique_id") or "")
+            skey = uniq or hashlib.sha256(str(file_id).encode("utf-8")).hexdigest()[:24]
             parts.append(Part("image", "", {"file_id": file_id, "sticker": True,
-                                            "file": str(sticker.get("file_unique_id") or ""),
-                                            "emoji": str(sticker.get("emoji") or "")}))
+                                            "file": uniq,
+                                            "emoji": str(sticker.get("emoji") or ""),
+                                            "dedup_key": f"tg:{channel_id}:{message.get('message_id')}:{skey}"}))
         else:
             parts.append(Part("sticker", str(sticker.get("emoji") or "")))
     if message.get("voice") or message.get("audio"):

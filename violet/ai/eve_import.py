@@ -34,15 +34,17 @@ import sqlite3
 import tarfile
 import time
 import zipfile
+import zlib
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable, BinaryIO
 
 logger = logging.getLogger("violet.eve_import")
 
 MAX_UPLOAD = 1024 * 1024 * 1024          # 1 GB: a years-long chat database stays far below
+MAX_CONFIG_BYTES = 2 * 1024 * 1024       # 2 MB cap for proactive_config.json and .env files
 KEEP = {"Memories.db": "db", "proactive_config.json": "proactive", "env-safe.txt": "env", ".env": "env"}
 STAGE_TTL = 24 * 3600
-SECRET_RE = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|PROMPT|URL|MQTT", re.I)
+SECRET_RE = re.compile(r"KEY|TOKEN|SECRET|PASS|AUTH|COOKIE|CRED|PROMPT|URL|MQTT", re.I)
 MESSAGE_TYPES = {"text", "image", "file", "voice", "video"}
 EVENT_COLUMNS = ("content", "category", "happened_at", "valid_until", "status", "importance", "emotional_weight",
                  "recall_count", "mention_count", "forget_weight", "source_message_ids", "last_recalled_at",
@@ -139,49 +141,91 @@ def stage(stream: BinaryIO, filename: str = "") -> str:
     return token
 
 
+def _entry_limit(name: str) -> int:
+    return min(MAX_CONFIG_BYTES, MAX_UPLOAD) if KEEP.get(name) in ("proactive", "env") else MAX_UPLOAD
+
+
 def _unpack(raw: Path, folder: Path, filename: str) -> None:
     with raw.open("rb") as fh:
         head = fh.read(16)
     if head.startswith(b"SQLite format 3\x00"):
         os.replace(raw, folder / "Memories.db")
         return
+    budget = [MAX_UPLOAD]
     if head[:2] == b"\x1f\x8b" or tarfile.is_tarfile(raw):
         try:
             with tarfile.open(raw, "r:*") as tar:
                 for member in tar:
                     name = PurePosixPath(member.name).name
-                    if member.isfile() and name in KEEP and member.size <= MAX_UPLOAD:
+                    if member.isfile() and name in KEEP:
+                        limit = _entry_limit(name)
+                        if member.size > limit or member.size > budget[0]:
+                            raise ImportError_("压缩包解压后超过大小上限")
                         src = tar.extractfile(member)
                         if src is not None:
-                            _keep(name, src, folder)
-        except (tarfile.TarError, EOFError, OSError) as exc:
+                            _keep(name, src, folder, budget)
+        except ImportError_:
+            raise
+        except (tarfile.TarError, zlib.error, EOFError, OSError) as exc:
             raise ImportError_(f"压缩包打不开：{exc.__class__.__name__}") from exc
         return
     if zipfile.is_zipfile(raw):
-        with zipfile.ZipFile(raw) as zf:
-            for info in zf.infolist():
-                name = PurePosixPath(info.filename.replace("\\", "/")).name
-                if not info.is_dir() and name in KEEP and info.file_size <= MAX_UPLOAD:
-                    with zf.open(info) as src:
-                        _keep(name, src, folder)
+        try:
+            with zipfile.ZipFile(raw) as zf:
+                for info in zf.infolist():
+                    name = PurePosixPath(info.filename.replace("\\", "/")).name
+                    if not info.is_dir() and name in KEEP:
+                        limit = _entry_limit(name)
+                        if info.file_size > limit or info.file_size > budget[0]:
+                            raise ImportError_("压缩包解压后超过大小上限")
+                        with zf.open(info) as src:
+                            _keep(name, src, folder, budget)
+        except ImportError_:
+            raise
+        except (zipfile.BadZipFile, zlib.error, RuntimeError, EOFError, OSError) as exc:
+            raise ImportError_(f"压缩包打不开：{exc.__class__.__name__}") from exc
         return
     if filename.endswith(".json") or head.lstrip().startswith(b"{"):
+        if raw.stat().st_size > min(MAX_CONFIG_BYTES, MAX_UPLOAD):
+            raise ImportError_("proactive_config.json 太大")
         os.replace(raw, folder / "proactive_config.json")
         return
     raise ImportError_("认不出这个文件：请上传 eve-export.tar.gz、.zip 或 Memories.db")
 
 
-def _keep(name: str, src: BinaryIO, folder: Path) -> None:
+def _keep(name: str, src: BinaryIO, folder: Path, budget: list[int] | None = None) -> None:
+    remaining = budget[0] if budget is not None else MAX_UPLOAD
+    limit = min(_entry_limit(name), remaining)
     if KEEP[name] == "env":
         # only the keys Violet may import; a full .env (keys!) never reaches the disk here
-        text = src.read(2_000_000).decode("utf-8", "replace")
+        raw_bytes = src.read(limit + 1)
+        if len(raw_bytes) > limit:
+            raise ImportError_("压缩包解压后超过大小上限")
+        if budget is not None:
+            budget[0] -= len(raw_bytes)
+        text = raw_bytes.decode("utf-8", "replace")
         old = folder / "env.json"
         values = json.loads(old.read_text(encoding="utf-8")) if old.exists() else {}
         values.update(parse_env(text))
         old.write_text(json.dumps(values, ensure_ascii=False), encoding="utf-8")
         return
-    with (folder / name).open("wb") as out:
-        shutil.copyfileobj(src, out, 1024 * 1024)
+    target = folder / name
+    written = 0
+    try:
+        with target.open("wb") as out:
+            while True:
+                chunk = src.read(65536)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > limit:
+                    raise ImportError_("压缩包解压后超过大小上限")
+                out.write(chunk)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+    if budget is not None:
+        budget[0] -= written
 
 
 def parse_env(text: str) -> dict[str, str]:
@@ -227,7 +271,11 @@ def _proactive(folder: Path) -> dict | None:
     if not path.exists():
         return None
     try:
+        if path.stat().st_size > MAX_CONFIG_BYTES:
+            raise ImportError_("proactive_config.json 太大")
         data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except ImportError_:
+        raise
     except (OSError, ValueError) as exc:
         raise ImportError_("proactive_config.json 不是正确的 JSON") from exc
     return data if isinstance(data, dict) else None
@@ -301,20 +349,32 @@ def preview(token: str, violetdb) -> dict[str, Any]:
         try:
             tables = _tables(conn)
             if "messages" in tables:
+                mcols = _columns(conn, "messages")
+                if not ({"role", "created_at"} <= mcols):
+                    raise ImportError_("Memories.db 的 messages 表结构不兼容")
                 stats = conn.execute("SELECT COUNT(*) AS n, SUM(role = 'user') AS mine, SUM(role = 'assistant') AS hers, "
                                      "MIN(created_at) AS first, MAX(created_at) AS last FROM messages").fetchone()
-                types = {r["message_type"]: r["n"] for r in conn.execute(
+                types = ({r["message_type"]: r["n"] for r in conn.execute(
                     "SELECT message_type, COUNT(*) AS n FROM messages GROUP BY message_type")}
+                         if "message_type" in mcols else {})
                 out["messages"] = {"count": stats["n"], "user": stats["mine"] or 0, "assistant": stats["hers"] or 0,
                                    "first": stats["first"], "last": stats["last"], "types": types}
             if "core_memories" in tables:
+                ccols = _columns(conn, "core_memories")
+                if "memory_key" not in ccols:
+                    raise ImportError_("Memories.db 的 core_memories 表结构不兼容")
                 keys = [r[0] for r in conn.execute("SELECT memory_key FROM core_memories")]
                 have = {r["memory_key"] for r in violetdb.fetch_all("SELECT memory_key FROM core_memories")}
                 out["core"] = {"count": len(keys), "existing": sum(1 for k in keys if k in have)}
             if "event_memories" in tables:
+                ecols = _columns(conn, "event_memories")
+                by_status = ({r["status"]: r["n"] for r in conn.execute(
+                    "SELECT status, COUNT(*) AS n FROM event_memories GROUP BY status")}
+                             if "status" in ecols else {})
                 out["events"] = {"count": conn.execute("SELECT COUNT(*) FROM event_memories").fetchone()[0],
-                                 "by_status": {r["status"]: r["n"] for r in conn.execute(
-                                     "SELECT status, COUNT(*) AS n FROM event_memories GROUP BY status")}}
+                                 "by_status": by_status}
+        except sqlite3.DatabaseError as exc:
+            raise ImportError_(f"Memories.db 读取失败：{exc}") from exc
         finally:
             conn.close()
     return out
@@ -355,6 +415,8 @@ def commit(token: str, violetdb, *, channel: str | None, messages: bool, memorie
             violetdb.execute(LEDGER)
             violetdb.execute("INSERT INTO eve_imports (file_sha256, channel, result, actor, created_at) VALUES (?, ?, ?, ?, ?)",
                              (meta.get("sha256"), channel, json.dumps(result, ensure_ascii=False), actor, violetdb.now()))
+    except sqlite3.DatabaseError as exc:
+        raise ImportError_(f"Memories.db 读取失败：{exc}") from exc
     finally:
         if conn is not None:
             conn.close()
@@ -376,8 +438,11 @@ def _import_messages(conn: sqlite3.Connection, violetdb, channel: str) -> tuple[
     from ai.channels.identity import IdentityStore
     peer = IdentityStore(violetdb).first_peer(channel)
     cols = _columns(conn, "messages")
+    if not ({"id", "role", "content", "created_at"} <= cols):
+        raise ImportError_("Memories.db 的 messages 表缺少必要字段")
     media = "media_id" if "media_id" in cols else "NULL AS media_id"
-    rows = conn.execute(f"SELECT id, role, message_type, content, {media}, created_at FROM messages "
+    mtype = "message_type" if "message_type" in cols else "'text' AS message_type"
+    rows = conn.execute(f"SELECT id, role, {mtype}, content, {media}, created_at FROM messages "
                         "WHERE role IN ('user', 'assistant') AND created_at IS NOT NULL ORDER BY created_at, id").fetchall()
     have = {(r["created_at"], r["role"], r["content"]) for r in violetdb.fetch_all(
         "SELECT created_at, role, content FROM messages WHERE COALESCE(channel, 'wechat') = ?", (channel,))}
@@ -447,9 +512,13 @@ def _import_memories(conn: sqlite3.Connection, violetdb, id_map: dict[int, int])
     out = {"core": 0, "core_skipped": 0, "events": 0}
     tables = _tables(conn)
     if "core_memories" in tables:
-        cols = [c for c in CORE_COLUMNS if c in _columns(conn, "core_memories")]
+        table_cols = _columns(conn, "core_memories")
+        if not ({"memory_key", "content"} <= table_cols):
+            raise ImportError_("Memories.db 的 core_memories 表缺少必要字段")
+        cols = [c for c in CORE_COLUMNS if c in table_cols]
+        order = "id" if "id" in table_cols else "rowid"
         have = {r["memory_key"] for r in violetdb.fetch_all("SELECT memory_key FROM core_memories")}
-        for r in conn.execute(f"SELECT {', '.join(cols)} FROM core_memories ORDER BY id"):
+        for r in conn.execute(f"SELECT {', '.join(cols)} FROM core_memories ORDER BY {order}"):
             if r["memory_key"] in have or not r["content"]:
                 out["core_skipped"] += 1
                 continue
@@ -460,10 +529,15 @@ def _import_memories(conn: sqlite3.Connection, violetdb, id_map: dict[int, int])
             have.add(r["memory_key"])
             out["core"] += 1
     if "event_memories" in tables:
-        cols = [c for c in EVENT_COLUMNS if c in _columns(conn, "event_memories")]
+        table_cols = _columns(conn, "event_memories")
+        if "content" not in table_cols:
+            raise ImportError_("Memories.db 的 event_memories 表缺少必要字段")
+        cols = [c for c in EVENT_COLUMNS if c in table_cols]
+        order = "id" if "id" in table_cols else "rowid"
         have = {(r["content"], r["created_at"]) for r in violetdb.fetch_all("SELECT content, created_at FROM event_memories")}
-        for r in conn.execute(f"SELECT {', '.join(cols)} FROM event_memories ORDER BY id"):
-            if not r["content"] or (r["content"], r["created_at"]) in have:
+        for r in conn.execute(f"SELECT {', '.join(cols)} FROM event_memories ORDER BY {order}"):
+            created = r["created_at"] if "created_at" in cols else None
+            if not r["content"] or (r["content"], created) in have:
                 continue
             row = _with_defaults(dict(r), core=False, now=violetdb.now())
             row["source_message_ids"] = _remap_sources(row.get("source_message_ids"), id_map)

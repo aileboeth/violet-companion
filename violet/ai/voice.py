@@ -26,6 +26,8 @@ from ai.settings import env_bool, env_int
 
 FORMATS = {"mp3": b"ID3", "wav": b"RIFF", "ogg": b"OggS", "flac": b"fLaC"}
 MAX_REFERENCE = 10 * 1024 * 1024
+MAX_SPEAK_BYTES = 20 * 1024 * 1024
+MAX_PENDING_SENTENCES = 50
 CHUNK = 30                     # characters in one voice message (~7 s of speech, ~4 minutes on 4 CPU cores)
 TIMEOUT = 600.0
 
@@ -71,12 +73,15 @@ def chunks(text: str, size: int = CHUNK) -> list[str]:
     """Sentences packed into pieces of at most `size` characters (one voice message each), lyrics line by line."""
     pieces: list[str] = []
     for sentence in re.split(r"(?<=[。！？!?；;…~～])|\n", str(text or "")):
-        sentence = " ".join(sentence.split())
+        sentence = " ".join(sentence.split()).lstrip("，,、 ")
         while len(sentence) > size:                          # a long sentence: at the last comma that fits, else cut
-            cut = max(sentence.rfind(c, 0, size) for c in "，,、 ") + 1 or size
-            pieces.append(sentence[:cut].strip())
-            sentence = sentence[cut:].strip()
-        if sentence:
+            pos = max(sentence.rfind(c, 1, size) for c in "，,、 ")
+            cut = (pos + 1) if pos > 0 else size
+            part = sentence[:cut].strip()
+            if part and not re.fullmatch(r"[\s，,、。！？!?；;…~～]+", part):
+                pieces.append(part)
+            sentence = sentence[cut:].strip().lstrip("，,、 ")
+        if sentence and not re.fullmatch(r"[\s，,、。！？!?；;…~～]+", sentence):
             pieces.append(sentence)
     out: list[str] = []
     for piece in pieces:                                     # short sentences (lyric lines) share a message
@@ -108,6 +113,8 @@ def say_later(text: str, deliver: Deliver, *, fallback: Fallback | None = None, 
     if not pieces:
         return False
     with _lock:
+        if _pending[0] + len(pieces) > MAX_PENDING_SENTENCES:
+            return False
         _pending[0] += len(pieces)
         if not _worker or not _worker[0].is_alive():
             _worker[:] = [threading.Thread(target=_work, daemon=True, name="voice-queue")]
@@ -146,8 +153,10 @@ def _work() -> None:
 
 
 def _kind(data: bytes) -> str:
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WAVE":
+        return "wav"
     for ext, magic in FORMATS.items():
-        if data.startswith(magic):
+        if ext != "wav" and data.startswith(magic):
             return ext
     if data[4:8] == b"ftyp":
         return "m4a"
@@ -164,12 +173,17 @@ def save_reference(data: bytes | None, text: str | None) -> dict[str, Any]:
         if len(data) > MAX_REFERENCE:
             raise VoiceError("录音太大了（最多 10 MB，3–20 秒最合适）")
         ext = _kind(data)
-        for old in d.glob("reference.*"):
-            if old.name != "reference.txt":
-                old.unlink(missing_ok=True)
+        target = d / f"reference.{ext}"
         tmp = d / f"reference.{ext}.tmp"
-        tmp.write_bytes(data)
-        os.replace(tmp, d / f"reference.{ext}")
+        try:
+            tmp.write_bytes(data)
+            os.replace(tmp, target)
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
+        for old in d.glob("reference.*"):
+            if old.name not in ("reference.txt", target.name):
+                old.unlink(missing_ok=True)
     if text is not None:
         (d / "reference.txt").write_text(" ".join(str(text).split())[:300], encoding="utf-8")
     return reference()
@@ -204,7 +218,7 @@ def speak(text: str, fmt: str = "silk", timeout: float = TIMEOUT) -> bytes:
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
         with opener.open(req, timeout=timeout) as resp:
-            return resp.read()
+            data = resp.read(MAX_SPEAK_BYTES + 1)
     except urllib.error.HTTPError as exc:
         try:
             message = json.loads(exc.read().decode("utf-8")).get("error")
@@ -213,6 +227,11 @@ def speak(text: str, fmt: str = "silk", timeout: float = TIMEOUT) -> bytes:
         raise VoiceError(message or f"语音服务返回 {exc.code}") from None
     except OSError as exc:
         raise VoiceError(f"连不上语音服务：{exc}") from None
+    if not data:
+        raise VoiceError("语音服务返回了空音频")
+    if len(data) > MAX_SPEAK_BYTES:
+        raise VoiceError("语音服务返回的音频太大")
+    return data
 
 
 def to_file(audio: bytes, fmt: str = "silk") -> Path:

@@ -213,26 +213,28 @@ class SocialStore:
         """2026-10-30: a bound account turned out to be someone else (now an admin): what it said in the owner's chat
         and her answers to it (messages.peer_id) move to its private conversation here, already read. Returns how
         many moved. The memories written from them stay (the memory page can delete them)."""
-        rows = self.db.fetch_all("SELECT id, role, message_type, content, created_at FROM messages "
-                                 "WHERE COALESCE(channel, 'wechat') = ? AND peer_id = ? ORDER BY id", (channel, str(peer_id)))
-        conv = self.conversation(channel, "private", str(peer_id), name or None)
-        if not rows:
-            return 0
-        with self.db.transaction():
-            for r in rows:
-                mine = r["role"] != "user"
-                self.db.execute(
-                    "INSERT INTO social_messages (conversation_id, sender_id, sender_name, is_self, message_type, content, "
-                    "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (conv["id"], None if mine else str(peer_id), None if mine else name, 1 if mine else 0,
-                     r["message_type"] or "text", r["content"], r["created_at"]))
-            self.db.execute("DELETE FROM messages WHERE id IN (" + ",".join("?" * len(rows)) + ")", [r["id"] for r in rows])
-            newest = self.db.fetch_one("SELECT MAX(id) AS id, MAX(created_at) AS at FROM social_messages "
-                                       "WHERE conversation_id = ?", (conv["id"],))
-            self.db.execute("UPDATE social_conversations SET watermark = MAX(watermark, ?), last_message_at = "
-                            "MAX(COALESCE(last_message_at, ''), ?), updated_at = ? WHERE id = ?",
-                            (newest["id"], newest["at"], self.db.now(), conv["id"]))
-        return len(rows)
+        from ai import memory_scope
+        with memory_scope.use(memory_scope.for_channel(channel)):
+            rows = self.db.fetch_all("SELECT id, role, message_type, content, created_at FROM messages "
+                                     "WHERE COALESCE(channel, 'wechat') = ? AND peer_id = ? ORDER BY id", (channel, str(peer_id)))
+            conv = self.conversation(channel, "private", str(peer_id), name or None)
+            if not rows:
+                return 0
+            with self.db.transaction():
+                for r in rows:
+                    mine = r["role"] != "user"
+                    self.db.execute(
+                        "INSERT INTO social_messages (conversation_id, sender_id, sender_name, is_self, message_type, content, "
+                        "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (conv["id"], None if mine else str(peer_id), None if mine else name, 1 if mine else 0,
+                         r["message_type"] or "text", r["content"], r["created_at"]))
+                self.db.execute("DELETE FROM messages WHERE id IN (" + ",".join("?" * len(rows)) + ")", [r["id"] for r in rows])
+                newest = self.db.fetch_one("SELECT MAX(id) AS id, MAX(created_at) AS at FROM social_messages "
+                                           "WHERE conversation_id = ?", (conv["id"],))
+                self.db.execute("UPDATE social_conversations SET watermark = MAX(watermark, ?), last_message_at = "
+                                "MAX(COALESCE(last_message_at, ''), ?), updated_at = ? WHERE id = ?",
+                                (newest["id"], newest["at"], self.db.now(), conv["id"]))
+            return len(rows)
 
     # -- pictures (0.7.9) -----------------------------------------------------------------------------------------
     def add_media(self, message_id: int, *, kind: str, file_key: str | None, url: str | None,
@@ -250,14 +252,24 @@ class SocialStore:
                + (" AND kind = ?" if kind else "") + (" AND description IS NULL" if undescribed else "") + " ORDER BY id")
         return self.db.fetch_all(sql, [int(i) for i in message_ids] + ([kind] if kind else []))
 
-    def known_description(self, file_key: str | None) -> str | None:
-        """What she saw in this picture before (the same sticker comes back again and again)."""
+    def known_description(self, file_key: str | None, *, kind: str | None = None) -> str | None:
+        """What she saw in this picture before (the same sticker comes back again and again).
+        When kind='sticker', never reuse an unmoderated 'image' caption from social_media."""
         if not file_key:
             return None
+        key = file_key[:120]
         row = self.db.fetch_one("SELECT description FROM stickers WHERE file_key = ? AND description IS NOT NULL LIMIT 1",
-                                (file_key[:120],)) or self.db.fetch_one(
-            "SELECT description FROM social_media WHERE file_key = ? AND description IS NOT NULL ORDER BY id DESC LIMIT 1",
-            (file_key[:120],))
+                                (key,))
+        if row is not None:
+            return row.get("description")
+        if kind:
+            row = self.db.fetch_one(
+                "SELECT description FROM social_media WHERE file_key = ? AND kind = ? AND description IS NOT NULL "
+                "ORDER BY id DESC LIMIT 1", (key, kind))
+        else:
+            row = self.db.fetch_one(
+                "SELECT description FROM social_media WHERE file_key = ? AND description IS NOT NULL "
+                "ORDER BY id DESC LIMIT 1", (key,))
         return (row or {}).get("description")
 
     def describe_media(self, media_id: int, description: str) -> None:

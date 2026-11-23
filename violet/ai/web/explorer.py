@@ -30,6 +30,7 @@ from typing import Any
 from ai.memory_model import parse_time
 from ai.persona import PersonaCore, persona_dir
 from ai.settings import env_bool, env_str
+from ai.web.content import neutralize
 from ai.web.findings import FindingsStore
 
 logger = logging.getLogger("violet.web")
@@ -156,8 +157,10 @@ class WebExplorer:
         choice = self._select(candidates, topic)
         if choice is None:
             return {"outcome": "nothing_worth_saving", "topic": topic_key, "query": query}
-        summary, published, verified, read_ok, injection = choice["snippet"], choice.get("published_at"), False, False, 0
-        title = choice["title"]
+        title, r_title = neutralize(str(choice.get("title") or ""))
+        summary, r_snippet = neutralize(str(choice.get("snippet") or ""))
+        published, verified, read_ok = choice.get("published_at"), False, False
+        injection = max(int(choice.get("injection_removed") or 0), r_title + r_snippet)
         if (int(self.config.get("max_fetches_per_run", 1)) > 0
                 and self.store.count_today("fetch", "explorer") < int(self.config.get("max_fetches_per_day", 2))):
             page = self.service.fetch(choice["url"], origin="explorer", record=False)
@@ -165,7 +168,7 @@ class WebExplorer:
                 read_ok = True
                 summary = page.get("description") or page.get("text", "")[:300] or summary
                 title = page.get("title") or title
-                injection = int(page.get("injection_removed") or 0)
+                injection += int(page.get("injection_removed") or 0)
                 if page.get("published_at"):
                     published, verified = page["published_at"], True
                 if not self._fresh(published, now):
@@ -187,12 +190,13 @@ class WebExplorer:
         from ai.aux_llm import AuxLLM, AuxLLMConfig, AuxLLMError
         llm = AuxLLM(self.db, AuxLLMConfig(
             purpose="web_explorer", model=env_str("VIOLET_WEB_EXPLORER_LLM_MODEL", ""),
-            timeout_seconds=float(cfg.get("timeout_seconds", 20)), max_output_tokens=int(cfg.get("max_output_tokens", 150)),
+            timeout_seconds=float(cfg.get("timeout_seconds", 20)), max_output_tokens=int(cfg.get("max_output_tokens", 1024)),
             max_calls_per_day=int(cfg.get("max_calls_per_day", 1)), max_tokens_per_day=int(cfg.get("max_tokens_per_day", 2000)),
             temperature=0.2, max_attempts=1))
         if not llm.available():
             return candidates[0]
-        listing = [{"index": i, "title": c["title"], "domain": c["domain"], "snippet": c["snippet"]}
+        listing = [{"index": i, "title": neutralize(str(c.get("title") or ""))[0], "domain": c["domain"],
+                    "snippet": neutralize(str(c.get("snippet") or ""))[0]}
                    for i, c in enumerate(candidates[:5])]
         messages = [
             {"role": "system", "content": "从候选网页里挑一条和主题相关、值得留意的；都不值得就选 null。"

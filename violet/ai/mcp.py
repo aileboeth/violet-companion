@@ -441,19 +441,174 @@ UNTRUSTED_TOOL_NOTICE = (
 )
 
 
+_STRIP_SCHEMA_KEYS = frozenset({
+    "default", "title", "$schema", "$defs", "definitions", "additionalProperties",
+    "examples", "$id", "$comment",
+})
+
+
+def _is_null_schema(node: Any) -> bool:
+    return isinstance(node, dict) and node.get("type") == "null"
+
+
+def _infer_const_type(val: Any) -> str | None:
+    if isinstance(val, bool):
+        return "boolean"
+    if isinstance(val, int):
+        return "integer"
+    if isinstance(val, float):
+        return "number"
+    if isinstance(val, str):
+        return "string"
+    return None
+
+
+def _resolve_ref(ref: str, defs: dict[str, Any]) -> dict[str, Any] | None:
+    for prefix in ("#/$defs/", "#/definitions/"):
+        if ref.startswith(prefix):
+            target = defs.get(ref[len(prefix):])
+            if isinstance(target, dict):
+                return target
+    return None
+
+
+def _sanitize_schema_node(node: Any, defs: dict[str, Any], seen: frozenset[str], *, is_root: bool = False) -> Any:
+    if not isinstance(node, dict):
+        return node
+    # 1. Inline local $ref (with cycle guard)
+    ref = node.get("$ref")
+    if isinstance(ref, str) and ref not in seen:
+        target = _resolve_ref(ref, defs)
+        if target is not None:
+            merged = {**target, **{k: v for k, v in node.items() if k != "$ref"}}
+            return _sanitize_schema_node(merged, defs, seen | {ref}, is_root=is_root)
+
+    # 2. Flatten nullable anyOf / oneOf (e.g. FastMCP int | None -> {"anyOf": [{"type": "integer"}, {"type": "null"}]})
+    for union_key in ("anyOf", "oneOf"):
+        branches = node.get(union_key)
+        if isinstance(branches, list) and branches:
+            non_null = [b for b in branches if not _is_null_schema(b)]
+            if len(non_null) == 1 and isinstance(non_null[0], dict):
+                chosen = dict(non_null[0])
+                for meta in ("description", "enum"):
+                    if meta in node and meta not in chosen:
+                        chosen[meta] = node[meta]
+                return _sanitize_schema_node(chosen, defs, seen, is_root=is_root)
+            if non_null and len(non_null) < len(branches):
+                out = {k: v for k, v in node.items() if k not in _STRIP_SCHEMA_KEYS and k != union_key}
+                out[union_key] = [_sanitize_schema_node(b, defs, seen) for b in non_null]
+                return out
+
+    out: dict[str, Any] = {}
+    for k, v in node.items():
+        if k in _STRIP_SCHEMA_KEYS or k == "$ref":
+            continue
+        if k == "const":
+            out["enum"] = [v]
+            if "type" not in node and "type" not in out:
+                inferred = _infer_const_type(v)
+                if inferred:
+                    out["type"] = inferred
+            continue
+        if k == "type" and isinstance(v, list):
+            non_null_types = [t for t in v if t != "null"]
+            if len(non_null_types) == 1:
+                out["type"] = non_null_types[0]
+            elif non_null_types:
+                out["type"] = non_null_types[0]
+            continue
+        if k == "properties" and isinstance(v, dict):
+            cleaned_props = {pk: _sanitize_schema_node(pv, defs, seen) for pk, pv in v.items()}
+            if cleaned_props:
+                out["properties"] = cleaned_props
+            continue
+        if k == "items":
+            if isinstance(v, dict):
+                out["items"] = _sanitize_schema_node(v, defs, seen)
+            elif isinstance(v, list) and v:
+                out["items"] = _sanitize_schema_node(v[0], defs, seen)
+            continue
+        if k in ("anyOf", "oneOf", "allOf") and isinstance(v, list):
+            cleaned_list = [_sanitize_schema_node(b, defs, seen) for b in v if not _is_null_schema(b)]
+            if len(cleaned_list) == 1 and isinstance(cleaned_list[0], dict):
+                for ck, cv in cleaned_list[0].items():
+                    out.setdefault(ck, cv)
+            elif cleaned_list:
+                out[k] = cleaned_list
+            continue
+        out[k] = v
+
+    if "type" not in out:
+        if out.get("properties"):
+            out["type"] = "object"
+        elif "items" in out:
+            out["type"] = "array"
+    if out.get("type") == "array" and "items" not in out:
+        out["items"] = {"type": "string"}
+    if "required" in out:
+        if isinstance(out["required"], list) and isinstance(out.get("properties"), dict):
+            valid = set(out["properties"])
+            out["required"] = [r for r in out["required"] if r in valid]
+        elif not out.get("properties"):
+            out.pop("required", None)
+    if not is_root:
+        # Gemini rejects nested OBJECT schemas with missing/empty properties (e.g. open dict / additionalProperties: true)
+        # as well as typeless empty schemas left by cyclic $refs. Normalize them to valid string schemas.
+        if out.get("type") == "object" and not out.get("properties"):
+            out["type"] = "string"
+            out.pop("properties", None)
+            out.pop("required", None)
+            desc = str(out.get("description") or "").strip()
+            if desc and "json" not in desc.lower():
+                out["description"] = f"{desc} (JSON object)"
+            elif not desc:
+                out["description"] = "JSON object"
+        elif not out or ("type" not in out and not any(k in out for k in ("anyOf", "oneOf", "allOf", "enum"))):
+            out["type"] = "string"
+    return out
+
+
+def sanitize_tool_schema(input_schema: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Recursively sanitize a JSON Schema for strict OpenAI/Gemini tool declaration compatibility.
+
+    Inlines $defs/$ref, collapses nullable anyOf/oneOf and type arrays, strips default/title/$schema/
+    additionalProperties, normalizes nested propertyless objects, and returns None when top-level has no properties.
+    """
+    if not isinstance(input_schema, dict):
+        return None
+    defs: dict[str, Any] = {}
+    for key in ("$defs", "definitions"):
+        block = input_schema.get(key)
+        if isinstance(block, dict):
+            defs.update(block)
+    cleaned = _sanitize_schema_node(input_schema, defs, frozenset(), is_root=True)
+    if not isinstance(cleaned, dict) or not cleaned:
+        return None
+    if cleaned.get("type") == "object" and not cleaned.get("properties"):
+        return None
+    if cleaned.get("properties") and "type" not in cleaned:
+        cleaned["type"] = "object"
+    if cleaned.get("type") == "object" and cleaned.get("properties") and "required" not in cleaned:
+        cleaned["required"] = []
+    return cleaned
+
+
 def tool_schema_to_openai_tool(
     name: str,
     description: str | None,
     input_schema: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Convert MCP tool metadata to an OpenAI function tool schema."""
+    """Convert MCP tool metadata to a Gemini/OpenAI-compatible function tool schema."""
+    params = sanitize_tool_schema(input_schema)
+    fn: dict[str, Any] = {
+        "name": name,
+        "description": description or "",
+    }
+    if params:
+        fn["parameters"] = params
     return {
         "type": "function",
-        "function": {
-            "name": name,
-            "description": description or "",
-            "parameters": input_schema or {"type": "object", "properties": {}},
-        },
+        "function": fn,
     }
 
 

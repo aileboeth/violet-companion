@@ -174,6 +174,9 @@ class MemoryWorker:
                       note=f"后台整理记忆（第 {job['attempts']} 次）")
         try:
             result = self.memory_agent.run(memory_input, call_context=call_context) or {}
+            if isinstance(result, dict) and result.get("failed"):
+                reason = result.get("finish_reason") or "empty_or_blocked"
+                raise RuntimeError(f"memory agent failed ({reason})")
         except Exception as exc:
             error = f"{exc.__class__.__name__}: {exc}"[:500]
             _ps.turn_node(job.get("turn_id"), "Memory", "failed", output_data={"error": error, "writes": written},

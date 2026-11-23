@@ -40,6 +40,25 @@ INJECTION_RE = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 INJECTION_MARK = "[已移除疑似指令的文本]"
+_ZERO_WIDTH_RE = re.compile(r"[\u00ad\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]")
+_CJK_SPACE_RE = re.compile(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])")
+_CSS_COMMENT_RE = re.compile(r"/\*.*?\*/", re.S)
+_HIDDEN_STYLE_RE = re.compile(
+    r"(?:^|;)\s*(?:"
+    r"display\s*:\s*none"
+    r"|visibility\s*:\s*(?:hidden|collapse)"
+    r"|opacity\s*:\s*0(?:\.0+)?%?"
+    r"|font-size\s*:\s*0(?:\.0+)?(?:px|em|rem|pt|%|ch|vw|vh)?"
+    r")(?:\s*!important)?\s*(?:;|$)",
+    re.IGNORECASE,
+)
+
+
+def _is_hidden_style(style: str) -> bool:
+    if not style:
+        return False
+    cleaned = _CSS_COMMENT_RE.sub("", style)
+    return bool(_HIDDEN_STYLE_RE.search(cleaned))
 
 
 @dataclass
@@ -82,8 +101,8 @@ class _Extractor(HTMLParser):
             if tag == "br":
                 self.parts.append("\n")
             return
-        hidden = ("hidden" in attrs or "display:none" in attrs.get("style", "").replace(" ", "").lower()
-                  or attrs.get("aria-hidden") == "true")
+        hidden = ("hidden" in attrs or _is_hidden_style(attrs.get("style", ""))
+                  or attrs.get("aria-hidden", "").strip().lower() == "true")
         skipping = tag in SKIP_TAGS or hidden
         self.stack.append((tag, skipping))
         if skipping:
@@ -136,19 +155,51 @@ def parse_published(value: str | None, now: datetime | None = None) -> str | Non
     return None
 
 
+def _join_window(window: list[str]) -> str:
+    joined = " ".join(part.strip() for part in window if part.strip())
+    return _CJK_SPACE_RE.sub("", joined)
+
+
 def neutralize(text: str) -> tuple[str, int]:
+    raw = _ZERO_WIDTH_RE.sub("", text or "")
+    lines = raw.splitlines()
+    if not lines:
+        return "", 0
+    # Mark spans: None = kept as-is, int = span end index (collapsed to one INJECTION_MARK), -1 = covered by earlier span
+    state: list[int | None] = [None] * len(lines)
     removed = 0
-    out = []
-    for line in (text or "").splitlines():
+    for i, line in enumerate(lines):
         if INJECTION_RE.search(line):
+            state[i] = i
             removed += 1
-            out.append(INJECTION_MARK)
-        else:
+    for width in (2, 3, 4):
+        i = 0
+        while i + width <= len(lines):
+            if any(state[j] is not None for j in range(i, i + width)):
+                i += 1
+                continue
+            if not lines[i].strip() or not lines[i + width - 1].strip():
+                i += 1
+                continue
+            if INJECTION_RE.search(_join_window(lines[i:i + width])):
+                state[i] = i + width - 1
+                for j in range(i + 1, i + width):
+                    state[j] = -1
+                removed += 1
+                i += width
+            else:
+                i += 1
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        if state[i] is None:
             out.append(line)
+        elif state[i] != -1:
+            out.append(INJECTION_MARK)
     return "\n".join(out), removed
 
 
 def _clean(text: str) -> str:
+    text = _ZERO_WIDTH_RE.sub("", text or "")
     text = re.sub(r"[ \t　\xa0]+", " ", text)
     lines = [l.strip() for l in text.splitlines()]
     return "\n".join(l for l in lines if l)

@@ -84,11 +84,19 @@ def has_memories(db) -> bool:
     return not test_mode.active() and db.has_searchable_event_memories()
 
 
+_WHEN_RE = re.compile(
+    r"^(\d{4})-(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:\d{2})?$"
+)
+
+
 def _when(text: Any):
-    text = str(text or "").strip().replace("/", "-").replace("T", " ")
-    if len(text) == 16:                                    # YYYY-MM-DD HH:MM
-        text += ":00"
-    return parse_time(text.replace(" ", "T", 1)) if text else None
+    raw = re.sub(r"\s+", " ", str(text or "").strip().replace("/", "-").replace("T", " ").replace("t", " "))
+    match = _WHEN_RE.match(raw)
+    if not match:
+        return None
+    year, month, day, hour, minute, second, offset = match.groups()
+    iso = f"{year}-{int(month):02d}-{int(day):02d}T{int(hour):02d}:{minute}:{second or '00'}{offset or ''}"
+    return parse_time(iso)
 
 
 def set_reminder(db, context: dict[str, Any], args: dict[str, Any]) -> str:
@@ -115,8 +123,9 @@ def set_reminder(db, context: dict[str, Any], args: dict[str, Any]) -> str:
     context.setdefault("_actions", []).append({"tool": "set_reminder", "commitment_id": row["id"]})
     at = parse_time(row["due_at"])
     label = f"{at.month}月{at.day}日 {at:%H:%M}" if at else row["due_at"]
-    if result["action"] == "duplicate":
-        return _dumps({"ok": True, "reminder_id": row["id"], "message": f"同样的提醒之前已经设好了（{label} 提醒“{row['content']}”），这次没有重复设。"})
+    if result["action"] in ("duplicate", "already_saved"):
+        return _dumps({"ok": True, "reminder_id": row["id"], "due_at": row["due_at"],
+                       "message": f"同样的提醒之前已经设好了（{label} 提醒“{row['content']}”），这次没有重复设。"})
     return _dumps({"ok": True, "reminder_id": row["id"], "due_at": row["due_at"],
                    "message": f"设好了：{label} 提醒“{row['content']}”。回复里简短确认时间和事情就行。"})
 

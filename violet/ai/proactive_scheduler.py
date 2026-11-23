@@ -157,6 +157,40 @@ def _format_gap(minutes: float | None) -> str:
     return f"{hours} 小时" + (f" {rem} 分钟" if rem >= 10 else "")
 
 
+def _format_schedule_moment(sm: dict[str, Any]) -> str:
+    """Render one schedule moment with its structured details (course, kind, start / last_end / day counts)."""
+    mtype = sm.get("type")
+    note = str(sm.get("note") or "").strip()
+    if mtype == "exam_tomorrow":
+        exam = str(sm.get("exam") or "").strip()
+        kind = str(sm.get("kind") or "考试").strip()
+        kind_label = f"{kind}考试" if kind in ("期末", "期中") else kind
+        when = f"（{sm['start']}）" if sm.get("start") else ""
+        head = f"明天有「{exam}」{kind_label}{when}" if exam else f"明天有{kind_label}{when}"
+        return f"{head}：{note}" if note else head
+    if mtype == "classes_over_today":
+        last_end = sm.get("last_end")
+        count = sm.get("classes_today")
+        parts = []
+        if last_end:
+            parts.append(f"最后一节课到 {last_end}")
+        if count:
+            parts.append(f"今天共 {count} 节课")
+        head = f"今天课表已结束（{'，'.join(parts)}）" if parts else ""
+        return f"{head}：{note}" if head and note else (head or note or str(mtype or ""))
+    if mtype == "dense_week":
+        full_days = sm.get("full_days")
+        total = sm.get("classes_next_7_days")
+        parts = []
+        if full_days:
+            parts.append(f"未来 7 天有 {full_days} 天满课")
+        if total:
+            parts.append(f"共 {total} 节课")
+        head = "，".join(parts)
+        return f"{head}：{note}" if head and note else (head or note or str(mtype or ""))
+    return note or str(mtype or "")
+
+
 class ProactiveScheduler:
     """Background scheduler for Violet's proactive messages, explicit reminders, and holiday greetings."""
 
@@ -300,6 +334,8 @@ class ProactiveScheduler:
         except Exception:                                    # noqa: BLE001
             pref = {}
         less = pref.get("value") == "less"
+        if less:
+            pace = {**pace, "delay_scale": 1.0, "after_user_scale": 1.0, "interval_scale": 1.0}
         base_after = float(self.config.get("min_minutes_after_user_message", 30))
         base_between = float(self.config.get("min_minutes_between_proactive_messages", 120))
         after_scale = 1.0 if less else float(pace["after_user_scale"])
@@ -408,6 +444,16 @@ class ProactiveScheduler:
         pipeline = run_proactive_pipeline(event_context=event_context, chat_agent=self.chat_agent)
         self._handle_pipeline_result(pipeline, event_context, kind="scheduled")
 
+    @staticmethod
+    def _latest_user_message_at() -> str | None:
+        from ai import context_cut
+        return violetdb.get_latest_message_at(role="user", since=context_cut.owner_floor() or None)
+
+    @staticmethod
+    def _latest_proactive_sent_at() -> str | None:
+        from ai import context_cut
+        return violetdb.get_latest_proactive_event_at(status="sent", since=context_cut.owner_floor() or None)
+
     def status_snapshot(self) -> dict[str, Any]:
         with self._lock:
             self.load_config()
@@ -417,14 +463,16 @@ class ProactiveScheduler:
             view, _, _, level, _ = self._warmth_profile(current)
             eff_after, eff_between, _, _ = self._effective_intervals(current)
             unanswered = self.unanswered_count(current)
+            last_user = self._latest_user_message_at()
+            last_sent = self._latest_proactive_sent_at()
             return {
                 "enabled": self.config.get("enabled", True),
                 "current_time": current.isoformat(),
                 "next_proactive_at": violetdb.get_proactive_setting("next_proactive_at"),
-                "last_user_message_at": violetdb.get_latest_message_at(role="user"),
-                "last_proactive_sent_at": violetdb.get_latest_proactive_event_at(status="sent"),
-                "minutes_since_user_message": minutes_since(violetdb.get_latest_message_at(role="user"), current),
-                "minutes_since_last_proactive": minutes_since(violetdb.get_latest_proactive_event_at(status="sent"), current),
+                "last_user_message_at": last_user,
+                "last_proactive_sent_at": last_sent,
+                "minutes_since_user_message": minutes_since(last_user, current),
+                "minutes_since_last_proactive": minutes_since(last_sent, current),
                 "daily_sent_count": self._today_sent_count(current),
                 "daily_message_limit": self.config.get("daily_message_limit"),
                 "relationship_stage": view.stage,
@@ -480,13 +528,13 @@ class ProactiveScheduler:
         if self._in_quiet_hours(current):
             self._set_next_proactive_at(self._random_next_time(current))
             return False, "quiet hours"
-        since_user = minutes_since(violetdb.get_latest_message_at(role="user"), current)
+        since_user = minutes_since(self._latest_user_message_at(), current)
         if since_user is None:
             return False, "no user message yet"
         min_after_user, min_between, _, _ = self._effective_intervals(current)
         if since_user < min_after_user:
             return False, "too soon after user message"
-        since_sent = minutes_since(violetdb.get_latest_proactive_event_at(status="sent"), current)
+        since_sent = minutes_since(self._latest_proactive_sent_at(), current)
         if since_sent is not None and since_sent < min_between:
             return False, "too soon after proactive message"
         prefs = self.profile.preferences.effective()
@@ -530,8 +578,9 @@ class ProactiveScheduler:
         return current.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
 
     def _today_sent_count(self, current: datetime) -> int:
+        from ai import context_cut
         return violetdb.count_proactive_events_since(
-            self._day_start(current),
+            context_cut.owner_floor(self._day_start(current)),
             status="sent",
             exclude_event_types=("commitment_reminder", "holiday_greeting"),
         )
@@ -562,9 +611,16 @@ class ProactiveScheduler:
         unanswered = self._unanswered_proactive(current)
         recent, habit_note = self._recent_proactive(current)
         plans = self._shareable_open_plans(current)
-        since_user = minutes_since(violetdb.get_latest_message_at(role="user"), current)
+        since_user = minutes_since(self._latest_user_message_at(), current)
         sent_today = self._today_sent_count(current)
+        try:
+            proactive_pref = self.profile.preferences.effective().get("proactive_chat") or {}
+        except Exception:                                    # noqa: BLE001
+            proactive_pref = {}
+        less_proactive = proactive_pref.get("value") == "less"
         daily_limit = int(self.config.get("daily_message_limit", 3))
+        if proactive_pref.get("origin") == "explicit" and less_proactive:
+            daily_limit = min(daily_limit, 1)
         class_ok = not env_bool("VIOLET_SCHEDULE_PROACTIVE", False)
 
         note, summary_topic = self._compose_proactive_note(
@@ -582,6 +638,7 @@ class ProactiveScheduler:
             recent=recent,
             habit_note=habit_note,
             class_ok=class_ok,
+            less_proactive=less_proactive,
         )
         return {
             "event_type": "scheduled_proactive_check",
@@ -589,7 +646,7 @@ class ProactiveScheduler:
             "current_time": current.isoformat(),
             "time_bucket": time_bucket(current),
             "minutes_since_user_message": since_user,
-            "minutes_since_last_proactive": minutes_since(violetdb.get_latest_proactive_event_at(status="sent"), current),
+            "minutes_since_last_proactive": minutes_since(self._latest_proactive_sent_at(), current),
             "daily_sent_count": sent_today,
             "daily_message_limit": daily_limit,
             "relationship_stage": view.stage,
@@ -619,6 +676,7 @@ class ProactiveScheduler:
         recent: list[dict[str, Any]],
         habit_note: str | None,
         class_ok: bool,
+        less_proactive: bool = False,
     ) -> tuple[str, str]:
         from ai.relationship import WARMTH_LABELS
         gap = _format_gap(since_user)
@@ -626,6 +684,14 @@ class ProactiveScheduler:
         if view.stage == "distance":
             lines.append("- 对方明确要求保持轻松友好的距离：除非下面有很具体值得分享的小事，否则直接输出 [NO_REPLY]；即便开口也不撒娇、不用亲昵称呼。")
             topic = "distance"
+        elif less_proactive:
+            lines.append(
+                f"- 对方希望你平时少主动发消息（当前热度：{WARMTH_LABELS.get(level, WARMTH_LABELS[0])}，"
+                f"距对方上次说话约 {gap}，今日已主动 {sent_today}/{daily_limit} 次）："
+                "尊重对方的节奏，克制一点；下面有具体值得分享的小事或临近事项时再简短自然地说一句，"
+                "没有合适内容就直接输出 [NO_REPLY]，不用刻意来蹭存在感。"
+            )
+            topic = "less_proactive"
         elif level >= 3:
             lines.append(f"- 你们已经很亲近（{WARMTH_LABELS[level]}），距对方上次说话约 {gap}（今日已主动 {sent_today}/{daily_limit} 次）："
                          "可以自然热情地来蹭个存在感、分享刚发生的小事、撒个娇或说一句想对方，贴合你的人设和阶段，简短自然即可。")
@@ -647,7 +713,7 @@ class ProactiveScheduler:
             last = unanswered[0]
             waited = float(last.get("elapsed_hours", last.get("hours", 0)))
             gate = 3.0 if level >= 3 else 4.0
-            if level >= 2 and not view.cooled and len(unanswered) == 1 and waited >= gate:
+            if level >= 2 and not view.cooled and not less_proactive and len(unanswered) == 1 and waited >= gate:
                 lines.append(f"- 你 {last.get('at', '')} 主动发过一条，对方过了约 {int(waited)} 小时还没回："
                              "已经很亲近了，可以带点轻巧小情绪再找一次（想对方、小委屈或玩笑式撒娇），只找这一次；不认真指责、不重复上一条内容。")
                 topic = "miss_unanswered"
@@ -661,7 +727,8 @@ class ProactiveScheduler:
             lines.append("- 时机判断：对方打游戏、刷视频、刷手机不算勿扰；只有深夜疑似睡觉或对方正忙/别打扰时才输出 [NO_REPLY]。")
 
         if life_events:
-            topic = "daily_share" if any(e.get("type") == "violet_daily_event" for e in life_events) else "life_share"
+            if topic != "miss_unanswered":
+                topic = "daily_share" if any(e.get("type") == "violet_daily_event" for e in life_events) else "life_share"
             lines.append("- 你最近刚发生、还没告诉对方的小事（选一件自然随口提一句，用自己的语气）：")
             for ev in life_events:
                 lines.append(f"  · {ev['content']}")
@@ -678,7 +745,7 @@ class ProactiveScheduler:
         if schedule_moments:
             lines.append("- 课表小背景（仅供参考，别说成确定事实，不提也正常）：")
             for sm in schedule_moments[:2]:
-                lines.append(f"  · {sm.get('note') or sm.get('type')}")
+                lines.append(f"  · {_format_schedule_moment(sm)}")
         if web_findings:
             lines.append("- 你在网上看到、可能合对方胃口的资料（不是你亲身经历，若提到请说明来源网站，不提也正常）：")
             for wf in web_findings[:1]:
@@ -1121,7 +1188,7 @@ class ProactiveScheduler:
         state = violetdb.get_proactive_setting(key) or ""
         if state in ("sent", "chat") or state.startswith("gave_up"):
             return False
-        last_user = parse_iso(violetdb.get_latest_message_at(role="user"))
+        last_user = parse_iso(self._latest_user_message_at())
         if last_user is not None and last_user.date() == current.date():
             violetdb.set_proactive_setting(key, "chat")
             return False

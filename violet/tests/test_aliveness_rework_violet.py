@@ -667,4 +667,55 @@ def test_class_situation_and_quick_reply_cold_streak(isolated_data, violetdb, mo
     assert tracker.cold_streak() == 0
 
 
+def test_chat_agent_compose_never_starts_with_bare_assistant_turn(isolated_data, violetdb):
+    from ai.agents.chat_agent import ChatAgent, RECORD_NOTE, compose
+
+    # Leading assistant turn without marks gets a RECORD_NOTE user separator first
+    msgs = compose(["规则"], [{"role": "assistant", "content": "刚煮了一锅银耳羹"}], [], "哈哈小心烫到")
+    assert [m["role"] for m in msgs] == ["system", "user", "assistant", "user"]
+    assert msgs[1]["content"].startswith(RECORD_NOTE)
+    assert msgs[2]["content"] == "刚煮了一锅银耳羹"
+    assert msgs[3]["content"] == "哈哈小心烫到"
+
+    # Multiple leading assistant turns merge cleanly after one separator
+    msgs2 = compose(
+        ["规则"],
+        [
+            {"role": "assistant", "content": "上午好呀"},
+            {"role": "assistant", "content": "刚逛完公园回来"},
+            {"role": "user", "content": "早呀"},
+        ],
+        [],
+        "午饭吃什么",
+    )
+    assert [m["role"] for m in msgs2] == ["system", "user", "assistant", "user"]
+    assert msgs2[2]["content"] == "上午好呀\n刚逛完公园回来"
+
+    # Leading system mark already emits a user RECORD_NOTE turn, so no duplicate separator is added
+    msgs3 = compose(
+        ["规则"],
+        [
+            {"role": "system", "content": "【聊天记录：这里隔了 3 小时】"},
+            {"role": "assistant", "content": "醒了没"},
+        ],
+        [],
+        "刚醒",
+    )
+    assert [m["role"] for m in msgs3] == ["system", "user", "assistant", "user"]
+    assert "隔了 3 小时" in msgs3[1]["content"] and "接着之前的聊天" not in msgs3[1]["content"]
+
+    # End-to-end ChatAgent.build_context_messages with only an assistant message in history
+    violetdb.add_assistant_message("text", "刚才路过花店买了束小雏菊")
+    from ai.agents.base_agent import _CALL_CONTEXT
+    tok = _CALL_CONTEXT.set({})
+    try:
+        built = ChatAgent().build_context_messages("好看吗")
+    finally:
+        _CALL_CONTEXT.reset(tok)
+    roles = [m["role"] for m in built]
+    assert roles[0] == "system" and roles[1] == "user" and roles[-1] == "user"
+    assert all(a != b for a, b in zip(roles[1:], roles[2:])), roles
+    assert any(m["role"] == "assistant" and "小雏菊" in m["content"] for m in built)
+
+
 

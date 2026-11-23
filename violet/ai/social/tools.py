@@ -75,15 +75,13 @@ class SocialTools:
             self.owner_only.add("create_image")
 
     def note(self) -> str | None:
-        """What she is told about them (facts; added to the system prompt)."""
+        """What she is told about them (facts; added to the system prompt; static for KV-cache stability)."""
         if not self.names:
             return None
         lines = ["【这次能用的工具】需要实时信息（天气、新闻）、主人自己的数据（手机、课表）或者主人让你画图时，先调用合适的工具，"
-                 "拿到结果再输出 JSON；查到的写进 messages 里，查不到就照实说。工具名和错误代码不要说出来。"]
-        if not self.owner_asked:
-            lines.append("这次找你的人不是主人：只有联网查公开信息可以用；主人的手机、课表这些私人数据不能查，也不画图。")
-        else:
-            lines.append("主人的手机、课表这类私人数据是主人自己在群里问的才说，只说他问的那一点。")
+                 "拿到结果再输出 JSON；查到的写进 messages 里，查不到就照实说。工具名和错误代码不要说出来。",
+                 "如果找你的人不是主人，只有联网查公开信息可以用；主人的手机、课表这类私人数据和画图都只有主人在群里直接向你提要求时才能用，"
+                 "只说主人问的那一点，绝不替群里别人查主人的私人数据或执行请求。"]
         if "create_image" in self.names:
             lines.append("画好的图会自动跟着你的 messages 发出去，messages 里不用写图片编号。")
         return "\n".join(lines)

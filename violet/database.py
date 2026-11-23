@@ -2301,14 +2301,16 @@ class VioletDatabase:
             return default
         return self.from_json(row.get("value"), default=default)
 
-    def get_latest_message_at(self, role: str | None = None) -> str | None:
+    def get_latest_message_at(self, role: str | None = None, since: str | None = None) -> str | None:
+        clauses, params = [], []
         if role:
-            row = self.fetch_one(
-                "SELECT created_at FROM messages WHERE role = ? ORDER BY created_at DESC, id DESC LIMIT 1",
-                (role,),
-            )
-        else:
-            row = self.fetch_one("SELECT created_at FROM messages ORDER BY created_at DESC, id DESC LIMIT 1")
+            clauses.append("role = ?")
+            params.append(role)
+        if since:
+            clauses.append("created_at >= ?")
+            params.append(since)
+        where = f"WHERE {' AND '.join(clauses)} " if clauses else ""
+        row = self.fetch_one(f"SELECT created_at FROM messages {where}ORDER BY created_at DESC, id DESC LIMIT 1", params)
         return row.get("created_at") if row else None
 
     def count_proactive_events_since(
@@ -2339,16 +2341,19 @@ class VioletDatabase:
         )
         return int(row.get("count", 0)) if row else 0
 
-    def get_latest_proactive_event_at(self, status: str | None = None) -> str | None:
+    def get_latest_proactive_event_at(self, status: str | None = None, since: str | None = None) -> str | None:
+        clauses, params = [], []
         if status:
-            row = self.fetch_one(
-                "SELECT updated_at FROM proactive_events WHERE status = ? ORDER BY updated_at DESC, id DESC LIMIT 1",
-                (status,),
-            )
-        else:
-            row = self.fetch_one(
-                "SELECT updated_at FROM proactive_events ORDER BY updated_at DESC, id DESC LIMIT 1"
-            )
+            clauses.append("status = ?")
+            params.append(status)
+        if since:
+            clauses.append("updated_at >= ?")
+            params.append(since)
+        where = f"WHERE {' AND '.join(clauses)} " if clauses else ""
+        row = self.fetch_one(
+            f"SELECT updated_at FROM proactive_events {where}ORDER BY updated_at DESC, id DESC LIMIT 1",
+            params,
+        )
         return row.get("updated_at") if row else None
 
 
@@ -2618,6 +2623,11 @@ class VioletDatabase:
     # Phase 2: commitments (explicit reminders / follow-ups)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _normalize_commitment_content(text: str) -> str:
+        norm = VioletDatabase.normalize_text(text)
+        return norm.rstrip("！!。.?？~～,，;；…·、 ")
+
     def add_commitment(
         self,
         content: str,
@@ -2627,18 +2637,31 @@ class VioletDatabase:
         source_turn_id: str | None = None,
         created_by: str = "user",
     ) -> dict[str, Any]:
-        """Create a pending commitment; idempotent per (source_turn_id, content)."""
+        """Create a pending commitment; idempotent per active (source_turn_id, content, due_at)."""
+        from ai.memory_model import parse_time
         content = (content or "").strip()
+        norm_content = self._normalize_commitment_content(content)
+        due_dt = parse_time(due_at)
+
+        def _same_due(other_due: str | None) -> bool:
+            if other_due == due_at:
+                return True
+            if due_dt is not None and other_due:
+                other_dt = parse_time(other_due)
+                if other_dt is not None and other_dt == due_dt:
+                    return True
+            return False
+
         if source_turn_id:
-            for row in self.fetch_all("SELECT * FROM commitments WHERE source_turn_id = ?", (source_turn_id,)):
-                if self.normalize_text(row["content"]) == self.normalize_text(content):
+            for row in self.fetch_all(
+                "SELECT * FROM commitments WHERE source_turn_id = ? AND status IN ('pending', 'sending')",
+                (source_turn_id,),
+            ):
+                if self._normalize_commitment_content(row["content"]) == norm_content and _same_due(row.get("due_at")):
                     return {"action": "already_saved", "commitment": row}
-        duplicate = self.fetch_one(
-            "SELECT * FROM commitments WHERE status IN ('pending', 'sending') AND content = ? AND due_at = ?",
-            (content, due_at),
-        )
-        if duplicate:
-            return {"action": "duplicate", "commitment": duplicate}
+        for row in self.fetch_all("SELECT * FROM commitments WHERE status IN ('pending', 'sending')"):
+            if self._normalize_commitment_content(row["content"]) == norm_content and _same_due(row.get("due_at")):
+                return {"action": "duplicate", "commitment": row}
         now = self.now()
         cursor = self.execute(
             """
@@ -2797,11 +2820,17 @@ class VioletDatabase:
         from ai.memory_model import parse_time
         now = self.now()
         now_dt = parse_time(now)
+        now_iso = now_dt.isoformat() if now_dt is not None else now
         with self._lock:
-            rows = self.fetch_all("SELECT * FROM memory_jobs WHERE status = 'pending' ORDER BY id ASC LIMIT 50")
+            rows = self.fetch_all(
+                "SELECT * FROM memory_jobs WHERE status = 'pending' "
+                "AND (next_attempt_at IS NULL OR next_attempt_at = '' OR replace(next_attempt_at, ' ', 'T') <= ?) "
+                "ORDER BY id ASC LIMIT 50",
+                (now_iso,),
+            )
             for row in rows:
                 next_at = parse_time(row.get("next_attempt_at"))
-                if next_at and next_at > now_dt:
+                if next_at and now_dt and next_at > now_dt:
                     continue
                 cursor = self.execute(
                     "UPDATE memory_jobs SET status = 'running', attempts = attempts + 1, updated_at = ? WHERE id = ? AND status = 'pending'",

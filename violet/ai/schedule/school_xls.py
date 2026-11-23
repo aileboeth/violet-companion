@@ -16,9 +16,14 @@ import re
 from typing import Any
 
 MAX_BYTES = 700 * 1024                     # fits the import request (base64) of schedule_routes.MAX_IMPORT_BODY
+MAX_ROWS = 200
+MAX_COLS = 50
+MAX_CELLS = 10_000
 WEEKDAY_NAMES = "一二三四五六日"
 TIME_RE = re.compile(r"(\d{1,2}:\d{2})\s*[-~–—]\s*(\d{1,2}:\d{2})")
-WEEKS_RE = re.compile(r"^\s*([\d,，\-]+)\s*(?:\(|（)?\s*\[?周")
+WEEKS_RE = re.compile(
+    r"^\s*([\d,，\-~–]+)\s*(?:\(|（)?\s*\[?(?:([单双])?周(?:\s*\]?\s*(?:\)|）)?\s*(?:\(|（)?\s*([单双]))?|([单双]))"
+)
 TERM_RE = re.compile(r"学年学期[:：]\s*(\S+)")
 
 
@@ -41,6 +46,8 @@ def _cells(data: bytes) -> list[list[str]]:
         sheet = xlrd.open_workbook(file_contents=data).sheet_by_index(0)
     except Exception as exc:                                  # noqa: BLE001 -- a damaged / encrypted file
         raise SchoolTableError(f"读不了这个 .xls（{exc.__class__.__name__}）") from None
+    if sheet.nrows > MAX_ROWS or sheet.ncols > MAX_COLS or sheet.nrows * sheet.ncols > MAX_CELLS:
+        raise SchoolTableError(f"表格尺寸太大（{sheet.nrows}×{sheet.ncols}，最多 {MAX_ROWS} 行 {MAX_COLS} 列）")
     return [[str(sheet.cell_value(r, c) or "") for c in range(sheet.ncols)] for r in range(sheet.nrows)]
 
 
@@ -51,7 +58,11 @@ def _classes(cell: str) -> list[dict[str, str]]:
         at = next((i for i, x in enumerate(lines) if WEEKS_RE.match(x)), None)
         if at is None or at < 1:
             continue
-        weeks = WEEKS_RE.match(lines[at]).group(1).replace("，", ",").strip(",")
+        match = WEEKS_RE.match(lines[at])
+        weeks = match.group(1).replace("，", ",").strip(",")
+        parity = match.group(2) or match.group(3) or match.group(4) or ""
+        if parity:
+            weeks += parity
         if at == 1:                                           # no teacher line
             name, teacher = lines[0], ""
         else:

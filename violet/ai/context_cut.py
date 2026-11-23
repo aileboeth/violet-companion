@@ -39,6 +39,23 @@ def _write(value: dict[str, Any]) -> None:
     os.replace(tmp, path)
 
 
+def _current_scope() -> str:
+    try:
+        from ai import memory_scope
+        return memory_scope.current()
+    except Exception:                                   # noqa: BLE001
+        return "main"
+
+
+def _owner_cut(data: dict[str, Any], scope: str | None = None) -> str | None:
+    sc = scope or _current_scope()
+    owners = data.get("owners")
+    scoped = owners.get(sc) if isinstance(owners, dict) else None
+    if sc == "main":
+        return _later(scoped, data.get("owner"))
+    return scoped
+
+
 def cut(db, scope: str = "all", conversation_id: int | None = None) -> dict[str, Any]:
     """Turn the page now. scope: all | owner (the owner's chat on every channel) | social (every group and other
     people's private chats); conversation_id: only that one group / private chat."""
@@ -50,7 +67,14 @@ def cut(db, scope: str = "all", conversation_id: int | None = None) -> dict[str,
         if scope not in SCOPES:
             raise ValueError("翻篇的范围要是 all / owner / social")
         if scope in ("all", "owner"):
-            data["owner"] = now
+            mem_scope = _current_scope()
+            owners = data.get("owners")
+            if not isinstance(owners, dict):
+                owners = {}
+                data["owners"] = owners
+            owners[mem_scope] = now
+            if mem_scope == "main":
+                data["owner"] = now
         if scope in ("all", "social"):
             data["social"] = now
     _write(data)
@@ -59,7 +83,14 @@ def cut(db, scope: str = "all", conversation_id: int | None = None) -> dict[str,
 
 def status() -> dict[str, Any]:
     data = _read()
-    return {"owner": data.get("owner"), "social": data.get("social"), "conversations": data.get("conversations") or {}}
+    sc = _current_scope()
+    return {
+        "owner": _owner_cut(data, sc),
+        "social": data.get("social"),
+        "conversations": data.get("conversations") or {},
+        "owners": dict(data.get("owners") or {}) if isinstance(data.get("owners"), dict) else {},
+        "scope": sc,
+    }
 
 
 def _later(*times: str | None) -> str | None:
@@ -69,7 +100,7 @@ def _later(*times: str | None) -> str | None:
 
 def owner_since() -> str | None:
     from ai import test_mode
-    return _later(_read().get("owner"), test_mode.since())
+    return _later(_owner_cut(_read()), test_mode.since())
 
 
 def social_since(conversation_id: int | None = None) -> str | None:

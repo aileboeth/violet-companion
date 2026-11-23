@@ -142,6 +142,36 @@ def test_standing_memories_order_stays_stable_across_turns(violetdb, monkeypatch
     assert order_a == order_b == order_c
 
 
+def test_standing_section_prefix_stays_identical_with_more_than_five_facts(violetdb, monkeypatch):
+    """With >5 standing facts, per-turn _user_message / phone_note must never change which 5 facts enter the
+    stable (cached) system prompt or their order."""
+    from ai.context_engine import ContextEngine
+    monkeypatch.setenv("VIOLET_MEMORY_STANDING_FACTS", "5")
+    for i, (text, imp) in enumerate([
+        ("用户喜欢喝冰美式咖啡", 5.0),
+        ("用户养了一只叫团子的橘猫", 4.5),
+        ("用户周末常去打羽毛球", 4.0),
+        ("用户是计算机专业研究生", 3.5),
+        ("用户蓝牙连的是手表不是耳机", 3.0),
+        ("用户平时爱玩塞尔达传说", 2.0),
+        ("用户对海鲜轻微过敏", 1.5),
+        ("用户喜欢在下雨天听爵士乐", 1.0),
+    ]):
+        violetdb.add_event_memory(text, kind="fact", importance=imp)
+    engine = ContextEngine(violetdb)
+    sec_a, ids_a = engine._standing_section({"_user_message": "昨晚打塞尔达打到两点", "phone_note": "在玩塞尔达"})
+    sec_b, ids_b = engine._standing_section({"_user_message": "海鲜过敏又犯了，听听爵士乐", "phone_note": "连着蓝牙手表"})
+    sec_c, ids_c = engine._standing_section({})
+    assert sec_a.render() == sec_b.render() == sec_c.render()
+    assert ids_a == ids_b == ids_c and len(ids_a) == 5
+    # Verify stable (non-volatile) sections from build() are byte-for-byte identical across turns
+    pkt_1 = engine.build("chat", "昨晚打塞尔达打到两点", {"_user_message": "昨晚打塞尔达打到两点"})
+    pkt_2 = engine.build("chat", "海鲜过敏又犯了", {"_user_message": "海鲜过敏又犯了"})
+    stable_1 = [s for s in pkt_1.sections if s not in pkt_1.volatile]
+    stable_2 = [s for s in pkt_2.sections if s not in pkt_2.volatile]
+    assert stable_1 == stable_2
+
+
 def test_agent_cache_key_scopes_mode_and_persona(violetdb):
     from ai import memory_scope
     from ai.agents.base_agent import _CALL_CONTEXT
@@ -164,7 +194,7 @@ def test_agent_cache_key_scopes_mode_and_persona(violetdb):
             assert chat._cache_key() == "violet-ChatAgent-stepsister-proactive"
         finally:
             _CALL_CONTEXT.reset(tok2)
-    # MemoryAgent marks its final leading system message for Claude cache breakpoints without splitting leading systems
+    # MemoryAgent merges its leading system instructions into one system block with a Claude cache breakpoint
     tok3 = _CALL_CONTEXT.set({})
     try:
         mem_msgs = mem.build_context_messages("今天吃了拉面")
@@ -173,7 +203,7 @@ def test_agent_cache_key_scopes_mode_and_persona(violetdb):
     from ai import model_params as mp
     applied = mp.apply({"model": "claude-opus-5-5", "messages": mem_msgs, "cache_key": "violet-MemoryAgent"})
     sys_msgs = [m for m in applied["messages"] if m["role"] == "system"]
-    assert len(sys_msgs) >= 5
+    assert len(sys_msgs) == 1
     assert isinstance(sys_msgs[-1]["content"], list) and sys_msgs[-1]["content"][0]["cache_control"] == {"type": "ephemeral"}
 
 

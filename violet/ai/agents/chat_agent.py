@@ -136,7 +136,11 @@ def compose(stable: list[str], history: list[dict[str, Any]], notes: list[str], 
         if marks:                                    # a gap in the chat: said in a user turn, never as her words
             add("user", RECORD_NOTE + "".join(marks))
             marks = []
-        add("user" if role == "user" else "assistant", text)
+        target_role = "user" if role == "user" else "assistant"
+        if target_role == "assistant" and len(out) == 1:
+            # strict Gemini/OpenAI relays reject a conversation that starts with an assistant turn right after system
+            add("user", RECORD_NOTE + "（接着之前的聊天）")
+        add(target_role, text)
     if len(out) > 1:
         out[-1] = {**out[-1], "_cache_break": True}
 

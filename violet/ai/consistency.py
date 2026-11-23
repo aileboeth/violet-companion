@@ -33,6 +33,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import timedelta
@@ -121,6 +122,7 @@ CLAUSE_SPLIT_RE = re.compile(r"[，,。！!？?；;~～…]+")
 # possessive ("要是我也有个英语老师") are not touched.
 _OWNED_ROLE_RE = re.compile(r"(我们|我的)的?([一-鿿]{0,4}?)(老师|导师|同学|室友|班主任|辅导员|学校|班上|公司|单位|老板|同事|领导)")
 _NOT_A_MODIFIER = set("去问找跟和给让叫说告帮请见想要会能起也都还就是像当被把对向天")    # 天: "我的天" (an exclamation)
+_WORK_BACKSTORY_RE = re.compile(r"我(?:今天|明天|昨天)?(?:要|得|在)?去?(?:上班|下班|加班|出差)")
 
 
 CLAIMS_HUMAN_RE = re.compile(r"我(是|也是|就是|可是)(个|一个)?(真人|真实的人|人类|活人|活生生的人)")
@@ -173,13 +175,26 @@ def _content_bigrams(text: str) -> set[str]:
 
 def backed_by(text: str, content: str) -> bool:
     """A recorded event backs a line when they share content -- same thresholds as mentions_topic, without fillers."""
+    text_grams = _content_bigrams(text)
+    if not text_grams:
+        return False
     topic = _content_bigrams(content)
     if not topic:
         return False
-    hits = topic & _content_bigrams(text)
+    hits = topic & text_grams
     if len(topic) <= 4:
         return len(hits) >= 1
-    return len(hits) >= 2 and len(hits) / len(topic) >= 0.25
+    if len(hits) >= 3 or (len(hits) >= 2 and len(hits) / len(topic) >= 0.25):
+        return True
+    clauses = [c.strip() for c in re.split(r"[，,。；;]+", content or "") if c.strip()]
+    if len(clauses) > 1:
+        for clause in clauses:
+            ctopic = _content_bigrams(clause)
+            if len(ctopic) >= 4:
+                chits = ctopic & text_grams
+                if len(chits) >= 2 and len(chits) / len(ctopic) >= 0.25:
+                    return True
+    return False
 
 
 _POSSESSION_CLAIM_RE = re.compile(r"(带|拿|买|借)(回|到)")
@@ -341,6 +356,10 @@ class ConsistencyGuard:
             kin = re.sub(r"^我(们家|们|的|和|跟|家)?", "", match.group(0)) if match else ""
             if match and not (call and kin and kin in call and call in text):
                 found.append(Violation("forbidden_backstory", f"matches {pattern.pattern}"))
+        if not found and any("上班" in p.pattern for p in self.core.forbidden_backstory()):
+            work_match = _WORK_BACKSTORY_RE.search(text)
+            if work_match:
+                found.append(Violation("forbidden_backstory", f"matches {_WORK_BACKSTORY_RE.pattern}"))
         if not found and not self.core.has_school:         # 2026-11-12: a persona that goes to school has classmates
             claim = owned_role_claim(text)                 # phase 9.4 real run: "我们英语老师要是也这样就好了"
             if claim:
@@ -455,17 +474,33 @@ class ConsistencyGuard:
 
     def check_reply(self, text: str, now: str | None = None) -> list[Violation]:
         now = now or self.db.now()
-        recent = self.db.fetch_all("SELECT content, occurred_at FROM life_events WHERE status = 'happened' AND is_virtual = 1")
+        recent = self.db.fetch_all(
+            "SELECT content, occurred_at, thread_id, source, source_detail "
+            "FROM life_events WHERE status = 'happened' AND is_virtual = 1"
+        )
         recent = [e for e in recent if parse_time(e["occurred_at"]) <= parse_time(now)]
         # phase 8.9: "把几首钢琴曲从头听了一遍" is backed by its configured details (德彪西的《月光》…), so naming
         # one of those pieces is not an unrecorded experience
         backs = lambda text, content: mentions_life_strict(text, content, self.config)
         open_plans = self.db.fetch_all("SELECT content FROM life_plans WHERE status IN ('planned', 'active', 'paused')")
-        from ai.daily_life import life_terms
+        from ai.daily_life import SOURCE as DAILY_SOURCE, daily_doing_for, doing_matches, life_terms
         reading_terms = [t for r in self.db.fetch_all("SELECT title FROM life_threads WHERE status = 'active'")
                          for t in life_terms(r["title"], self.config)]
         backstory = self._backstory_lines()
         experiences = self._user_experiences()
+
+        def _daily_doing(event: dict[str, Any]) -> str:
+            raw = event.get("source_detail")
+            if isinstance(raw, dict) and raw.get("doing"):
+                return str(raw["doing"])
+            if isinstance(raw, str) and raw.strip():
+                try:
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, dict) and parsed.get("doing"):
+                        return str(parsed["doing"])
+                except ValueError:
+                    pass
+            return daily_doing_for(event.get("content") or "", self.config)
         # phase 5B: what web pages say is never Violet's own experience
         finding_titles = [r["title"] for r in self.db.fetch_all(
             "SELECT title FROM web_findings WHERE status = 'active' ORDER BY id DESC LIMIT 60")]
@@ -504,9 +539,21 @@ class ConsistencyGuard:
                 continue
             as_done = EXPERIENCE_AS_DONE_RE.sub(r"\1了", line)      # records are written in the completed form
             claims_completion = bool(COMPLETION_RE.search(line))
-            # a progress event ("读了《边城》的一部分") does not back a claim of finishing it
-            if any(backs(as_done, e["content"]) and (not claims_completion or COMPLETION_RE.search(e["content"]))
-                   for e in recent):
+
+            # a progress event on an ongoing narrative thread ("读了《边城》的一部分") does not back a claim of
+            # finishing it; already-completed single-shot events (thread_id IS NULL, e.g. life_daily) do.
+            def _event_backs(e: dict[str, Any]) -> bool:
+                if e.get("thread_id") is not None and claims_completion and not COMPLETION_RE.search(e["content"]):
+                    return False
+                if backs(as_done, e["content"]):
+                    return True
+                if e.get("source") == DAILY_SOURCE:
+                    doing = _daily_doing(e)
+                    if doing and doing_matches(as_done, doing):
+                        return True
+                return False
+
+            if any(_event_backs(e) for e in recent):
                 continue
             if backstory and any(backs(as_done, b) for b in backstory):
                 continue

@@ -42,6 +42,7 @@ import shlex
 import shutil
 import socket
 import sqlite3
+import stat
 import subprocess
 import sys
 import tarfile
@@ -1070,35 +1071,220 @@ TASK_ACTIONS = {"relay-install": ("relay", "install"), "relay-set-port": ("relay
 PROGRESS_STALE_SECONDS = 1800
 
 
+def _is_link_or_junction(path: Path) -> bool:
+    """True for POSIX/Windows symlinks and Windows NTFS junctions/reparse points (including broken links)."""
+    if path.is_symlink():
+        return True
+    isjunction = getattr(os.path, "isjunction", None)
+    if isjunction is not None:
+        try:
+            if isjunction(path):
+                return True
+        except OSError:
+            pass
+    if os.name == "nt":
+        try:
+            st = os.lstat(path)
+            if getattr(st, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+                return True
+        except OSError:
+            pass
+    return False
+
+
+def _resolve_ids(user: str | None) -> tuple[int | None, int | None]:
+    if not user:
+        return None, None
+    try:
+        import pwd
+        account = pwd.getpwnam(user)
+        return account.pw_uid, account.pw_gid
+    except (ImportError, KeyError):
+        return None, None
+
+
+def _ensure_safe_dir(directory: Path, root: Path | None = None) -> list[Path]:
+    """Ensure ``directory`` exists without traversing any symlink or junction from ``root`` down."""
+    created: list[Path] = []
+    if root is not None:
+        try:
+            rel = directory.relative_to(root)
+        except ValueError as exc:
+            raise OSError(f"refusing to write outside {root}: {directory}") from exc
+        if ".." in rel.parts:
+            raise OSError(f"unsafe relative path: {directory}")
+        if _is_link_or_junction(root):
+            raise OSError(f"refusing to traverse symlink: {root}")
+        if not root.exists():
+            root.mkdir(parents=True, exist_ok=True)
+            created.append(root)
+        if _is_link_or_junction(root) or not root.is_dir():
+            raise OSError(f"not a safe directory: {root}")
+        cur = root
+        for part in rel.parts:
+            cur = cur / part
+            if _is_link_or_junction(cur):
+                raise OSError(f"refusing to traverse symlink: {cur}")
+            if not cur.exists():
+                os.mkdir(cur)
+                created.append(cur)
+            if _is_link_or_junction(cur) or not cur.is_dir():
+                raise OSError(f"not a safe directory: {cur}")
+        return created
+    if directory.name == "control" and _is_link_or_junction(directory.parent):
+        raise OSError(f"refusing to traverse symlink: {directory.parent}")
+    if _is_link_or_junction(directory):
+        raise OSError(f"refusing to traverse symlink: {directory}")
+    if not directory.exists():
+        missing: list[Path] = []
+        cur = directory
+        while not cur.exists():
+            if _is_link_or_junction(cur):
+                raise OSError(f"refusing to traverse symlink: {cur}")
+            missing.append(cur)
+            if cur.parent == cur:
+                break
+            cur = cur.parent
+        if _is_link_or_junction(cur):
+            raise OSError(f"refusing to traverse symlink: {cur}")
+        for d in reversed(missing):
+            os.mkdir(d)
+            created.append(d)
+    if _is_link_or_junction(directory) or not directory.is_dir():
+        raise OSError(f"not a safe directory: {directory}")
+    return created
+
+
+def _open_dir_fd_nofollow(directory: Path, root: Path | None = None) -> int:
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+    if root is None:
+        return os.open(directory, flags)
+    dfd = os.open(root, flags)
+    try:
+        for part in directory.relative_to(root).parts:
+            nxt = os.open(part, flags, dir_fd=dfd)
+            os.close(dfd)
+            dfd = nxt
+    except Exception:
+        os.close(dfd)
+        raise
+    return dfd
+
+
+def _safe_write_owned(path: Path, text: str, *, root: Path | None = None, user: str | None = None,
+                      mode: int = 0o640) -> None:
+    """Write ``text`` to ``path`` as root into a service-owned folder without following any file/dir symlink or
+    junction. Uses O_DIRECTORY|O_NOFOLLOW + dir_fd + O_CREAT|O_EXCL|O_NOFOLLOW + fchown + replace on POSIX."""
+    created = _ensure_safe_dir(path.parent, root=root)
+    uid, gid = _resolve_ids(user)
+    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set())
+                  and os.replace in getattr(os, "supports_dir_fd", set()))
+    tmp_name = f".{path.name}.{secrets.token_hex(6)}.tmp"
+    open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    if use_dir_fd:
+        dfd = _open_dir_fd_nofollow(path.parent, root=root)
+        try:
+            if path.parent in created and uid is not None and hasattr(os, "fchown"):
+                try:
+                    os.fchown(dfd, uid, gid if gid is not None else -1)
+                except OSError:
+                    pass
+            fd = os.open(tmp_name, open_flags, mode, dir_fd=dfd)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    if hasattr(os, "fchmod"):
+                        try:
+                            os.fchmod(fh.fileno(), mode)
+                        except OSError:
+                            pass
+                    if uid is not None and hasattr(os, "fchown"):
+                        try:
+                            os.fchown(fh.fileno(), uid, gid if gid is not None else -1)
+                        except OSError:
+                            pass
+                    fh.write(text)
+                os.replace(tmp_name, path.name, src_dir_fd=dfd, dst_dir_fd=dfd)
+            except Exception:
+                try:
+                    os.unlink(tmp_name, dir_fd=dfd)
+                except OSError:
+                    pass
+                raise
+        finally:
+            os.close(dfd)
+        return
+    if _is_link_or_junction(path.parent):
+        raise OSError(f"refusing to traverse symlink: {path.parent}")
+    tmp = path.parent / tmp_name
+    fd = os.open(tmp, open_flags, mode)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        if _is_link_or_junction(path.parent) or _is_link_or_junction(tmp):
+            raise OSError(f"refusing to replace through symlink: {path}")
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _safe_unlink(path: Path, *, root: Path | None = None) -> None:
+    if root is not None:
+        try:
+            rel = path.relative_to(root)
+        except ValueError:
+            return
+        if ".." in rel.parts or _is_link_or_junction(root):
+            return
+        cur = root
+        for part in rel.parts[:-1]:
+            cur = cur / part
+            if _is_link_or_junction(cur) or not cur.exists():
+                return
+    elif _is_link_or_junction(path.parent) or (path.parent.name == "control" and _is_link_or_junction(path.parent.parent)):
+        return
+    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set())
+                  and os.unlink in getattr(os, "supports_dir_fd", set()))
+    if use_dir_fd:
+        try:
+            dfd = _open_dir_fd_nofollow(path.parent, root=root)
+        except OSError:
+            return
+        try:
+            os.unlink(path.name, dir_fd=dfd)
+        except OSError:
+            pass
+        finally:
+            os.close(dfd)
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 class Progress:
     """<data>/control/<name>-progress.json: what a root job (an update, a relay install) is doing right now, for the
-    Control Center's progress dialog. Written by root into the service account's folder: never through a link the
-    service account could have planted (O_EXCL temp file + rename), owned by that account so Violet can read it.
+    Control Center's progress dialog. Written by root into the service account's folder: never through a file or
+    directory link the service account could have planted, owned by that account so Violet can read it.
     Never carries secrets. A Progress without a path does nothing."""
 
-    def __init__(self, path: Path | None, user: str | None = None, **base: Any):
-        self.path, self.user, self.base = path, user, base
+    def __init__(self, path: Path | None, user: str | None = None, root: Path | None = None, **base: Any):
+        self.path, self.user, self.root, self.base = path, user, root, base
         self.started = int(time.time())
 
     def write(self, **fields: Any) -> None:
         if self.path is None:
             return
         entry = {**self.base, **fields, "started_at": self.started, "at": int(time.time())}
-        tmp = self.path.with_name(self.path.name + ".tmp")
         try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            tmp.unlink(missing_ok=True)
-            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o640)
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                if self.user and hasattr(os, "fchown"):
-                    try:
-                        import pwd
-                        account = pwd.getpwnam(self.user)
-                        os.fchown(fh.fileno(), account.pw_uid, account.pw_gid)
-                    except (ImportError, KeyError, OSError):
-                        pass
-                json.dump(entry, fh, ensure_ascii=False)
-            os.replace(tmp, self.path)
+            _safe_write_owned(self.path, json.dumps(entry, ensure_ascii=False),
+                              root=self.root, user=self.user, mode=0o640)
         except OSError:
             pass
 
@@ -1121,9 +1307,16 @@ def env_progress(layout: Layout, state: dict) -> Progress:
     environment; without it nothing is written."""
     value = os.environ.get("VIOLET_PROGRESS_FILE") or ""
     path = Path(value) if value else None
-    if path is not None and path.resolve().parent != (layout.data / "control").resolve():
-        path = None                                         # only Violet's own control folder
-    return Progress(path, state.get("user"), task="update")
+    control = layout.data / "control"
+    if path is not None:
+        if (_is_link_or_junction(layout.data) or _is_link_or_junction(control)
+                or _is_link_or_junction(path.parent) or _is_link_or_junction(path)
+                or path.name in ("", ".", "..")
+                or path.resolve().parent != control.resolve()):
+            path = None                                     # only Violet's own non-symlink control folder
+        else:
+            path = control / path.name
+    return Progress(path, state.get("user"), root=layout.data, task="update")
 
 
 def updater_units(layout: Layout) -> dict[str, str]:
@@ -1391,18 +1584,30 @@ def backup(layout: Layout, label: str = "manual") -> Path:
     try:
         work.mkdir(parents=True)
         for name, folder in (("config", layout.config), ("data", layout.data)):
-            if not folder.exists():
+            if _is_link_or_junction(folder) or not folder.is_dir():
                 continue
-            for path in folder.rglob("*"):
-                if not path.is_file() or path.name.endswith(("-wal", "-shm", "-journal")) or path.name in RUNTIME_FILES:
-                    continue
-                rel = Path(name) / path.relative_to(folder)
-                dest = work / rel
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                if _is_sqlite(path):
-                    _sqlite_copy(path, dest)
-                else:
-                    shutil.copy2(path, dest)
+            for dirpath, dirnames, filenames in os.walk(folder, followlinks=False):
+                root_p = Path(dirpath)
+                dirnames[:] = [d for d in dirnames if not _is_link_or_junction(root_p / d)]
+                for fname in filenames:
+                    if fname.endswith(("-wal", "-shm", "-journal")) or fname in RUNTIME_FILES:
+                        continue
+                    path = root_p / fname
+                    if _is_link_or_junction(path):
+                        continue
+                    try:
+                        st = os.lstat(path)
+                    except OSError:
+                        continue
+                    if not stat.S_ISREG(st.st_mode):
+                        continue
+                    rel = Path(name) / path.relative_to(folder)
+                    dest = work / rel
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    if _is_sqlite(path):
+                        _sqlite_copy(path, dest)
+                    else:
+                        _copy_regular_nofollow(path, dest)
         state = load_state(layout)
         (work / "backup.json").write_text(json.dumps({"created_at": stamp, "label": label,
                                                        "version": state.get("version"), "root": str(layout.root)},
@@ -1417,10 +1622,36 @@ def backup(layout: Layout, label: str = "manual") -> Path:
         shutil.rmtree(work, ignore_errors=True)
 
 
+def _copy_regular_nofollow(source: Path, dest: Path) -> None:
+    """Copy a regular file into the backup workspace without following symlinks."""
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    fd = os.open(source, flags)
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return
+        with os.fdopen(fd, "rb") as src_fh, open(dest, "wb") as dst_fh:
+            fd = -1
+            shutil.copyfileobj(src_fh, dst_fh)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+    try:
+        shutil.copystat(source, dest, follow_symlinks=False)
+    except OSError:
+        pass
+
+
 def _is_sqlite(path: Path) -> bool:
     try:
-        with open(path, "rb") as fh:
-            return fh.read(16) == b"SQLite format 3\x00"
+        if _is_link_or_junction(path):
+            return False
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        fd = os.open(path, flags)
+        try:
+            return os.read(fd, 16) == b"SQLite format 3\x00"
+        finally:
+            os.close(fd)
     except OSError:
         return False
 
@@ -1953,25 +2184,45 @@ UPDATE_MODES = ("auto", "notify", "manual")
 FAILED_RETRY_SECONDS = 24 * 3600
 
 
-def _read_small(path: Path, limit: int = 65536) -> bytes | None:
-    """A file in a folder the service user owns, read as root: never through a symlink, never more than ``limit``."""
+def _read_small(path: Path, limit: int = 65536, *, root: Path | None = None) -> bytes | None:
+    """A file in a folder the service user owns, read as root: never through a file or dir symlink, never > ``limit``."""
     try:
-        if path.is_symlink() or not path.is_file():
+        if root is not None:
+            rel = path.relative_to(root)
+            if ".." in rel.parts or _is_link_or_junction(root):
+                return None
+            cur = root
+            for part in rel.parts[:-1]:
+                cur = cur / part
+                if _is_link_or_junction(cur):
+                    return None
+        elif _is_link_or_junction(path.parent) or (path.parent.name == "control" and _is_link_or_junction(path.parent.parent)):
             return None
-        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        fd = os.open(path, flags)
+        if _is_link_or_junction(path) or not path.is_file():
+            return None
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+        use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                      and os.open in getattr(os, "supports_dir_fd", set()))
+        if use_dir_fd:
+            dfd = _open_dir_fd_nofollow(path.parent, root=root)
+            try:
+                fd = os.open(path.name, flags, dir_fd=dfd)
+            finally:
+                os.close(dfd)
+        else:
+            fd = os.open(path, flags)
         try:
             return os.read(fd, limit)
         finally:
             os.close(fd)
-    except OSError:
+    except (OSError, ValueError):
         return None
 
 
 def update_mode(layout: Layout) -> str:
     """auto | notify | manual -- the Control Center setting (data/control/settings.json), else the configuration
     file, else auto. Only one of three words is taken from these service-owned files; anything else means auto."""
-    raw = _read_small(layout.data / "control" / "settings.json")
+    raw = _read_small(layout.data / "control" / "settings.json", root=layout.data)
     try:
         value = (json.loads(raw.decode("utf-8")).get("values") or {}).get("VIOLET_UPDATE_MODE") if raw else None
     except (ValueError, AttributeError):
@@ -1989,14 +2240,13 @@ def update_mode(layout: Layout) -> str:
 def take_update_request(layout: Layout) -> str | None:
     """"manual" (the admin pressed "update now"), "auto" (the page saw a newer release in automatic mode) or None.
     The request file is removed first, so the path unit does not start the update again."""
+    if _is_link_or_junction(layout.data) or _is_link_or_junction(layout.data / "control"):
+        return None
     path = layout.data / "control" / "update-request"
     if not (path.is_symlink() or path.exists()):
         return None
-    raw = _read_small(path, 32) or b""
-    try:
-        path.unlink()
-    except OSError:
-        pass
+    raw = _read_small(path, 32, root=layout.data) or b""
+    _safe_unlink(path, root=layout.data)
     return "auto" if raw.strip() == b"auto" else "manual"
 
 
@@ -2025,7 +2275,7 @@ def auto_update(opts: Options, release: dict | None = None, now: Callable[[], fl
         return {"ok": True, "action": "skipped", "mode": mode}
     # 0.7.0: the Control Center's progress dialog follows this file (the page loses Violet while it restarts and
     # reads the outcome here afterwards)
-    progress = Progress(progress_path(layout, "update"), state.get("user"), task="update")
+    progress = Progress(progress_path(layout, "update"), state.get("user"), root=layout.data, task="update")
     progress(5, "检查新版本")
     try:
         rel = release or release_for(state, layout)
@@ -2062,14 +2312,13 @@ def auto_update(opts: Options, release: dict | None = None, now: Callable[[], fl
 def take_task_request(layout: Layout) -> str | None:
     """The word the Control Center left in <data>/control/task-request (removed first, so the path unit does not
     start again); "" for anything that is not one of TASK_ACTIONS; None when there is no request."""
+    if _is_link_or_junction(layout.data) or _is_link_or_junction(layout.data / "control"):
+        return None
     path = layout.data / "control" / "task-request"
     if not (path.is_symlink() or path.exists()):
         return None
-    raw = (_read_small(path, 64) or b"").strip().decode("ascii", "replace")
-    try:
-        path.unlink()
-    except OSError:
-        pass
+    raw = (_read_small(path, 64, root=layout.data) or b"").strip().decode("ascii", "replace")
+    _safe_unlink(path, root=layout.data)
     return raw if raw in TASK_ACTIONS else ""
 
 
@@ -2082,7 +2331,7 @@ def root_task(opts: Options, run: Callable[..., Any] = subprocess.run) -> dict[s
     task = take_task_request(layout)
     if task is None:
         return {"ok": True, "action": "none"}
-    progress = Progress(progress_path(layout, "task"), state.get("user"), task=task or "unknown")
+    progress = Progress(progress_path(layout, "task"), state.get("user"), root=layout.data, task=task or "unknown")
     if not task:
         progress.failed("不认识的请求，没有执行")
         return {"ok": False, "action": "rejected"}

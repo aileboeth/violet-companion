@@ -35,6 +35,9 @@ AFTER_CLASS_FRESH = timedelta(hours=3)
 DENSE_DAY_CLASSES = 4                 # a day with at least this many classes counts as full
 DENSE_WEEK_DAYS = 3                   # ... and this many full days in the next 7 make a dense week
 EXAM_WORDS = re.compile(r"(考试|考|测验|期中|期末|exam|quiz)", re.I)
+_EXAM_MENTION_RE = re.compile(r"(考试|小测|测验|期中|期末|(?<![思参])考(?![虑古察查勤究])|exam|quiz|顺顺利利)", re.I)
+_EXAM_WISH_RE = re.compile(r"(加油|顺利|别紧张)")
+_TOMORROW_OR_EXAM_RE = re.compile(r"(明天|明早|明儿|考)")
 PLAN_ONLY = "这是按课表推算的计划，不代表对方此刻真的在上课 / 下课 / 在哪里；对方自己说的情况优先。"
 TOPIC_PREFIX = "schedule:"
 
@@ -211,21 +214,36 @@ class Awareness:
                 "对方来消息就照常回复。")
 
 
+def _exam_generic_hit(text: str, moment: dict[str, Any]) -> bool:
+    if moment.get("kind") and moment["kind"] in text:
+        return True
+    if _EXAM_MENTION_RE.search(text):
+        return True
+    return bool(_TOMORROW_OR_EXAM_RE.search(text) and _EXAM_WISH_RE.search(text))
+
+
 def record_mentions(db, offered: list[dict[str, Any]], decision: dict[str, Any] | None, sent_text: str,
                     proactive_event_id: int | None) -> list[str]:
     """After a proactive message really went out: mark offered moments that the sent text actually touched."""
     from ai.schedule.access import mentions_course
     wanted = {str(x) for x in ((decision or {}).get("mentioned_schedule_ids") or []) if x}
     text = sent_text or ""
+    specific_exam_hits = {
+        m["id"] for m in offered
+        if m.get("type") == "exam_tomorrow"
+        and (m["id"] in wanted or (m.get("exam") and mentions_course(text, m["exam"])))
+    }
     used = []
     for m in offered:
         mtype = m.get("type")
-        hit = (
-            m["id"] in wanted
-            or (mtype == "exam_tomorrow" and (mentions_course(text, m["exam"]) or (m.get("kind") and m["kind"] in text)))
-            or (mtype == "classes_over_today" and bool(re.search(r"(下课|课上完|没课了|放学|上完课)", text)))
-            or (mtype == "dense_week" and bool(re.search(r"(课多|满课|课排得|这几天课|好几节课)", text)))
-        )
+        if mtype == "exam_tomorrow":
+            hit = (m["id"] in specific_exam_hits) or (not specific_exam_hits and _exam_generic_hit(text, m))
+        else:
+            hit = (
+                m["id"] in wanted
+                or (mtype == "classes_over_today" and bool(re.search(r"(下课|课上完|没课了|放学|上完课)", text)))
+                or (mtype == "dense_week" and bool(re.search(r"(课多|满课|课排得|这几天课|好几节课)", text)))
+            )
         if hit:
             db.add_topic_mention(m["id"], "violet_schedule", proactive_event_id=proactive_event_id)
             used.append(m["id"])

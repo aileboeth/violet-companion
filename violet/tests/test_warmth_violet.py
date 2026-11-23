@@ -78,3 +78,41 @@ def test_closeness_distance_via_memory_and_clear(violetdb):
     assert relationship.assess(violetdb).stage != "distance"
     assert relationship.warmth_level(relationship.assess(violetdb), persona_stage=stage2) == 3
     assert relationship.warmth_level(relationship.assess(violetdb), rel_kind="partner") == 2
+
+
+def test_distance_suppresses_intimate_stage_in_bond_section_for_close_and_persona(tmp_path, monkeypatch, violetdb):
+    monkeypatch.setenv("VIOLET_DATA_DIR", str(tmp_path / "data"))
+    from ai import persona_templates as pt
+    from ai import relationship
+    from ai.context_engine import ContextEngine
+    from ai.profile_store import Profile
+
+    # Seed 29 distinct chat days so both violet (Stage 3 黏人偏爱) and stepsister (Stage 4 说开) reach top stage
+    for d in range(1, 30):
+        violetdb.add_user_message("text", f"第{d}天聊聊", created_at=f"2026-10-{d:02d}T20:00:00+08:00")
+
+    # 1. Default violet (rel.kind == "close"): distance suppresses Stage 3 黏人偏爱 & sample quote
+    pt.switch(violetdb, "violet", "keep")
+    before_v = "\n".join(ContextEngine(violetdb)._bond_section().lines)
+    assert "黏人偏爱" in before_v and "明明才半天没说话" in before_v
+
+    Profile(violetdb).preferences.set_explicit(
+        "closeness", "distance", evidence="以后保持点距离，别撒娇", user_message="认真说，以后保持点距离，别撒娇"
+    )
+    during_v = "\n".join(ContextEngine(violetdb)._bond_section().lines)
+    assert "保持轻松友好的距离" in during_v
+    assert "黏人偏爱" not in during_v and "你们现在的阶段" not in during_v and "明明才半天没说话" not in during_v
+
+    # 2. Built-in persona stepsister (rel.kind == "persona"): keeps core identity, suppresses Stage 4 说开, adds distance
+    pt.switch(violetdb, "stepsister", "keep")
+    during_s = "\n".join(ContextEngine(violetdb)._bond_section().lines)
+    assert "没有血缘的继妹" in during_s and "保持轻松友好的距离" in during_s
+    assert "说开" not in during_s and "你们现在的阶段" not in during_s and "拿妹妹当借口" not in during_s
+
+    # 3. After clear_distance(), both personas cleanly restore their stage instructions
+    relationship.clear_distance(violetdb)
+    after_s = "\n".join(ContextEngine(violetdb)._bond_section().lines)
+    assert "保持轻松友好的距离" not in after_s and "说开" in after_s and "拿妹妹当借口" in after_s
+    pt.switch(violetdb, "violet", "keep")
+    after_v = "\n".join(ContextEngine(violetdb)._bond_section().lines)
+    assert "保持轻松友好的距离" not in after_v and "黏人偏爱" in after_v
