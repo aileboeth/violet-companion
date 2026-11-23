@@ -302,12 +302,18 @@ def _safe_write_owned(path: Path, text: str, *, root: Path | None = None, user: 
                       mode: int = 0o640) -> None:
     created = _ensure_safe_dir(path.parent, root=root)
     uid, gid = _resolve_ids(user)
-    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
-                  and os.open in getattr(os, "supports_dir_fd", set())
-                  and os.replace in getattr(os, "supports_dir_fd", set()))
+    use_dir_fd = (os.name != "nt" and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set()))
     tmp_name = f".{path.name}.{secrets.token_hex(6)}.tmp"
     open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     if use_dir_fd:
+        if uid is not None and hasattr(os, "chown"):
+            for d in created:
+                if d != path.parent and not _is_link_or_junction(d):
+                    try:
+                        os.chown(d, uid, gid if gid is not None else -1, follow_symlinks=False)
+                    except OSError:
+                        pass
         dfd = _open_dir_fd_nofollow(path.parent, root=root)
         try:
             if path.parent in created and uid is not None and hasattr(os, "fchown"):
@@ -339,12 +345,29 @@ def _safe_write_owned(path: Path, text: str, *, root: Path | None = None, user: 
         finally:
             os.close(dfd)
         return
+    if uid is not None and hasattr(os, "chown"):
+        for d in created:
+            if not _is_link_or_junction(d):
+                try:
+                    os.chown(d, uid, gid if gid is not None else -1, follow_symlinks=False)
+                except OSError:
+                    pass
     if _is_link_or_junction(path.parent):
         raise OSError(f"refusing to traverse symlink: {path.parent}")
     tmp = path.parent / tmp_name
     fd = os.open(tmp, open_flags, mode)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            if hasattr(os, "fchmod"):
+                try:
+                    os.fchmod(fh.fileno(), mode)
+                except OSError:
+                    pass
+            if uid is not None and hasattr(os, "fchown"):
+                try:
+                    os.fchown(fh.fileno(), uid, gid if gid is not None else -1)
+                except OSError:
+                    pass
             fh.write(text)
         if _is_link_or_junction(path.parent) or _is_link_or_junction(tmp):
             raise OSError(f"refusing to replace through symlink: {path}")
@@ -372,7 +395,7 @@ def _safe_unlink(path: Path, *, root: Path | None = None) -> None:
                 return
     elif _is_link_or_junction(path.parent) or (path.parent.name == "control" and _is_link_or_junction(path.parent.parent)):
         return
-    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+    use_dir_fd = (os.name != "nt" and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
                   and os.open in getattr(os, "supports_dir_fd", set())
                   and os.unlink in getattr(os, "supports_dir_fd", set()))
     if use_dir_fd:

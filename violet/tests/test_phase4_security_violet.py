@@ -607,7 +607,13 @@ def test_p2_diagnostics_plan_findings_flags_proactive_only_tools_correctly():
 
 
 def test_p0_posix_dir_fd_and_fchown_path_simulated(tmp_path, monkeypatch):
-    """Exercise the POSIX O_DIRECTORY|O_NOFOLLOW + dir_fd + fchown + atomic replace branch even on Windows."""
+    """Simulate exact Linux CPython os.supports_dir_fd (NO os.replace in supports_dir_fd!) across all 5 tools.
+
+    Verifies:
+      - use_dir_fd is True on Linux even though os.replace is NOT in os.supports_dir_fd
+      - O_DIRECTORY|O_NOFOLLOW dir_fd walk + O_CREAT|O_EXCL|O_NOFOLLOW file open + src_dir_fd/dst_dir_fd replace
+      - Newly created control/ dir AND the file itself are fchown'd to the service user's uid/gid + fchmod'd
+    """
     import io
     from tools import violet_installer, violet_relay, violet_searxng, violet_snowluma, violet_voice
 
@@ -651,6 +657,9 @@ def test_p0_posix_dir_fd_and_fchown_path_simulated(tmp_path, monkeypatch):
     def fake_fchown(fd, uid, gid):
         events.append(("fchown", fd, uid, gid))
 
+    def fake_chown(path, uid, gid, *, follow_symlinks=True):
+        events.append(("chown", str(path), uid, gid, follow_symlinks))
+
     def fake_replace(src, dst, *, src_dir_fd=None, dst_dir_fd=None):
         events.append(("replace", str(src), str(dst), src_dir_fd, dst_dir_fd))
 
@@ -659,6 +668,22 @@ def test_p0_posix_dir_fd_and_fchown_path_simulated(tmp_path, monkeypatch):
 
     O_DIRECTORY = 0x10000
     O_NOFOLLOW = 0x20000
+    # Prepare directories BEFORE patching os.name to "posix" (Path() checks os.name on construction)
+    cases = []
+    for idx, (mod, fname, mode) in enumerate((
+        (violet_installer, "p.json", 0o640),
+        (violet_relay, "r.json", 0o600),
+        (violet_voice, "v.json", 0o640),
+        (violet_searxng, "s.json", 0o640),
+        (violet_snowluma, "q.json", 0o640),
+    )):
+        data_dir = tmp_path / f"linux_{idx}" / "data"
+        data_dir.mkdir(parents=True)
+        # Note: control/ does NOT exist yet so we also verify newly created control/ dir gets fchown'd!
+        target = data_dir / "control" / fname
+        cases.append((mod, data_dir, target, mode))
+
+    monkeypatch.setattr(os, "name", "posix")
     monkeypatch.setattr(os, "O_DIRECTORY", O_DIRECTORY, raising=False)
     monkeypatch.setattr(os, "O_NOFOLLOW", O_NOFOLLOW, raising=False)
     monkeypatch.setattr(os, "open", fake_open)
@@ -666,33 +691,126 @@ def test_p0_posix_dir_fd_and_fchown_path_simulated(tmp_path, monkeypatch):
     monkeypatch.setattr(os, "close", fake_close)
     monkeypatch.setattr(os, "fchmod", fake_fchmod, raising=False)
     monkeypatch.setattr(os, "fchown", fake_fchown, raising=False)
+    monkeypatch.setattr(os, "chown", fake_chown, raising=False)
     monkeypatch.setattr(os, "replace", fake_replace)
     monkeypatch.setattr(os, "unlink", fake_unlink)
-    monkeypatch.setattr(os, "supports_dir_fd", {fake_open, fake_replace, fake_unlink})
+    # Exact Linux CPython os.supports_dir_fd: contains os.open & os.unlink, NEVER os.replace!
+    monkeypatch.setattr(os, "supports_dir_fd", {fake_open, fake_unlink})
 
-    data_dir = tmp_path / "data"
-    (data_dir / "control").mkdir(parents=True)
-
-    for mod, call in (
-        (violet_installer, lambda: violet_installer._safe_write_owned(data_dir / "control" / "p.json", '{"a":1}', root=data_dir, user="violet", mode=0o640)),
-        (violet_relay, lambda: violet_relay._safe_write_owned(data_dir / "control" / "r.json", '{"a":1}', root=data_dir, user="violet", mode=0o600)),
-        (violet_voice, lambda: violet_voice._safe_write_owned(data_dir / "control" / "v.json", '{"a":1}', root=data_dir, user="violet", mode=0o640)),
-        (violet_searxng, lambda: violet_searxng._write_owned(data_dir / "control" / "s.json", '{"a":1}', "violet", mode=0o640, root=data_dir)),
-        (violet_snowluma, lambda: violet_snowluma._write_json(data_dir / "control" / "q.json", {"a": 1}, 1001, 1002, mode=0o640, root=data_dir)),
-    ):
+    for mod, data_dir, target, mode in cases:
         events.clear()
         if hasattr(mod, "_resolve_ids"):
             monkeypatch.setattr(mod, "_resolve_ids", lambda u: (1001, 1002))
-        call()
+        if mod is violet_installer:
+            mod._safe_write_owned(target, '{"a":1}', root=data_dir, user="violet", mode=mode)
+        elif mod is violet_relay:
+            mod._safe_write_owned(target, '{"a":1}', root=data_dir, user="violet", mode=mode)
+        elif mod is violet_voice:
+            mod._safe_write_owned(target, '{"a":1}', root=data_dir, user="violet", mode=mode)
+        elif mod is violet_searxng:
+            mod._write_owned(target, '{"a":1}', "violet", mode=mode, root=data_dir)
+        else:
+            mod._write_json(target, {"a": 1}, 1001, 1002, mode=mode, root=data_dir)
+
         dir_opens = [e for e in events if e[0] == "open" and (e[2] & O_DIRECTORY)]
         file_opens = [e for e in events if e[0] == "open" and (e[2] & os.O_CREAT)]
         replaces = [e for e in events if e[0] == "replace"]
         fchowns = [e for e in events if e[0] == "fchown"]
+        fchmods = [e for e in events if e[0] == "fchmod"]
         assert len(dir_opens) == 2, (mod.__name__, events)
         assert all((e[2] & O_NOFOLLOW) != 0 for e in dir_opens)
         assert len(file_opens) == 1
         assert (file_opens[0][2] & (os.O_EXCL | O_NOFOLLOW)) == (os.O_EXCL | O_NOFOLLOW)
         assert file_opens[0][4] is not None  # opened with dir_fd!
-        assert len(fchowns) == 1 and fchowns[0][2:] == (1001, 1002)
+        # Two fchown calls: (1) newly created control/ dir dfd, (2) temp file fd
+        assert len(fchowns) == 2, (mod.__name__, fchowns)
+        assert all(fc[2:] == (1001, 1002) for fc in fchowns)
+        assert len(fchmods) == 1 and fchmods[0][2] == oct(mode)
         assert len(replaces) == 1 and replaces[0][3] == replaces[0][4] == file_opens[0][4]
+
+
+def test_p0_posix_fallback_branch_still_fchowns_and_fchmods(tmp_path, monkeypatch):
+    """Even when os.supports_dir_fd lacks os.open (fallback branch), all 5 tools MUST still fchmod + fchown."""
+    import io
+    from tools import violet_installer, violet_relay, violet_searxng, violet_snowluma, violet_voice
+
+    events: list[tuple] = []
+    next_fd = [200]
+
+    def fake_open(path, flags, mode=0o777):
+        events.append(("open", str(path), flags, mode))
+        fd = next_fd[0]
+        next_fd[0] += 1
+        return fd
+
+    class FakeFH:
+        def __init__(self, fd):
+            self._fd = fd
+
+        def fileno(self):
+            return self._fd
+
+        def write(self, s):
+            return len(s)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake_fchmod(fd, mode):
+        events.append(("fchmod", fd, oct(mode)))
+
+    def fake_fchown(fd, uid, gid):
+        events.append(("fchown", fd, uid, gid))
+
+    def fake_chown(path, uid, gid, *, follow_symlinks=True):
+        events.append(("chown", str(path), uid, gid, follow_symlinks))
+
+    def fake_replace(src, dst):
+        events.append(("replace", str(src), str(dst)))
+
+    cases = []
+    for idx, (mod, fname, mode) in enumerate((
+        (violet_installer, "p.json", 0o640),
+        (violet_relay, "r.json", 0o600),
+        (violet_voice, "v.json", 0o640),
+        (violet_searxng, "s.json", 0o640),
+        (violet_snowluma, "q.json", 0o640),
+    )):
+        data_dir = tmp_path / f"fb_{idx}" / "data"
+        data_dir.mkdir(parents=True)
+        cases.append((mod, data_dir, data_dir / "control" / fname, mode))
+
+    monkeypatch.setattr(os, "open", fake_open)
+    monkeypatch.setattr(os, "fdopen", lambda fd, *a, **kw: FakeFH(fd))
+    monkeypatch.setattr(os, "fchmod", fake_fchmod, raising=False)
+    monkeypatch.setattr(os, "fchown", fake_fchown, raising=False)
+    monkeypatch.setattr(os, "chown", fake_chown, raising=False)
+    monkeypatch.setattr(os, "replace", fake_replace)
+    monkeypatch.setattr(os, "supports_dir_fd", set())
+
+    for mod, data_dir, target, mode in cases:
+        events.clear()
+        if hasattr(mod, "_resolve_ids"):
+            monkeypatch.setattr(mod, "_resolve_ids", lambda u: (1001, 1002))
+        if mod is violet_installer:
+            mod._safe_write_owned(target, '{"a":1}', root=data_dir, user="violet", mode=mode)
+        elif mod is violet_relay:
+            mod._safe_write_owned(target, '{"a":1}', root=data_dir, user="violet", mode=mode)
+        elif mod is violet_voice:
+            mod._safe_write_owned(target, '{"a":1}', root=data_dir, user="violet", mode=mode)
+        elif mod is violet_searxng:
+            mod._write_owned(target, '{"a":1}', "violet", mode=mode, root=data_dir)
+        else:
+            mod._write_json(target, {"a": 1}, 1001, 1002, mode=mode, root=data_dir)
+
+        fchowns = [e for e in events if e[0] == "fchown"]
+        fchmods = [e for e in events if e[0] == "fchmod"]
+        dir_chowns = [e for e in events if e[0] == "chown"]
+        assert len(fchowns) == 1 and fchowns[0][2:] == (1001, 1002), (mod.__name__, events)
+        assert len(fchmods) == 1 and fchmods[0][2] == oct(mode), (mod.__name__, events)
+        assert len(dir_chowns) == 1 and dir_chowns[0][2:] == (1001, 1002, False), (mod.__name__, events)
+
 

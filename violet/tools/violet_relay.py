@@ -512,12 +512,18 @@ def _safe_write_owned(path: Path, text: str, *, root: Path | None = None, user: 
     """Write ``text`` atomically without following file or directory symlinks/junctions."""
     created = _ensure_safe_dir(path.parent, root=root)
     uid, gid = _resolve_ids(user)
-    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
-                  and os.open in getattr(os, "supports_dir_fd", set())
-                  and os.replace in getattr(os, "supports_dir_fd", set()))
+    use_dir_fd = (os.name != "nt" and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+                  and os.open in getattr(os, "supports_dir_fd", set()))
     tmp_name = f"{path.name}.tmp" if chown is not None else f".{path.name}.{secrets.token_hex(6)}.tmp"
     open_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     if use_dir_fd:
+        if chown is None and uid is not None and hasattr(os, "chown"):
+            for d in created:
+                if d != path.parent and not _is_link_or_junction(d):
+                    try:
+                        os.chown(d, uid, gid if gid is not None else -1, follow_symlinks=False)
+                    except OSError:
+                        pass
         dfd = _open_dir_fd_nofollow(path.parent, root=root)
         try:
             if path.parent in created and user:
@@ -564,6 +570,13 @@ def _safe_write_owned(path: Path, text: str, *, root: Path | None = None, user: 
         return
     if path.parent in created and user and chown is not None:
         chown(path.parent, user)
+    elif chown is None and uid is not None and hasattr(os, "chown"):
+        for d in created:
+            if not _is_link_or_junction(d):
+                try:
+                    os.chown(d, uid, gid if gid is not None else -1, follow_symlinks=False)
+                except OSError:
+                    pass
     tmp = path.parent / tmp_name
     if chown is not None:
         if tmp.is_symlink() or tmp.is_file():
@@ -575,6 +588,16 @@ def _safe_write_owned(path: Path, text: str, *, root: Path | None = None, user: 
     fd = os.open(tmp, open_flags, mode)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            if hasattr(os, "fchmod"):
+                try:
+                    os.fchmod(fh.fileno(), mode)
+                except OSError:
+                    pass
+            if chown is None and uid is not None and hasattr(os, "fchown"):
+                try:
+                    os.fchown(fh.fileno(), uid, gid if gid is not None else -1)
+                except OSError:
+                    pass
             fh.write(text)
         if chown is not None and user:
             if _is_link_or_junction(tmp):
@@ -606,7 +629,7 @@ def _safe_unlink(path: Path, *, root: Path | None = None) -> None:
                 return
     elif _is_link_or_junction(path.parent) or (path.parent.name == "control" and _is_link_or_junction(path.parent.parent)):
         return
-    use_dir_fd = (hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
+    use_dir_fd = (os.name != "nt" and hasattr(os, "O_DIRECTORY") and hasattr(os, "O_NOFOLLOW")
                   and os.open in getattr(os, "supports_dir_fd", set())
                   and os.unlink in getattr(os, "supports_dir_fd", set()))
     if use_dir_fd:
