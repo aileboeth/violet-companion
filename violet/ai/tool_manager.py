@@ -610,7 +610,7 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
                      + "；对方讲明白的梗用 remember_meme 记下")
     from ai import mood
     if mood.enabled():
-        lines.append("- 心情：对方的话让你真心开心、被哄好或难受时调用 note_feeling（玩笑互损不用）")
+        lines.append("- 心情：对方真心夸/谢/哄（→better）或认真凶/嫌弃/赶你走（→worse）时必须先调 note_feeling（哪怕嘴上客气带过、简短退一步或发表情包，文字和表情包不记心情；闲聊和玩笑互损不用）")
     lines.append("- 以后：你自己主动发消息时什么工具都用不了；对方让你“晚点 / 等会儿帮我查”，现在就查好告诉对方，不要答应以后再查"
                  "（只有 set_reminder 设好的提醒会到点发）")
     return "\n".join(lines)

@@ -49,13 +49,24 @@ DRAMATIC_RE = re.compile(r"(车祸|事故|住院|手术|生病|分手|失业|辞
 # first person + a completed action within the same clause: "我昨天把《边城》读完了", "昨天我去了…"
 _PAST_VERBS = (r"(?:去了|读了|看了|听了|写了|买了|学了|练了|吃了|玩了|做了|逛了|见了|弹了|画了|记了|整理了|"
                r"爬了|跑了|游了|骑了|拍了|唱了|喝了|参加了|报了|逛完|爬完|跑完|"
-               r"读完|看完|听完|写完|整理好|整理完|听熟了)")
+               r"读完|看完|听完|写完|整理好|整理完|听熟了|"
+               r"吃完|喝完|煮了|煮好|做好|炒了|蒸了|烤了|烤好|泡了|泡好|洗完|洗了|睡醒|"
+               r"(?<![思参])考了|(?<![思参])考完|吃到|睡到|忙完|加了个?蛋)")
 PAST_CLAIM_RE = re.compile(r"我[^，,。！!？?；;、\n]{0,12}?" + _PAST_VERBS)
 # Phase 8.9.10 (real free chat ab-v2b): Chinese drops the "我" -- "看了开头几章，还没到特别揪心的地方" (asked "好看吗",
 # about a book she had only planned to pick up). A clause that starts with the completed action is her claim too.
-SUBJECTLESS_CLAIM_RE = re.compile(r"^(?:《[^》]{1,20}》|这本书?|那本书?)?(?:我)?"
-                                  r"(?:刚|刚刚|已经|今天|昨天|前天|早上|上午|中午|下午|晚上|这两天|最近)?(?:又|也|才)?"
-                                  + _PAST_VERBS)
+# 2026-11-25 (v0.7.80): also allow food/daily object subjects ("早饭吃到快中午", "面煮好了", "衣服洗完了") and two-part
+# time/aspect prefixes ("今天刚吃完午饭").
+_SUBJECTLESS_PREFIX = (
+    r"(?:《[^》]{1,20}》|这本书?|那本书?|"
+    r"(?:早|午|中|晚)(?:饭|餐)|(?:一[碗盘锅杯个份])?(?:饭|面条?|汤|粥|菜|饼干|面包|蛋糕|咖啡|奶茶|茶|牛奶|衣服|澡|头发|作业|笔记))?"
+)
+SUBJECTLESS_CLAIM_RE = re.compile(
+    r"^" + _SUBJECTLESS_PREFIX + r"(?:我)?"
+    r"(?:今天|昨天|前天|早上|上午|中午|下午|晚上|这两天|最近)?"
+    r"(?:刚才|刚刚|刚|已经|又|也|才){0,2}"
+    + _PAST_VERBS
+)
 # phase 8.9.13 (real ab-v2e): fear, worry, guesses and hearsay before the action are no claim either --
 # "我怕我看完难受好几天", "都说看完心里沉甸甸的"
 _HEDGE = (r"(没|不|别|想|打算|准备|要不要|要是|如果|会不会|可能会|下次|以后|觉得|感觉|好像|"
@@ -66,21 +77,55 @@ _LEANING_START_RE = re.compile(r"^(不过|但是|可是|只是|而且|所以|然
 _HEARSAY_RE = re.compile(r"(名字|这名|书名|片名|听说|有人说|都说|据说|人提|提起|说起|听人)")
 _VERB_FORMS = (
     r"(看了一下|看了看|看了一眼|看了眼|想了想|想了一下|看了你|听了你|吃了一惊|吃了亏|吃了一嘴|"
-    r"做了个(?:梦|鬼脸|深呼吸)|拍了(?:拍|一下|下)(?:桌子|大腿|脑门|胸口|脸|头)|"
+    r"做了个?(?:梦|鬼脸|深呼吸|决定|选择)|做好(?:了)?(?:心理)?(?:准备|打算|功课|计划)|"
+    r"拍了(?:拍|一下|下)(?:桌子|大腿|脑门|胸口|脸|头)|"
     r"喝了(?:一?口水)?[^，,。！!？?]{0,6}(?:呛|喷)|"
     # a reaction, not an experience: "我听了好难过", "看了都想哭", "听了差点笑出声"
     r"(?:听|看)了[^，,。！!？?]{0,5}(?:难过|开心|心疼|感动|生气|高兴|难受|激动|担心|羡慕|好笑|想哭|想笑|笑出|愣|呆|困|饿|馋))"
 )
+# comforting/conditional/advice phrases with resultatives ("忙完了就好", "考完了就好", "吃完了早点睡", "洗完澡了别着凉", "我忙完就来")
+_BARE_RESULTATIVE_RE = re.compile(r"(?:吃完|喝完|煮好|做好|烤好|泡好|洗完|考完|忙完|睡醒|写完|看完|读完|听完|逛完|爬完|跑完)$")
+_COMPLETED_PREFIX_RE = re.compile(r"(?:刚才|刚刚|刚|已经|昨天|前天|上学期)")
+_SLEEP_TIME_PREFIX_RE = re.compile(r"(?:刚才|刚刚|刚|已经|今天|昨天|前天|早上|上午|中午|下午|晚上)")
+_FUTURE_OR_ADVICE_RE = re.compile(
+    r"^[^，,。！!？?]{0,4}(?:"
+    r"就(?:好|行|对|成|轻松|解放|舒坦|舒服|清爽|精神|清醒|踏实|安心|省心|暖和|凉快|痛快|香|爽|美|开心|自在|没事|完事|歇|睡|休息|算|能|可以|别|来|找|去|不|没)|"
+    r"(?:还)?不得|岂不|还不|怕是|怕不是|肯定|绝对|估计|大概|都得|应该|能不|哪能|"
+    r"再(?:说|聊|回|看|吃|喝|睡|去|联系|找|忙|想)|"
+    r"记得|早点|好好|赶紧|快(?:去|吃|喝|睡|歇)|别(?:太|累|着凉|熬夜|多想|忘|客气)|"
+    r"歇[会儿一歇]|休息|吹干|趁热|发(?:给)?我看)"
+)
+# bare subjectless "V完就…" without 了/刚/我 ("洗完就清爽多了", "喝完就精神了") is conditional encouragement, not a past claim
+_BARE_SUBJECTLESS_JIU_RE = re.compile(r"^[^，,。！!？?了啦]{0,3}就")
+# evaluative commentary on a sequence of actions the user just described ("刚看完这个就去吃饭，心理素质挺强啊")
+_USER_TRAIT_COMMENT_RE = re.compile(
+    r"(?:心理素质|心态(?:真|挺|好|够|太)|胆子(?:真|挺|好|够|太)|心(?:真|挺|好)大|"
+    r"真有你的|不愧是你|挺佩服|真佩服|够淡定|挺淡定|好淡定|抗压能力)"
+)
+_SUBJECTLESS_COMFORT_TAIL_RE = re.compile(
+    r"^[^，,。！!？?]{0,3}(?:就(?:好|行|轻松|舒坦|暖和|歇|睡|休息)|早点睡|好好休|好好歇|记得休息|记得喝水|别太累|别着凉|再聊|再说)"
+)
+_SENTENCE_END_RE = re.compile(r"[。！!？?；;]")
+_USER_ATTRIBUTION_RE = re.compile(
+    r"你[^，,。！!？?；;\n]{0,8}?(?:说|提|讲|告诉|聊|发|写|问|报备|答应|承诺|打算|计划|决定)"
+    r"|按你(?:刚才|之前|中午|早上|上午|下午|晚上|昨天)?说的"
+)
 NOT_A_CLAIM_RE = re.compile(_HEDGE[:-1] + "|" + _VERB_FORMS[1:])
 _HEDGE_RE, _VERB_FORMS_RE = re.compile(_HEDGE), re.compile(_VERB_FORMS)
-_QUESTION_END_RE = re.compile(r"(吗|么|[?？])\s*$")
+_QUESTION_END_RE = re.compile(r"(?:吗|么|[?？]|(?<![淹沉埋吞隐出])没(?:有)?[呀啊呢嘛]?)\s*$")
 # Phase 7 B.9.1: the experiential aspect is a claim of having done it too ("我也爬过山", "我去过泰山",
 # "以前我爬过一次黄山", "我也去过"). Same verbs as the completed forms above -- the same policy, no wider net --
 # plus going / visiting / staying somewhere. "过来 / 过去" (a direction) is not an experience.
-_EXPERIENCE_VERBS = "去|读|看|听|写|买|学|练|吃|玩|做|逛|见|弹|画|记|爬|跑|游|骑|拍|唱|喝|参加|报|到|登|住"
+_EXPERIENCE_VERBS = r"去|读|看|听|写|买|学|练|吃|玩|做|逛|见|弹|画|记|爬|跑|游|骑|拍|唱|喝|参加|报|到|登|住|(?<![思参])考|煮|烤|泡|洗|睡"
 EXPERIENCE_CLAIM_RE = re.compile(rf"我[^，,。！!？?；;、\n]{{0,12}}?(?:{_EXPERIENCE_VERBS})过(?![来去])")
-# only for the experiential form: never ("从未去过") and questions ("我们一起去过吗") are not claims
-EXPERIENCE_NOT_A_CLAIM_RE = re.compile(r"(从未|未曾|(?:吗|么)$)")
+SUBJECTLESS_EXPERIENCE_RE = re.compile(
+    r"^(?=(?:刚才|刚刚|刚|已经|以前|之前|去年|上学期|上个月|上周|前阵子|昨天|今天|前天))"
+    r"(?:以前|之前|去年|上学期|上个月|上周|前阵子|昨天|今天|前天)?"
+    r"(?:刚才|刚刚|刚|已经|也|才|就){0,2}"
+    r"(?:吃|喝|(?<![思参])考|去|看|读|煮|烤|泡|洗)过(?![来去头])"
+)
+# only for the experiential form: never ("从未去过") and questions ("我们一起去过吗", "我吃过没") are not claims
+EXPERIENCE_NOT_A_CLAIM_RE = re.compile(r"(从未|未曾|(?:吗|么|(?<![淹沉埋吞隐出])没(?:有)?[呀啊呢嘛]?)\s*$)")
 # a recorded "读了几章《边城》" backs "我读过《边城》": compare the experiential form as the completed one
 EXPERIENCE_AS_DONE_RE = re.compile(rf"({_EXPERIENCE_VERBS})过(?![来去])")
 USER_REFERENCE_RE = re.compile(r"你")
@@ -101,7 +146,7 @@ WEB_ACTION_RE = re.compile(
     r"(查|搜|搜索|看|读|翻|点开)(了|过|到)?(一下|下|一遍)?(网上|网页|原文|文章|这篇|那篇|报道|新闻|资料|搜索结果|链接|结果|官网|公告)"
     r"|(刚|刚刚|刚才)(帮你)?(查|搜|搜索|看)(了|过)?(一下|下)?"
     r"|(网上|搜索结果|原文|那篇|这篇)(里|上)?(说|写|提到)")
-LIVED_RE = re.compile(r"(去了|去过|吃了|喝了|见了|见到|买了|玩了|参加了|逛了|拍了)")
+LIVED_RE = re.compile(r"(去了|去过|吃了|吃完|吃到|喝了|喝完|煮了|煮好|烤了|烤好|泡了|泡好|见了|见到|买了|玩了|参加了|逛了|拍了|(?<![思参])考了|(?<![思参])考完|(?<![思参])考过)")
 # Phase 9.4.2: the act of looking at the user's own timetable this turn ("看了下你的课表", "查了一下课表").
 SCHEDULE_ACTION_RE = re.compile(
     r"(查|看|翻|对)(了|过)?(一下|下|一眼|了一下)?(你的)?(课表|课程表)"
@@ -226,19 +271,46 @@ _ASKING_WORD_RE = re.compile(r"(什么|啥|哪|谁|怎么|有没有|是不是)")
 
 
 def _claims(line: str) -> list[str]:
-    out, future = [], False
+    out, future, user_attributed = [], False, False
     pieces = re.split(f"({CLAUSE_SPLIT_RE.pattern})", line)
-    for i in range(0, len(pieces), 2):
-        clause, after = pieces[i], (pieces[i + 1] if i + 1 < len(pieces) else "")
+    # Pre-scan sentence spans for second-person trait commentary ("刚看完这个就去吃饭，心理素质挺强啊")
+    clauses = [(pieces[i], pieces[i + 1] if i + 1 < len(pieces) else "") for i in range(0, len(pieces), 2)]
+    sent_start = 0
+    trait_comment_idx: set[int] = set()
+    for idx, (clause, after) in enumerate(clauses):
+        if _SENTENCE_END_RE.search(after) or idx == len(clauses) - 1:
+            span = clauses[sent_start:idx + 1]
+            span_text = "".join(c for c, _ in span)
+            if "我" not in span_text and any(_USER_TRAIT_COMMENT_RE.search(c) for c, _ in span):
+                for j in range(sent_start, idx + 1):
+                    if "就" in clauses[j][0] and not _USER_TRAIT_COMMENT_RE.search(clauses[j][0]):
+                        trait_comment_idx.add(j)
+            sent_start = idx + 1
+
+    for idx, (clause, after) in enumerate(clauses):
         asking = bool(re.search(r"[?？]", after) or _ASKING_WORD_RE.search(clause))
-        part = _claim(clause, subjectless=not (future or asking))
+        has_self = bool(re.search(r"我", clause))
+        if has_self and not _USER_ATTRIBUTION_RE.search(clause):
+            user_attributed = False
+        is_trait_comment = idx in trait_comment_idx
+        part = _claim(
+            clause,
+            subjectless=not (future or asking or user_attributed or is_trait_comment),
+            user_attributed=user_attributed or is_trait_comment,
+        )
         if part is not None:
             out.append(part)
-        future = future or bool(_FUTURE_RE.search(clause))
+        if _SENTENCE_END_RE.search(after):
+            future = False
+            user_attributed = False
+        else:
+            future = future or bool(_FUTURE_RE.search(clause))
+            if _USER_ATTRIBUTION_RE.search(clause) and not asking:
+                user_attributed = True
     return out
 
 
-def _claim(clause: str, subjectless: bool = True) -> str | None:
+def _claim(clause: str, subjectless: bool = True, user_attributed: bool = False) -> str | None:
     """The part of a clause that claims Violet did something (from its start to the claimed action), or None.
 
     Phase 8.9.10: for completed actions a hedge or "你" counts only BEFORE the action -- "我记了两处想跟你说的" is a claim
@@ -251,15 +323,152 @@ def _claim(clause: str, subjectless: bool = True) -> str | None:
                                          if subjectless and not _QUESTION_END_RE.search(clause) else None)
     if m is not None:
         part = clause[:m.end()]
-        return None if _HEDGE_RE.search(part) else part
+        if _HEDGE_RE.search(part):
+            return None
+        tail = clause[m.end():]
+        if _BARE_RESULTATIVE_RE.search(m.group(0)) and not _COMPLETED_PREFIX_RE.search(part):
+            if _FUTURE_OR_ADVICE_RE.search(tail) or ("我" not in part and _BARE_SUBJECTLESS_JIU_RE.search(tail)):
+                return None
+        if "我" not in part and not _COMPLETED_PREFIX_RE.search(part) and _SUBJECTLESS_COMFORT_TAIL_RE.search(tail):
+            return None
+        if (m.group(0).endswith("睡到") and "自然醒" in tail
+                and not _SLEEP_TIME_PREFIX_RE.search(part) and "我" not in part and not re.match(r"^自然醒[了啦]", tail)):
+            return None
+        return part
     if NOT_A_CLAIM_RE.search(clause):
         return None
     if EXPERIENCE_CLAIM_RE.search(clause) and not EXPERIENCE_NOT_A_CLAIM_RE.search(clause):
         if "听过" in clause and _HEARSAY_RE.search(clause):
             return None
         return clause
-    if STATE_CLAIM_RE.search(clause) and not STATE_HEDGE_RE.search(clause) and not USER_REFERENCE_RE.search(clause):
+    if (subjectless and not _QUESTION_END_RE.search(clause)
+            and SUBJECTLESS_EXPERIENCE_RE.search(clause) and not EXPERIENCE_NOT_A_CLAIM_RE.search(clause)):
         return clause
+    if (not (user_attributed and "我" not in clause)
+            and STATE_CLAIM_RE.search(clause) and not STATE_HEDGE_RE.search(clause) and not USER_REFERENCE_RE.search(clause)):
+        return clause
+    return None
+
+
+# 2026-11-25 (v0.7.80): lightweight deterministic same-day self-contradiction guard.
+# Compares factual statements Violet made about herself today (meals eaten vs not eaten, late breakfast after
+# already finishing lunch, stayed-in-all-day after already going out) -- time-directional, zero false positives.
+_MEAL_TERMS = {
+    "breakfast": r"(?:早饭|早餐|早点)",
+    "lunch": r"(?:午饭|午餐|中饭)",
+    "dinner": r"(?:晚饭|晚餐)",
+}
+_MEAL_LABELS = {"breakfast": "早饭", "lunch": "午饭", "dinner": "晚饭"}
+_MEAL_NEG_OR_PLAN_RE = re.compile(r"(?:没|不|别|还没|未|想|打算|准备|要去|待会|等会|一会儿|等下|再吃|要不要)")
+_MEAL_HYPO_RE = re.compile(r"(?:如果|要是|本来|差点|以为|听说|都说|据说)")
+_NON_TODAY_RE = re.compile(
+    r"(?:昨天|昨晚|昨儿|前天|大前天|明天|明早|明晚|后天|大后天|"
+    r"上周|上礼拜|上星期|上个月|上学期|去年|前年|以前|之前|上次|那天|那次|周末|平时|一般|每次|通常)"
+)
+_LATE_BREAKFAST_RE = re.compile(
+    r"(?:早饭|早餐)[^，,。！!？?]{0,4}吃到(?:快)?中午|快中午才吃(?:上|完)?(?:早饭|早餐)"
+)
+_WENT_OUT_RE = re.compile(
+    r"(?:刚才|刚刚|刚|今天|早上|上午|中午|下午|晚上|已经)?(?:出门[了啦]|"
+    r"去了(?:公园|书店|超市|咖啡馆|图书馆|食堂|操场|菜市场|后街|小卖部|便利店|文具店|面包店|花店|奶茶店|教室|教学楼|活动室|自习室)|"
+    r"去(?:公园|书店|超市|咖啡馆|图书馆|操场|后街|夜市)[^，,。！!？?]{0,6}[了啦完])"
+)
+_STAYED_IN_ALL_DAY_RE = re.compile(
+    r"(?:今天|一整天|一天都|全天)都?(?:没出门|没有出门|一步没出|一直在家|一直待在家|一直宅在家|哪儿?[也没都]没去)"
+)
+_MEAL_ATE_RES = {
+    meal: (
+        re.compile(rf"(?:吃完|吃过|吃了|刚吃|已经吃|吃好|吃到)[^，,。！!？?]{{0,4}}{term}"),
+        re.compile(rf"{term}[^，,。！!？?]{{0,6}}(?:吃完|吃过|吃了|吃好|吃到)"),
+    )
+    for meal, term in _MEAL_TERMS.items()
+}
+_MEAL_NOT_EATEN_RES = {
+    meal: (
+        re.compile(rf"(?:还没|没有|一直没|根本没|没)(?:来得及)?吃(?![饱完好多少啥什么几口太])(?:过|完|上)?[^，,。！!？?]{{0,3}}{term}"),
+        re.compile(rf"{term}[^，,。！!？?]{{0,4}}(?:还没|没有|一直没|根本没|没)(?:来得及)?吃(?![饱完好多少啥什么几口太])"),
+    )
+    for meal, term in _MEAL_TERMS.items()
+}
+_BREAKFAST_SKIPPED_RE = re.compile(
+    r"(?:(?:今天|早上)(?:没吃|跳过|省了|没来得及吃)(?:早饭|早餐)|"
+    r"(?:早饭|早餐)(?:没吃|省了|跳过了)(?![饱完好多少啥什么几口太呢呀哦]))"
+)
+
+
+def _extract_today_facts(text: str) -> set[str]:
+    """Extract monotonic self-facts stated by Violet in ``text`` (ignoring questions, hedges, non-today days, and user references)."""
+    facts: set[str] = set()
+    for raw_line in (text or "").splitlines():
+        in_other_day = False
+        user_attributed = False
+        pieces = re.split(f"({CLAUSE_SPLIT_RE.pattern})", raw_line)
+        for i in range(0, len(pieces), 2):
+            clause = pieces[i].strip()
+            after = pieces[i + 1] if i + 1 < len(pieces) else ""
+            if not clause:
+                if _SENTENCE_END_RE.search(after):
+                    user_attributed = False
+                continue
+            has_self = bool(re.search(r"我", clause))
+            if has_self and not _USER_ATTRIBUTION_RE.search(clause):
+                user_attributed = False
+            asking = bool(re.search(r"[?？]", after) or _QUESTION_END_RE.search(clause) or _ASKING_WORD_RE.search(clause))
+            if _USER_ATTRIBUTION_RE.search(clause) and not asking:
+                user_attributed = True
+            has_today = "今天" in clause
+            if has_today:
+                in_other_day = False
+            if _NON_TODAY_RE.search(clause):
+                if not has_today:
+                    in_other_day = True
+                if _SENTENCE_END_RE.search(after):
+                    user_attributed = False
+                continue
+            if in_other_day or user_attributed or USER_REFERENCE_RE.search(clause) or asking or _MEAL_HYPO_RE.search(clause):
+                if _SENTENCE_END_RE.search(after):
+                    user_attributed = False
+                continue
+            if _LATE_BREAKFAST_RE.search(clause) and not _MEAL_NEG_OR_PLAN_RE.search(clause[:_LATE_BREAKFAST_RE.search(clause).start()]):
+                facts.add("late_breakfast")
+                facts.add("ate:breakfast")
+            for meal, (p1, p2) in _MEAL_NOT_EATEN_RES.items():
+                if p1.search(clause) or p2.search(clause):
+                    facts.add(f"not_eaten:{meal}")
+            if "还没" not in clause and _BREAKFAST_SKIPPED_RE.search(clause) and not re.search(r"[呢呀哦]$", clause):
+                facts.add("skipped:breakfast")
+            for meal, (p1, p2) in _MEAL_ATE_RES.items():
+                if f"not_eaten:{meal}" in facts:
+                    continue
+                m = p1.search(clause) or p2.search(clause)
+                if m is not None and not _MEAL_NEG_OR_PLAN_RE.search(clause[:m.end()]):
+                    facts.add(f"ate:{meal}")
+            m_out = _WENT_OUT_RE.search(clause)
+            if m_out is not None and not _MEAL_NEG_OR_PLAN_RE.search(clause[:m_out.start()]):
+                facts.add("went_out")
+            if _STAYED_IN_ALL_DAY_RE.search(clause):
+                facts.add("stayed_in_all_day")
+            if _SENTENCE_END_RE.search(after):
+                user_attributed = False
+    return facts
+
+
+def _same_day_contradiction(line: str, prior_facts: set[str]) -> str | None:
+    """Return a short reason if ``line`` directly contradicts what Violet already stated earlier today."""
+    if not prior_facts:
+        return None
+    curr = _extract_today_facts(line)
+    if not curr:
+        return None
+    for meal, label in _MEAL_LABELS.items():
+        if f"ate:{meal}" in prior_facts and f"not_eaten:{meal}" in curr:
+            return f"earlier today said she already ate {label}, now says she has not eaten {label}"
+    if "ate:lunch" in prior_facts and "late_breakfast" in curr:
+        return "earlier today said she already ate lunch, now says breakfast lasted until noon"
+    if "skipped:breakfast" in prior_facts and ("ate:breakfast" in curr or "late_breakfast" in curr):
+        return "earlier today said she skipped breakfast, now says she ate breakfast"
+    if "went_out" in prior_facts and "stayed_in_all_day" in curr:
+        return "earlier today said she went out, now says she stayed home all day"
     return None
 
 
@@ -472,6 +681,25 @@ class ConsistencyGuard:
     turn_used_web = False          # phase 9.3: set by guard_reply when this turn's Chat run used the web tools
     turn_used_schedule = False     # phase 9.4.2: ... or the timetable tools
 
+    def _today_assistant_messages(self, now: str) -> list[str]:
+        """Violet's own assistant messages from today (since midnight & context cut, up to now)."""
+        from ai import context_cut
+        day = str(now)[:10]
+        now_dt = parse_time(now)
+        rows = context_cut.owner_rows(self.db.fetch_all(
+            "SELECT role, content, created_at FROM messages "
+            "WHERE role != 'user' AND substr(created_at, 1, 10) = ? ORDER BY id ASC",
+            (day,),
+        ))
+        out: list[str] = []
+        for r in rows:
+            at = parse_time(r.get("created_at")) if r.get("created_at") else None
+            if at is not None and now_dt is not None and at > now_dt:
+                continue
+            if r.get("content"):
+                out.append(str(r["content"]))
+        return out
+
     def check_reply(self, text: str, now: str | None = None) -> list[Violation]:
         now = now or self.db.now()
         recent = self.db.fetch_all(
@@ -488,6 +716,10 @@ class ConsistencyGuard:
                          for t in life_terms(r["title"], self.config)]
         backstory = self._backstory_lines()
         experiences = self._user_experiences()
+        prior_today_facts: set[str] = set()
+        if not getattr(self.core, "is_ai", False):
+            for prev in self._today_assistant_messages(now):
+                prior_today_facts |= _extract_today_facts(prev)
 
         def _daily_doing(event: dict[str, Any]) -> str:
             raw = event.get("source_detail")
@@ -525,6 +757,11 @@ class ConsistencyGuard:
                 # 2026-10-30: the AI persona's experiences are its real records, not virtual life events; what it must
                 # not claim (a body, a family, human days) is in its own forbidden patterns, checked above
                 continue
+            contradiction = _same_day_contradiction(line, prior_today_facts)
+            if contradiction:
+                violations.append(Violation("same_day_contradiction", contradiction, line))
+            else:
+                prior_today_facts |= _extract_today_facts(line)
             # hedges ("想", "下次") and references to the user ("你") only count inside the claiming clause:
             # "我昨天去了海边，下次带你去" is still a claim
             claims = _claims(line)
@@ -545,11 +782,11 @@ class ConsistencyGuard:
             def _event_backs(e: dict[str, Any]) -> bool:
                 if e.get("thread_id") is not None and claims_completion and not COMPLETION_RE.search(e["content"]):
                     return False
-                if backs(as_done, e["content"]):
+                if backs(as_done, e["content"]) or (as_done != line and backs(line, e["content"])):
                     return True
                 if e.get("source") == DAILY_SOURCE:
                     doing = _daily_doing(e)
-                    if doing and doing_matches(as_done, doing):
+                    if doing and (doing_matches(as_done, doing) or (as_done != line and doing_matches(line, doing))):
                         return True
                 return False
 

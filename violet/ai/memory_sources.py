@@ -18,6 +18,14 @@ def memory_source(db, memory: dict[str, Any]) -> dict[str, Any]:
         job = db.fetch_one("SELECT user_message_id FROM memory_jobs WHERE turn_id = ?", (turn_id,))
         if job and job.get("user_message_id") is not None:
             ids = [int(job["user_message_id"])]
+    if not ids and turn_id:
+        row = db.fetch_one(
+            "SELECT stored_message_id FROM inbound_messages WHERE turn_id = ? AND stored_message_id IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (turn_id,),
+        )
+        if row and row.get("stored_message_id") is not None:
+            ids = [int(row["stored_message_id"])]
     if ids:
         return {"state": "known", "message_ids": ids, "turn_id": turn_id,
                 "label": "来自用户消息 " + "、".join(f"#{i}" for i in ids)}

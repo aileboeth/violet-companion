@@ -142,14 +142,82 @@ def is_forget_request(text: str | None) -> bool:
     return bool(FORGET_REQUEST_RE.search(text or ""))
 
 
+# Framing words stripped before fallback non-contiguous phrase matching in forget_target().
+_FORGET_FRAME_WORDS_RE = re.compile(
+    r"刚才|刚刚|之前|以前|先前|上次|那次|这次|前面|早些时候|"
+    r"说过|提到|提过|聊过|聊到|讲过|问过|写过|发生|告诉过|告诉你|跟你讲|跟你说|和你说|"
+    r"关于|有关|这件事|那件事|这事|那事|这个事|那个事|这个|那个|这条|那条|这些|那些|"
+    r"事情|记忆|记录|内容|一下|一下子|今天|昨天|明天|最近|现在|其实|顺便|对了|还有|就是"
+)
+# Pure grammatical / boilerplate characters that must not anchor a 2-char non-contiguous fallback.
+_FALLBACK_STOP_CHARS = frozenset(
+    "我你他她它们这那哪谁什怎吗呢吧啊呀啦哦嘛哈嗯"
+    "的得了着过在是有没不很太挺更最也都就才还又再"
+    "把被给让和跟与对向从到为因所但而或却并"
+    "事话件个些点次上下里外前后左右大小多少好坏真假"
+    "说讲聊提问回道知觉想算刚曾今昨明近早晚"
+)
+_CJK_RUN_RE = re.compile(r"[一-鿿]+")
+
+
+def _fallback_forget_pairs(about: str) -> list[tuple[str, str]]:
+    """Extract distinctive adjacent CJK char pairs from a forget request for bounded same-clause matching.
+
+    Only used when exact contiguous bigram recall (`user_word_recall`) finds nothing, e.g.
+    "把我刚才说养猫的事忘掉吧" -> [("养", "猫")] matching "用户老家养了一只黑猫，名叫煤球".
+    """
+    cleaned = _FORGET_FRAME_WORDS_RE.sub(" ", about or "")
+    pairs: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for run in _CJK_RUN_RE.findall(cleaned):
+        start, end = 0, len(run)
+        while start < end and run[start] in _FALLBACK_STOP_CHARS:
+            start += 1
+        while end > start and run[end - 1] in _FALLBACK_STOP_CHARS:
+            end -= 1
+        phrase = run[start:end]
+        if len(phrase) < 2:
+            continue
+        for i in range(len(phrase) - 1):
+            a, b = phrase[i], phrase[i + 1]
+            if a == b or a in _FALLBACK_STOP_CHARS or b in _FALLBACK_STOP_CHARS:
+                continue
+            if (a, b) not in seen:
+                seen.add((a, b))
+                pairs.append((a, b))
+    return pairs
+
+
+def _fallback_forget_target(db, about: str) -> dict[str, Any]:
+    """Precision-safe non-contiguous fallback when contiguous bigram recall finds nothing."""
+    pairs = _fallback_forget_pairs(about)
+    if not pairs:
+        return {"status": "not_found", "memory_id": None}
+    patterns = [re.compile(re.escape(a) + r"[^，,。.!！?？；;：\n]{0,12}" + re.escape(b)) for a, b in pairs]
+    scored: list[tuple[int, bool, str, int]] = []
+    for memory in db.list_event_memories(limit=db.search_window()):
+        if memory.get("status") == "deleted" or not memory.get("use_in_context", 1):
+            continue
+        content = memory.get("content") or ""
+        hits = sum(1 for pat in patterns if pat.search(content))
+        if hits:
+            scored.append((hits, memory.get("status") == "active", memory.get("updated_at") or "", memory["id"]))
+    if not scored:
+        return {"status": "not_found", "memory_id": None}
+    scored.sort(key=lambda s: s[:3], reverse=True)
+    if len(scored) > 1 and scored[0][0] == scored[1][0]:
+        return {"status": "ambiguous", "memory_id": None, "candidate_ids": [s[3] for s in scored[:5]]}
+    return {"status": "found", "memory_id": scored[0][3]}
+
+
 def forget_target(db, user_message: str) -> dict[str, Any]:
     """The one event memory the request points at: memories sharing a distinctive word with the user's words (the
-    forget phrases themselves removed); the best one only when it shares strictly more words than the next."""
+    forget phrases and generic framing removed); the best one only when it shares strictly more words than the next."""
     from ai.recall_search import user_word_recall
-    about = FORGET_WORDS_RE.sub(" ", user_message or "")
+    about = _FORGET_FRAME_WORDS_RE.sub(" ", FORGET_WORDS_RE.sub(" ", user_message or ""))
     found = user_word_recall(db, about, limit=5)
     if not found:
-        return {"status": "not_found", "memory_id": None}
+        return _fallback_forget_target(db, about)
     scored = sorted(found, key=lambda m: len(m["retrieval"]["matched_terms"]), reverse=True)
     if len(scored) > 1 and len(scored[0]["retrieval"]["matched_terms"]) == len(scored[1]["retrieval"]["matched_terms"]):
         return {"status": "ambiguous", "memory_id": None, "candidate_ids": [m["id"] for m in scored]}

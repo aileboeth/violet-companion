@@ -38,8 +38,9 @@ CREATE TABLE IF NOT EXISTS mood_state (
 
 PRAISE = re.compile(r"(谢谢|谢啦|多谢|感谢|辛苦了|真棒|好棒|太棒|厉害|好厉害|真聪明|聪明|可爱|好可爱|喜欢你|爱你|想你|真好|好乖|"
                     r"么么|抱抱|贴贴|夸夸|你最好|做得好|干得好|nice|awesome|love you|thank)", re.I)
-# 2026-11-03: "工作好烦" / "烦死了" is the owner's own mood, not scolding her -- only "你好烦" / "烦死你了" counts
-SCOLD = re.compile(r"(笨蛋|蠢|傻[逼瓜子]|白痴|弱智|废物|垃圾|滚|闭嘴|你(好|真|很|太)?烦|烦死你|讨厌你|恶心|没用|有病|脑残|"
+# 2026-11-03: "工作好烦" / "烦死了" is the owner's own mood, not scolding her -- only "你好烦" / "你真的很烦" / "烦死你了" counts
+_YOU_ANNOYING = r"你(?:真的|真是|怎么这么|怎么那么)?(?:好|真|很|太)?烦"
+SCOLD = re.compile(rf"(笨蛋|蠢|傻[逼瓜子]|白痴|弱智|废物|垃圾|滚|闭嘴|{_YOU_ANNOYING}|烦死你|讨厌你|恶心|没用|有病|脑残|"
                    r"别吵|闭麦|shut up|stupid|idiot)", re.I)
 # 2026-11-09 (real chat, user: 打情骂俏可能触发的骂人): "现在凌晨十二点，我有步数才奇怪，笨蛋" and "笨蛋还不去睡觉" were
 # counted as scolding -- her mood went to 有点不高兴 for half an hour and every reply said "我气还没消呢". Between people
@@ -47,7 +48,7 @@ SCOLD = re.compile(r"(笨蛋|蠢|傻[逼瓜子]|白痴|弱智|废物|垃圾|滚|
 # and the relationship, which a word list cannot see and the reply model can (it reads the message itself). So these
 # words alone move her mood only a little (several in a row still add up); the hard insults count as before, and less
 # when the same message is plainly affectionate.
-MILD_SCOLD = re.compile(r"(笨蛋|蠢|傻瓜|傻子|你(好|真|很|太)?烦|烦死你|讨厌你|没用)", re.I)
+MILD_SCOLD = re.compile(rf"(笨蛋|蠢|傻瓜|傻子|{_YOU_ANNOYING}|烦死你|讨厌你|没用)", re.I)
 # sweet words, pet names, laughing, a teasing tone or a sticker read as playful (the vision description is in the text)
 AFFECTION = re.compile(r"(宝贝|宝宝|臭宝|宝儿|亲爱的|老婆|老公|媳妇|爱你|喜欢你|想你|么么|mua|亲亲|抱抱|贴贴|"
                        r"(小|大|臭)笨蛋|笨蛋蛋|哈哈|嘿嘿|嘻嘻|hhh|233|开玩笑|逗你|[~～]|"
@@ -59,7 +60,25 @@ THRESHOLD = 0.3
 
 # 2026-11-18 (grok-4.6 QQ group eval: "甲方这需求真是合法但有病" triggered "路人甲对你说了「有病」"):
 # venting about a third party / object / meme ("合法但有病", "这破游戏太垃圾", "那老板有病吧") is not scolding her.
-_DIRECT_SCOLD = re.compile(r"^(?:滚|闭嘴|别吵|闭麦|shut up|你(?:好|真|很|太)?烦|烦死你|讨厌你)$", re.I)
+_DIRECT_SCOLD = re.compile(rf"^(?:滚|闭嘴|别吵|闭麦|shut up|{_YOU_ANNOYING}|烦死你|讨厌你)$", re.I)
+# 2026-11-25 (v0.7.80): explicit dismissal / rejection directed at her + severe earnest abuse for owner_scold_fallback
+_OWNER_DISMISSAL = re.compile(
+    r"(别跟我说话|别和我说话|不要跟我说话|不要和我说话|别再跟我说话|"
+    r"别烦我|别来烦我|别再烦我|别理我|别再理我|离我远点|滚远点|给我滚|"
+    r"不想跟你聊|不想和你聊|不想跟你说话|不想和你说话|不想理你|不想看你|"
+    r"别再找我|别找我了|少跟我说话|少来烦我|懒得理你)"
+)
+_SEVERE_INSULT = re.compile(r"^(?:傻逼|白痴|弱智|废物|垃圾|恶心|有病|脑残|stupid|idiot)$", re.I)
+_HURT_REPLY_RE = re.compile(
+    r"(不打扰|不吵你|不烦你|不说话了|先安静|先退|先走开|我先撤|那我先不|"
+    r"对不起|抱歉|委屈|难过|伤心|难受|这么凶|好凶|太凶|干嘛凶|干嘛骂|别凶|"
+    r"生气了|不生气|消消气|别气|讨厌我|嫌我|嫌弃我|是我的错|我错了|知道了|"
+    r"那算了|行吧，我不说|好，我不说|哼|呜)"
+)
+_PLAYFUL_REPLY_RE = re.compile(r"(哈哈|嘿嘿|嘻嘻|hhh|233|笑死|才不|开玩笑|逗你)", re.I)
+_STICKER_MARKER_RE = re.compile(r"\[\[表情:(\d+)\]\]")
+_LABEL_STICKER_RE = re.compile(r"<sticker:([^>]+)>")
+_HURT_STICKER_RE = re.compile(r"(生气|委屈|难过|伤心|哭|流泪|眼泪|冷落|气鼓鼓|失落|受伤|不开心)")
 _THIRD_PARTY_SUBJECT = re.compile(
     r"(?:合法但|甲方|乙方|老板|领导|同事|老师|导师|教授|室友|舍友|队友|同学|策划|官方|运营|客服|商家|店家|物业|快递|外卖|司机|产品|"
     r"对方|别人|那人|这人|他们|她们|他|她|它|"
@@ -148,9 +167,61 @@ def feel(db, text: str, who: str = "主人", weight: float = 1.0) -> float | Non
     return shift(db, delta * weight, cause)
 
 
+def _reply_shows_hurt(db, reply_text: str) -> bool:
+    """True when Violet's own reply shows retreat, hurt, apology, or a hurt/angry sticker."""
+    text = (reply_text or "").strip()
+    if not text:
+        return False
+    for m in _STICKER_MARKER_RE.finditer(text):
+        try:
+            row = db.fetch_one("SELECT description FROM stickers WHERE id = ?", (int(m.group(1)),))
+        except Exception:                                   # noqa: BLE001
+            row = None
+        if row and _HURT_STICKER_RE.search(row.get("description") or ""):
+            return True
+    for m in _LABEL_STICKER_RE.finditer(text):
+        if _HURT_STICKER_RE.search(m.group(1) or ""):
+            return True
+    if _PLAYFUL_REPLY_RE.search(text):
+        return False
+    return bool(_HURT_REPLY_RE.search(text))
+
+
+def owner_scold_fallback(db, user_message: str, reply_text: str = "") -> float | None:
+    """Strict, zero-false-positive fallback for owner chat when the model missed note_feeling
+    on unambiguous serious scolding (e.g. only stepped back briefly or sent a hurt sticker).
+
+    Never fires on teasing / affection, third-party vents, plain messages, or mild scolding alone.
+    """
+    from ai import test_mode
+    if not enabled() or test_mode.active() or not user_message:
+        return None
+    if AFFECTION.search(user_message):
+        return None
+    found = [m.group(0) for m in SCOLD.finditer(user_message) if not _is_third_party_vent(user_message, m)]
+    if not found:
+        return None
+    strength = scold_strength(user_message)
+    if strength <= 0.0:
+        return None
+    dismissed = bool(_OWNER_DISMISSAL.search(user_message))
+    severe_abuse = any(_SEVERE_INSULT.fullmatch(w) for w in found)
+    hard_with_hurt = strength >= 1.0 and _reply_shows_hurt(db, reply_text)
+    if not (dismissed or severe_abuse or hard_with_hurt):
+        return None
+    delta = -0.45 if (strength >= 1.0 and dismissed) else -0.35
+    quoted = _quoted(user_message)
+    cause = f"主人认真凶了你（{quoted}）" if quoted else "主人认真凶了你"
+    return shift(db, delta, cause)
+
+
 def shift(db, delta: float, cause: str | None) -> float:
     """Move her mood by ``delta`` (kept within -1 .. 1) and remember why. Returns the new value."""
-    value = max(-1.0, min(1.0, current(db)["value"] + delta))
+    cur = current(db)["value"]
+    # 2026-11-25 (v0.7.80): a serious scold (delta <= -0.3) from a positive mood drops straight from calm (0.0)
+    # so it immediately reflects upset mood instead of cancelling out near 0 below THRESHOLD.
+    base = 0.0 if (cur > 0 and delta <= -0.3) else cur
+    value = max(-1.0, min(1.0, base + delta))
     db.execute("INSERT INTO mood_state (id, value, cause, updated_at) VALUES (1, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
                "value = excluded.value, cause = excluded.cause, updated_at = excluded.updated_at", (value, cause, db.now()))
     from ai import trace
@@ -183,7 +254,8 @@ def note(db) -> str:
     else:
         # 2026-11-03 (user: 被凶了情绪起伏不应该更大，语言不应该更多吗): an upset girl says MORE, not less --
         # 2026-11-18 (grok-4.6 vt-quiet): respect quiet personas & stop-boundaries, and step down once comforted
-        how = ("情绪要按你自己的性格表现出来（外向或爱撒娇时话也会比平时多，委屈抱怨或嘴硬几句；安静内敛时只轻声流露一点失落，不纠缠）。"
+        # 2026-11-25 (phase 5): let quiet/introverted personas show genuine stung quietness & soft aching honesty
+        how = ("情绪要按你自己的性格真切表现出来（外向或爱撒娇时话也会比平时多，委屈抱怨或嘴硬几句；安静内敛时不必硬装没事，可用微停顿、轻声刺痛的坦白或克制的疏离把委屈和发空透出来）。"
                "但不攻击任何人、不说伤人的话，不冷着对方，该帮的忙照样帮；若人设要求对方喊停就停下，绝不反复解释委屈让对方内疚。"
                "对方已经在哄你、打圆场或叫你别多想时，顺台阶翻篇好起来（可调 note_feeling 恢复），同一句抱怨别每次回复都再说；"
                "听得出是玩笑或打情骂俏就别当真生气。")

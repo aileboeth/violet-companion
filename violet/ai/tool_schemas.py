@@ -38,7 +38,7 @@ SAVE_MEMORY_SCHEMA = {
             "properties": {
                 "summary": {
                     "type": "string",
-                    "description": "对需要记忆的内容的简洁描述。",
+                    "description": "对需要记忆的内容的简洁描述。传 related_to 时必须把原事件主题/时间与新进展合并写全，不要只写补充片段。",
                 },
                 "category": {
                     "type": "string",
@@ -78,7 +78,10 @@ SAVE_MEMORY_SCHEMA = {
                            "description": "将来的事有多确定：plan=说定了；conditional=带条件（“要是……就……”）；wish=随口的想法。"},
                 "condition": {"type": "string", "description": "intent=conditional 时的条件，例如“周三下午没课”。"},
                 "event_key": {"type": "string", "description": "同一件持续事件的稳定英文标识，例如 server_outage。"},
-                "related_to": {"type": "integer", "description": "这条信息属于哪条已有记忆（id，来自 query_memory 或 needs_decision 候选）。"},
+                "related_to": {"type": "integer", "description": (
+                    "要合并更新的已有记忆 id（来自 query_memory 或 needs_decision 候选）。注意：related_to 会用本次 summary "
+                    "整体覆盖原记忆内容，不是关联标签；summary 必须合并保留原事件主题和时间。"
+                    "若要保存独立长期事实（如个人背景/能力），请不传 related_to（必要时传 new_event=true）或改用 remember_profile_fact，不要覆盖计划中的事件。")},
                 "new_event": {"type": "boolean", "description": "看过本轮 needs_decision 列出的候选、确认这是另一件事时设为 true；"
                                                                  "没看过候选时传 true 会先返回候选。"},
                 "evidence": EVIDENCE_PROPERTY,
@@ -396,8 +399,10 @@ SET_SITUATION_SCHEMA = {
                 "value": {"type": "string"},
                 "evidence": {"type": "string", "description": "用户原话（逐字）。"},
                 "until": {"type": "string", "description": (
-                    "有效期：today / tomorrow / 3h / ISO 时间。按用户的原话填：“今天一整天”= today，“这两天”= tomorrow；"
-                    "说的是今天的一段时间（今天下午、今晚、下午那节课）也填 today；没说多久就不填。")},
+                    "有效期：省略（默认 3 小时）/ 30m / 1h / 2h / morning / noon / afternoon / evening / tonight / today / tomorrow / ISO 时间。"
+                    "吃饭、洗澡、通勤等此刻短时活动不要填 today（直接不填用默认 3 小时，或填 1h / 2h）；"
+                    "今天某时段按时段填（上午=morning，中午=noon，下午/下午的课=afternoon，晚上/今晚=evening 或 tonight）；"
+                    "只有全天状态（“今天一整天”“请假一天”“今天回家了”）才填 today；“明后天/这两天都忙”才填 tomorrow。")},
             },
             "required": ["kind", "value", "evidence"],
         },
@@ -410,7 +415,7 @@ SET_INTERACTION_PREFERENCE_SCHEMA = {
         "name": "set_interaction_preference",
         "description": (
             "用户明确提出交流方式的要求时记录。key/value："
-            "reply_length=short|normal|long；proactive_chat=welcome|less|no；"
+            "reply_length=short|normal|long；proactive_chat=welcome|less|no（仅平静明确的长期要求，一时气话/发脾气如“别跟我说话了”“烦死了”不要记成 no）；"
             "closeness=distance（认真要求保持距离/别撒娇）|normal（愿意亲近/解除距离）；"
             "follow_up_questions=ok|less|no；advice=welcome|only_when_asked|no；"
             "humor=likes|neutral|no；avoid_topic=不想反复聊的话题（自由文本）。"

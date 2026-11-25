@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -202,6 +203,8 @@ CONSISTENCY_HINTS = {
     # 2026-11-13
     "promised_later_lookup": "以后你自己发消息时查不了东西，这个答应做不到：查到的现在说清楚，没查到就照实说，"
                              "需要的话让对方到时候自己看一眼；不要答应晚点 / 回头再查",
+    # 2026-11-25
+    "same_day_contradiction": "这句和你今天前面自己说过的话自相矛盾，请按前面已经说过的事实保持一致",
 }
 
 
@@ -468,6 +471,7 @@ def run_pipeline(
     defer_memory: bool = False,
     turn_id: str | None = None,
     turn_key: str | None = None,
+    user_message_id: int | None = None,
 ) -> dict[str, Any]:
     """One user turn (see _run_pipeline). The turn is one tool scope -- an MCP server that fails in it is not tried
     again later in the same turn (ai.mcp.tool_turn)."""
@@ -477,10 +481,35 @@ def run_pipeline(
     with turn_scope(turn_id), tool_turn(), turn_message(user_message):
         try:
             return _run_pipeline(user_message, chat_agent, memory_agent, defer_memory=defer_memory, turn_id=turn_id,
-                                 turn_key=turn_key)
+                                 turn_key=turn_key, user_message_id=user_message_id)
         except Exception as exc:
             _ps.pipeline_end(error=f"{exc.__class__.__name__}: {exc}")   # the 流程 page: not "running" forever
             raise
+
+
+def _used_note_feeling(chat_result: dict[str, Any]) -> bool:
+    """True when this chat turn successfully called note_feeling (so post-turn fallback must not double-shift)."""
+    saw_tool_msg = False
+    for m in chat_result.get("messages") or []:
+        if not isinstance(m, dict):
+            continue
+        if m.get("role") == "tool" and m.get("name") == "note_feeling":
+            saw_tool_msg = True
+            try:
+                if json.loads(str(m.get("content") or "{}")).get("ok") is True:
+                    return True
+            except (TypeError, ValueError):
+                return True
+    if saw_tool_msg:
+        return False
+    if "note_feeling" in (chat_result.get("tools_called") or []):
+        return True
+    for m in chat_result.get("messages") or []:
+        if isinstance(m, dict) and m.get("role") == "assistant":
+            for tc in m.get("tool_calls") or []:
+                if ((tc or {}).get("function") or {}).get("name") == "note_feeling":
+                    return True
+    return False
 
 
 def _phone_line_for_chat() -> str:
@@ -499,6 +528,7 @@ def _run_pipeline(
     defer_memory: bool = False,
     turn_id: str | None = None,
     turn_key: str | None = None,
+    user_message_id: int | None = None,
 ) -> dict[str, Any]:
     """Chat -> (checks) -> Memory. defer_memory=True: MemoryAgent runs later (ai/memory_jobs.py, after the reply went
     out). No stage makes the turn raise: Chat failing gives chat["failed"], Memory failing is skipped.
@@ -506,6 +536,7 @@ def _run_pipeline(
     Returns {"chat", "memory", "recalled_memories", "user_raised_memory_ids", "actions", "tool_notes", "errors",
     "chat_failed"}."""
     visualize_pipeline_start(user_message)
+    effective_turn_id = turn_id or (None if defer_memory else f"sync-{uuid.uuid4().hex[:12]}")
     _ps.pipeline_start("chat", user_message[:60], turn_id=turn_id)
     errors: dict[str, str] = {}
 
@@ -539,9 +570,9 @@ def _run_pipeline(
     try:
         # "那件事你忘掉吧" is carried out here, before the reply, by the memory store itself
         from ai.memory_forget import forget_note, settle_forget_request
-        forget = settle_forget_request(violetdb, user_message, turn_id)
+        forget = settle_forget_request(violetdb, user_message, effective_turn_id)
     except Exception:
-        logger.exception("forget request check failed for turn %s", turn_id)
+        logger.exception("forget request check failed for turn %s", effective_turn_id)
     if forget is not None and forget["status"] == "forgotten":
         recalled_memories = [m for m in recalled_memories if m.get("id") != forget["memory_id"]]
 
@@ -610,6 +641,12 @@ def _run_pipeline(
                     regenerate=lambda note: rewrite_reply(chat_agent, user_message, chat_context, first, before, note))
                 if follow_up is not None:
                     chat_result = {**chat_result, "content": content, "follow_up_check": follow_up}
+                if not _used_note_feeling(chat_result):
+                    try:
+                        from ai import mood
+                        mood.owner_scold_fallback(violetdb, user_message, chat_result.get("content", ""))
+                    except Exception:
+                        logger.exception("owner scold mood fallback failed")
     except Exception as exc:
         logger.exception("ChatAgent failed")
         errors["chat"] = f"{exc.__class__.__name__}: {exc}"
@@ -633,10 +670,27 @@ def _run_pipeline(
         return result({"content": "", "messages": [], "raw": {}, "skipped": True, "deferred": True})
 
     visualize_step("Memory Processing", "处理记忆存储")
-    memory_input = f"用户说：{user_message}"
+    from ai.memory_jobs import build_memory_input
+    assistant_reply = chat_result.get("content") or ""
+    memory_input = build_memory_input(user_message, assistant_reply)
+    resolved_msg_id = user_message_id
+    if resolved_msg_id is None and effective_turn_id:
+        row = violetdb.fetch_one(
+            "SELECT stored_message_id FROM inbound_messages WHERE turn_id = ? AND stored_message_id IS NOT NULL "
+            "ORDER BY id DESC LIMIT 1",
+            (effective_turn_id,),
+        )
+        if row and row.get("stored_message_id") is not None:
+            resolved_msg_id = int(row["stored_message_id"])
+    memory_context = {
+        "turn_id": effective_turn_id,
+        "user_message": user_message,
+        "assistant_reply": assistant_reply,
+        "user_message_id": resolved_msg_id,
+    }
     _ps.node_start("Memory", input_data={"memory_input": memory_input})
     try:
-        memory_result = memory_agent.run(memory_input)
+        memory_result = memory_agent.run(memory_input, call_context=memory_context)
     except Exception as exc:
         logger.warning("MemoryAgent failed, continue without memory update: %s", exc)
         errors["memory"] = f"{exc.__class__.__name__}: {exc}"

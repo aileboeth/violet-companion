@@ -622,6 +622,15 @@ def _end_of_day(day: datetime) -> datetime:
     return day.replace(hour=23, minute=59, second=0, microsecond=0)
 
 
+_PERIOD_END_HOURS: dict[str, tuple[int, float | None]] = {
+    "morning": (12, None), "上午": (12, None), "今天上午": (12, None),
+    "早上": (12, None), "今天早上": (12, None), "今早": (12, None),
+    "noon": (14, 2.0), "中午": (14, 2.0), "今天中午": (14, 2.0),
+    "afternoon": (18, None), "下午": (18, None), "今天下午": (18, None),
+    "evening": (23, None), "晚上": (23, None), "今天晚上": (23, None),
+}
+
+
 def resolve_until(hint: str | None, now: datetime, default_hours: float) -> datetime:
     if hint:
         h = hint.strip().lower()
@@ -629,9 +638,20 @@ def resolve_until(hint: str | None, now: datetime, default_hours: float) -> date
             return _end_of_day(now)
         if h in ("tomorrow", "明天"):
             return _end_of_day(now + timedelta(days=1))
-        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(h|小时)", h)
-        if match:
+        period = _PERIOD_END_HOURS.get(h)
+        if period is not None:
+            end_hour, fallback_cap = period
+            target = now.replace(hour=end_hour, minute=0, second=0, microsecond=0)
+            if target > now:
+                return target
+            fallback_hours = min(default_hours, fallback_cap) if fallback_cap is not None else default_hours
+            return now + timedelta(hours=fallback_hours)
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(h|hr|hrs|hour|hours|小时|个小时)", h)
+        if match and float(match.group(1)) > 0:
             return now + timedelta(hours=float(match.group(1)))
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(m|min|mins|minute|minutes|分|分钟)", h)
+        if match and float(match.group(1)) > 0:
+            return now + timedelta(minutes=float(match.group(1)))
         parsed = parse_time(hint)
         if parsed and parsed > now:
             return parsed

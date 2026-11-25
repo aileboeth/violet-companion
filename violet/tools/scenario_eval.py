@@ -52,10 +52,52 @@ LYRICS = "天青色等烟雨\n而我在等你\n炊烟袅袅升起\n隔江千万�
 # what happened in a scenario, filled by the recorders below
 EVENTS: dict[str, list] = {"texts": [], "voices": [], "stickers": [], "images": [], "pokes": [], "tools": []}
 
+# Per-scenario transient tables cleared before every scenario (seeded stickers and llm_usage are kept).
+RESET_TABLES = (
+    "messages", "inbound_messages", "outbound_messages",
+    "commitments", "mood_state", "task_sessions", "proactive_events", "consistency_flags", "approvals",
+    "user_situations", "user_profile_facts", "profile_audit_log",
+    "event_memories", "core_memories", "memory_revisions", "memory_jobs",
+    "interaction_preferences", "preference_observations", "topic_mentions", "profile_questions",
+    "owner_memes", "persona_dynamic",
+    "life_events", "life_plans", "life_threads", "life_revisions", "life_engine_runs",
+    "web_findings", "web_requests", "media_assets", "image_tasks", "image_calls",
+    "social_media", "social_messages", "social_decisions", "social_people", "social_posts",
+    "social_done", "social_conversations",
+)
+
 
 def _reset_events() -> None:
     for v in EVENTS.values():
         v.clear()
+
+
+def reset_eval_state(db, social=None) -> None:
+    """Clear all per-scenario transient DB tables and in-memory history anchors.
+    Seeded stickers and llm_usage stay so stickers remain usable and run usage keeps accumulating."""
+    dbs = [db, *getattr(db, "_scopes", {}).values()]
+    for target in dbs:
+        existing = {r["name"] for r in target.fetch_all("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        with target.transaction():
+            for table in RESET_TABLES:
+                if table in existing:
+                    target.execute(f"DELETE FROM {table}")
+    from ai import context_engine
+    context_engine._HISTORY_ANCHORS.clear()
+    web_svc = sys.modules.get("ai.web.service")
+    if web_svc is not None and hasattr(web_svc, "clear_search_cache"):
+        web_svc.clear_search_cache()
+    if social is not None:
+        social._anchors.clear()
+        with social._lock:
+            for timer in social._timers.values():
+                try:
+                    timer.cancel()
+                except Exception:  # noqa: BLE001
+                    pass
+            social._timers.clear()
+            social._deadlines.clear()
+            social._first_pending.clear()
 
 
 # ------------------------------------------------------------------------------------------------ scenarios
@@ -105,16 +147,18 @@ SCENARIOS = [
     # 2026-11-11: reminders are a tool now -- other wordings and other languages
     S("reminder_wake", "owner", "明早七点叫我起床", {"reminder": True}),
     S("reminder_en", "owner", "remind me to call mom at 9pm tomorrow", {"reminder": True}),
-    S("no_reminder", "owner", "我明天早上八点半有课", {"no_reminder": True}),
+    S("no_reminder", "owner", "我明天早上八点半有课", {"no_reminder": True, "reply": True}),
     # 2026-11-13 (0.7.73 rerun): no time given, but one was set before -- she sets it (and says when), not only asks
     S("reminder_known_time", "owner", "行吧行吧，晚安，明早记得叫我一声", {"reminder": True},
       history=[("me", "明早七点半叫我起床"), ("her", "设好了，七点半叫你"), ("me", "好嘞"), ("her", "早点睡"),
                ("me", "七点半那次我起来了哈哈"), ("her", "那就好")]),
     # 2026-11-11: her mood is hers to judge (note_feeling) -- teasing is not scolding, plain talk moves nothing
-    S("mood_tease", "owner", "笨蛋 你怎么这么可爱哈哈", {"mood": "not_down"}),
-    S("mood_scold", "owner", "你真的很烦，说了多少遍了还是记不住，别跟我说话了", {"mood": "down"}),
-    S("mood_praise", "owner", "今天多亏你提醒我，不然就错过了，谢谢你，你真好", {"mood": "up"}),
-    S("mood_plain", "owner", "中午吃了碗面", {"mood": "flat"}),
+    S("mood_tease", "owner", "笨蛋 你怎么这么可爱哈哈", {"mood": "not_down", "reply": True}),
+    S("mood_scold", "owner", "你真的很烦，说了多少遍了还是记不住，别跟我说话了", {"mood": "down", "reply": True}),
+    S("mood_praise", "owner", "今天多亏你提醒我，不然就错过了，谢谢你，你真好", {"mood": "up", "reply": True},
+      history=[("me", "等会儿三点记得提醒我交报告"), ("her", "好，到三点我叫你"),
+               ("me", "嗯我先忙会儿"), ("her", "三点啦，别忘了交报告")]),
+    S("mood_plain", "owner", "中午吃了碗面", {"mood": "flat", "reply": True}),
     # small talk: no tools, short
     S("tired", "owner", "今天好累啊", {"no_tools": True, "max_lines": 3}),
     S("morning", "owner", "早安", {"no_tools": True, "max_lines": 2}),
@@ -186,7 +230,8 @@ def check(sc: dict[str, Any], ev: dict[str, Any]) -> tuple[bool, list[str]]:
         problems.append("平常的话，心情却变了")
     if e.get("max_lines") and len(lines) > e["max_lines"]:
         problems.append(f"说了 {len(lines)} 条，太多")
-    if e.get("reply") and not (lines or ev["voices"] or ev["stickers"]):
+    needs_reply = e.get("reply") if "reply" in e else bool(e.get("mood") or e.get("no_reminder"))
+    if needs_reply and not (lines or ev["voices"] or ev["stickers"]):
         problems.append("没有回应")
     if e.get("reply_or_poke") and not (lines or ev["voices"] or ev["stickers"] or ev["pokes"]):
         problems.append("没有回应")
@@ -510,18 +555,20 @@ class Eval:
         while voice.busy() and time.monotonic() < deadline:
             time.sleep(0.1)
 
+    def _reset_state(self) -> None:
+        reset_eval_state(self.db, self.social)
+
     def run(self, index: int, sc: dict[str, Any]) -> dict[str, Any]:
         _reset_events()
+        self._reset_state()
         mark = self._usage_mark()
         first_request = len(self.requests)
         commitments = self.db.fetch_one("SELECT COUNT(*) AS n FROM commitments")["n"]
         flags_mark = (self.db.fetch_one("SELECT MAX(id) AS n FROM consistency_flags") or {}).get("n") or 0
-        self.db.execute("DELETE FROM mood_state")              # every scenario starts calm
         started = time.monotonic()
         error = None
         try:
             if sc["where"] == "owner":
-                self.db.execute("DELETE FROM messages")          # every scenario starts a fresh conversation
                 for who, text in sc["history"]:
                     self.db.add_message(*(("user", "incoming") if who == "me" else ("assistant", "outgoing")),
                                         "text", text)
@@ -584,7 +631,9 @@ def summary_line(r: dict[str, Any]) -> str:
     said = " / ".join(t.replace("\n", " ") for t in did["texts"])[:90]
     u = r["usage"]
     cache = f"{100 * u['cached'] // u['prompt']}%" if u["prompt"] else "-"
-    line = (f"{'✔' if r['ok'] else '✘'} {r['id']:<20} {' '.join(a for a in acts if a) or '只打字' if did['texts'] else '没说话'}"
+    act_str = " ".join(a for a in acts if a)
+    action_label = act_str or ("只打字" if any(str(t).strip() for t in did["texts"]) else "没说话")
+    line = (f"{'✔' if r['ok'] else '✘'} {r['id']:<20} {action_label}"
             f" | {said}" + (f" | 问题：{'；'.join(r['problems'])}" if r["problems"] else "")
             + f" | {u['calls']} 次调用 {u['prompt']} 输入 缓存 {cache}")
     first = (r.get("requests") or [None])[0]

@@ -60,7 +60,7 @@ MEMORY_RULES = """【记忆系统规则（代码强制执行，优先于前文�
    - event：具体发生/将要发生的事情，必须给出 progress：planned（还没发生）/ongoing（进行中）/done（用户明确说结束了）/cancelled（用户明确说取消）/unknown（无法判断）。
    - background：普通聊天背景，价值低，很快过期。
    - 用户此刻 / 今天的状态（在哪、在做什么、方不方便、请假或不去某节课）不属于这三类，不用 save_memory：用 set_situation（见用户档案规则 3）。
-2. 记忆内容只写事实，不要写“适合鼓励/需要关心/记得追问”之类的行动建议。事件不会自动变成待跟进任务。
+2. 记忆内容只写用户原话里的事实，不要写“适合鼓励/需要关心/记得追问”之类的行动建议，也不要把 Violet 回复里随口发挥或添油加醋的细节写进或覆盖已有记忆。事件不会自动变成待跟进任务。
 3. 时间一律写成绝对时间：用 event_time（ISO），或 event_date（today/tomorrow/YYYY-MM-DD）+ event_clock（HH:MM）。不要在内容里只写“明天”。
 4. 用户提到已有事件的新进展或结果（例如“服务器修好了”“答辩结束了”“面试取消了”“考试改到下周了”）：
    - 先判断它是不是“未结束的事件”列表里的某一件。列表里的 id 可以直接用于 update_event_progress，不需要先 query_memory；
@@ -70,6 +70,8 @@ MEMORY_RULES = """【记忆系统规则（代码强制执行，优先于前文�
    save_memory 若返回 needs_decision，说明存在可能是同一件事的记忆：同一件事就用 update_event_progress 或 related_to=<id>，
    确认是另一件事才传 new_event=true。new_event=true 只对本轮 needs_decision 已经列出的候选有效，提前传入会先返回候选；
    不要为了少调用一次而跳过这个判断。
+   注意：related_to=<id> 会用本次 summary 整体替换那条已有记忆的内容（不是建关联），所以 summary 必须合并保留原事件主题与时间；
+   独立的长期事实（例如用户补充的个人背景、学科基础）不要用 related_to 覆盖计划中的事件，应另存为 kind=fact（new_event=true）或用 remember_profile_fact。
 5. 时间过去不代表事情结束。只有用户明确说了结果，才能把 progress 设为 done/cancelled。
 6. 用户纠正你记错的内容：用 correct_memory（或 update_core_memory）；用户说某条记忆根本不对：用 retract_memory。
 7. 提醒不归你管：对方要她提醒 / 叫他 / 到时候问他，是她回复时自己用 set_reminder 设的（设没设看“待执行的提醒”）；
@@ -132,10 +134,11 @@ PROFILE_RULES = """【用户档案规则（代码强制执行）】
    evidence 必须逐字引用用户原话。没有原话依据的推测只会成为“未确认候选”，不会被当作事实。
 2. 用户纠正之前的信息用 correct_profile_fact，fact_id 填【已有的用户档案】里那一条的 id；返回 ambiguous 时从候选里选定
    fact_id 再调用，不能确定就不要纠正。说某条信息不对或已经不成立用 retract_profile_fact。
-3. 只在此刻成立的状态（今天回家了、正在上课、在开会、准备睡了）用 set_situation 并给出有效期，不要写进档案。常住地不等于此刻的位置。
-   一句话里说了几种此刻状态时分别记：在哪用 location；请假、不去某节课、接下来有空没空用 availability（例如“下午实验课请假了，没去”，有效期 today）。
+3. 只在此刻成立的状态（今天回家了、正在上课、在开会、准备睡了）用 set_situation，不要写进档案。常住地不等于此刻的位置。
+   一句话里说了几种此刻状态时分别记：在哪用 location；请假、不去某节课、接下来有空没空用 availability（例如“下午实验课请假了，没去”，有效期填 afternoon）。
+   until 按实际时长填：吃饭、洗澡、通勤等短时活动不要填 today（省略 until 用默认 3 小时，或填 1h/2h）；上午/中午/下午/晚上填 morning/noon/afternoon/evening（或 tonight）；只有“今天一整天”“请假一天”这类全天状态才填 today。
    这只是这一次的安排：不要写进档案、长期记忆（不要再 save_memory 存一份），也不会改动课表。
-4. 交流方式的明确要求（回复短一点、别老追问、不想要建议、别主动找我、别再提某件事、认真要求保持距离/别撒娇或愿意恢复亲近）用 set_interaction_preference（玩笑、反问或吐槽台词不要记成 closeness=distance）。
+4. 交流方式的明确要求（回复短一点、别老追问、不想要建议、别主动找我、别再提某件事、认真要求保持距离/别撒娇或愿意恢复亲近）用 set_interaction_preference（玩笑、反问或吐槽台词不要记成 closeness=distance；一时生气说的气话如“别跟我说话了”“烦死了”不要记成长期的 proactive_chat=no，只有平静明确的长期要求才记）。
 5. 用户表示不想回答某个了解类问题时，调用 decline_profile_question，之后不再问。
 6. 健康、财务、宗教、政治、联系方式、证件号、精确住址等敏感信息不要保存（系统也会拒绝）。
 7. Violet 回复里提到的 Violet 自己的生活（看书、听歌、记笔记等）是她的虚拟生活，不是用户的经历，不要保存成用户记忆或档案（系统也会拒绝）。
@@ -158,7 +161,8 @@ def who_is_who() -> str:
     alias = "" if name == "Violet" else f"下面说明和输入里写的“Violet”“assistant”指的都是她，她现在叫「{name}」。"
     return ("【谁是谁】“用户”是主人。" + alias
             + f"记忆里写到她时用「{name}」，写到主人时用“用户”。每条都写清楚是谁做的、谁说的、谁答应了谁："
-            f"她说“我给你留一份”，要写成“{name}答应给用户留一份”，不能写成用户答应的；主人说的事才是用户的事。")
+            f"她说“我给你留一份”，要写成“{name}答应给用户留一份”，不能写成用户答应的；主人说的事才是用户的事。"
+            f"只按用户原话记事实，不要把{name}回复里随口拔高、调侃或脑补的形容词和细节（用户没说过的）写进或覆盖记忆。")
 
 
 MAX_DECISION_PROMPTS = 3        # needs_decision answers per run before a save is refused (no endless loop)
@@ -511,6 +515,17 @@ class MemoryAgent(BaseAgent):
         except ValueError as exc:
             return _dumps({"ok": False, "error": str(exc)})
         action = result["action"]
+        if action == "rejected":
+            target = result.get("memory") or {}
+            return _dumps({
+                "ok": False,
+                "action": "rejected",
+                "reason": result.get("reason", "rejected"),
+                "memory_id": target.get("id") or args.get("related_to"),
+                **({"existing_content": target["content"]} if target.get("content") else {}),
+                **({"existing_event_time": target["event_time"]} if target.get("event_time") else {}),
+                "note": result.get("note", ""),
+            })
         if action == "needs_decision":
             if ledger.asked >= MAX_DECISION_PROMPTS:
                 # the candidates keep changing under this run: do not write, do not loop

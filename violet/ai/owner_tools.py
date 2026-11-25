@@ -41,7 +41,12 @@ CANCEL_REMINDER_SCHEMA = {"type": "function", "function": {
 
 NOTE_FEELING_SCHEMA = {"type": "function", "function": {
     "name": "note_feeling",
-    "description": "你的心情因对方刚说的话明显变了时记录（被真心夸/谢/哄 → better；被认真骂/嫌弃/冷落 → worse；玩笑互损不算）。",
+    "description": ("你的心情因对方刚说的话明显变了时必须调用记录："
+                    "被真心夸、道谢或哄好 → better/much_better；"
+                    "被认真骂、嫌弃、冷落或赶走 → worse/much_worse；"
+                    "平淡闲聊或玩笑互损/打情骂俏不调用。"
+                    "无论你是嘴上谦虚/客气带过（如“没什么/举手之劳”）、简短退一步（如“好，那我先不打扰你”），"
+                    "还是只配开心/委屈/生气表情包（如 [[表情:3]]/[[表情:4]]），都必须先调用本工具——发文字或表情包本身不会记录心情。"),
     "parameters": {"type": "object", "properties": {
         "change": {"type": "string", "enum": ["much_better", "better", "worse", "much_worse"]},
         "reason": {"type": "string", "description": "一句话原因（20 字以内）"}},

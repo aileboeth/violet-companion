@@ -55,11 +55,19 @@ COMPACT: dict[str, tuple[str | None, dict[str, Any]]] = {
     "set_situation": (
         "记录用户只在此刻/今天成立的状态（今天回家了、在上课、请假没去上课）。这类状态只用这个工具记，不用 save_memory；"
         "不会改动课表。一句话里有几项就分别调用一次；用户改口时重新记变了的那几项，新的替换同一类旧的。",
-        {"evidence": "原话（逐字）"},
+        {
+            "evidence": "原话（逐字）",
+            "until": (
+                "省略（默认3h）/ 30m / 1h / 2h / morning / noon / afternoon / evening / tonight / today / tomorrow / ISO。"
+                "吃饭洗澡通勤等短时活动不填 today（省略或 1h/2h）；上午/中午/下午/晚上填对应时段；仅全天状态填 today。"
+            ),
+        },
     ),
     "set_interaction_preference": (
-        "用户明确提出交流方式的要求时记录。value：reply_length=short|normal|long；proactive_chat=welcome|less|no；"
-        "follow_up_questions=ok|less|no；advice=welcome|only_when_asked|no；humor=likes|neutral|no；avoid_topic=话题",
+        "用户明确提出交流方式的要求时记录。value：reply_length=short|normal|long；"
+        "proactive_chat=welcome|less|no（气话如“别跟我说话了”“烦死了”不记 no，仅平静长期要求）；"
+        "closeness=distance|normal；follow_up_questions=ok|less|no；advice=welcome|only_when_asked|no；"
+        "humor=likes|neutral|no；avoid_topic=话题",
         {"evidence": "原话（逐字）"},
     ),
     "decline_profile_question": ("用户不想回答某个了解类问题时调用。", {"evidence": "原话（逐字）"}),

@@ -321,6 +321,18 @@ class ContextEngine:
     IDENTITY = ("- 对方知道你不是真人。对方问你是不是 AI 时，按你自己的性格回答就行（承认、装傻、岔开、嘴硬都可以），"
                 "但不要说自己是真人、活人。")
 
+    @staticmethod
+    def _stage_line(now_stage: dict[str, Any], data: dict[str, Any], call: str, fill_fn) -> str:
+        sample_hint = (
+            "这一阶段语气感受（只学亲疏和长短，严禁照抄原句或复用里面的具体物件/事件，"
+            "没在【你的生活状态】里写过的做饭/煲汤/烤饼干等绝不乱套，也不无视对方真实居住情况）："
+            f"「{fill_fn(now_stage['sample'], data, call)}」"
+            if now_stage.get("sample") else ""
+        )
+        return (f"- 你们现在的阶段（{now_stage['index'] + 1}/{len(now_stage['labels'])}，{now_stage['label']}）："
+                f"{fill_fn(now_stage['text'], data, call)}{sample_hint}"
+                "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
+
     def _bond_section(self) -> _Section:
         """2026-11-12 (virtual test: the default Violet said "反正我认得出你" and "有点想你" on the first day; the 病娇
         persona "saw" the owner at the canteen door, "你穿的那件外套对吧"; 继妹 cooked noodles at home while the owner was in
@@ -339,7 +351,7 @@ class ContextEngine:
             channel = current().channel
             rel, text = relationship_text(channel, self.db)
             data = persona_data(channel)
-            now_stage = stage(channel, self.db) if rel["kind"] == "close" else None
+            now_stage = stage(channel, self.db)
         except Exception:                                   # noqa: BLE001
             logger.exception("relationship unavailable")
             rel, text, data, now_stage = {"kind": "close", "call": ""}, "", {}, None
@@ -373,11 +385,7 @@ class ContextEngine:
                 else:
                     lines += self._closeness_lines(now_stage)
                 if now_stage:
-                    sample_hint = (f"这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{_fill(now_stage['sample'], data, rel['call'])}」"
-                                   if now_stage.get("sample") else "")
-                    lines.append(f"- 你们现在的阶段（{now_stage['index'] + 1}/{len(now_stage['labels'])}，{now_stage['label']}）："
-                                 f"{_fill(now_stage['text'], data, rel['call'])}{sample_hint}"
-                                 "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
+                    lines.append(self._stage_line(now_stage, data, rel["call"], _fill))
             if rel["call"]:
                 lines.append(f"- 你称呼对方“{rel['call']}”（偶尔叫，不要句句带）。")
         elif rel["kind"] == "persona" and distance_view is not None and describe_fn is not None:
@@ -388,7 +396,12 @@ class ContextEngine:
             lines += self._records_lines()
         else:
             first, *rest = text.split("\n")
-            lines += [f"- {first}"] + [x for x in rest if x]
+            lines += [f"- {first}"]
+            if now_stage:
+                lines += [x for x in rest if x and not x.startswith("- 你们现在的阶段")]
+                lines.append(self._stage_line(now_stage, data, rel["call"], _fill))
+            else:
+                lines += [x for x in rest if x]
             lines += self._records_lines()
         where = together(data)
         if where:
@@ -791,17 +804,52 @@ class ContextEngine:
                 break
         return _Section("external_info", 5, header, lines)
 
+    @staticmethod
+    def _event_when_label(event: dict[str, Any], now_dt) -> str:
+        """Render a concise date + time-of-day label for a happened life event (e.g. '今天下午（11-25）')."""
+        from ai.memory_model import parse_time
+        occ = str(event.get("occurred_at") or "")
+        mmdd = occ[5:10] if len(occ) >= 10 else occ
+        period = ""
+        raw_detail = event.get("source_detail")
+        detail: dict[str, Any] = {}
+        if isinstance(raw_detail, dict):
+            detail = raw_detail
+        elif isinstance(raw_detail, str) and raw_detail.strip():
+            try:
+                parsed = json.loads(raw_detail)
+                if isinstance(parsed, dict):
+                    detail = parsed
+            except ValueError:
+                pass
+        slot_labels = {"morning": "上午", "afternoon": "下午", "evening": "晚上"}
+        period = str(detail.get("label") or "") or slot_labels.get(str(detail.get("slot") or ""), "")
+        if not period and len(occ) > 10:
+            at = parse_time(occ)
+            if at is not None:
+                period = "凌晨" if at.hour < 6 else "上午" if at.hour < 12 else "下午" if at.hour < 18 else "晚上"
+        day_str = occ[:10]
+        if now_dt is not None and len(day_str) == 10:
+            if day_str == now_dt.date().isoformat():
+                return f"今天{period}（{mmdd}）" if period else f"今天（{mmdd}）"
+            if day_str == (now_dt.date() - timedelta(days=1)).isoformat():
+                return f"昨天{period}（{mmdd}）" if period else f"昨天（{mmdd}）"
+        return f"{mmdd} {period}" if period else mmdd
+
     def _life_section(self, mode: str, user_message: str, call_context: dict[str, Any], store) -> _Section:
-        header = "【你的生活状态（只有标为『已发生』的才是你做过的事；对方说自己的事时先回应对方）】"
+        header = "【你的生活状态（只有标为『已发生』的才是你做过的事，别现编没写的事，早些时段的事别说成“刚”在做，也别和今天前面自己说过的话矛盾；对方说自己的事时先回应对方）】"
         if mode == "chat":
             # 2026-11-11 (audit R3): shown on every turn. Before, keywords decided ("书", "听", a long message, a
             # question about her) whether she saw her own day at all -- one turn she knew what she had done today,
             # the next she did not.
             violet_said = [m["content"] or "" for m in self._session_messages() if m["role"] != "user"]
             return _Section("violet_life", 4, header, [l["text"] for l in self._natural_life_lines(store, violet_said)])
+        from ai.memory_model import parse_time
+        now_dt = parse_time(self.db.now())
         lines = []
         for event in store.recent_happened(days=7)[-3:]:
-            lines.append(f"- {event['occurred_at'][5:10]}：{event['content']}（已发生）")
+            when = self._event_when_label(event, now_dt)
+            lines.append(f"- {when}：{event['content']}（已发生）")
         for thread in store.threads(["active"]):
             lines.append(f"- 正在进行：{thread['title']}")
         for plan in store.plans(["planned", "active"]):
@@ -871,7 +919,8 @@ class ContextEngine:
         for event in [e for e in store.recent_happened(days=7) if e["source"] != SOURCE][-3:]:
             detail = item_details(event["content"], config)
             detail = f"（{detail}）" if detail else ""
-            lines.append({"text": f"- {event['occurred_at'][5:10]}：{event['content']}{detail}（已发生）"
+            when = self._event_when_label(event, now)
+            lines.append({"text": f"- {when}：{event['content']}{detail}（已发生）"
                                   f"{said(event['content'], event)}", "content": event["content"] + detail})
         all_threads = store.threads()
         for thread in [t for t in all_threads if t["status"] == "active"]:

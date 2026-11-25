@@ -1777,6 +1777,75 @@ class VioletDatabase:
     # (new_event=True).
     # ------------------------------------------------------------------
 
+    def _check_related_event_overwrite(
+        self,
+        memory_id: int,
+        *,
+        content: str,
+        kind: str,
+        event_time: str | None,
+        progress: str | None,
+        user_text: str | None,
+    ) -> dict[str, Any] | None:
+        """Guard save_event_memory(related_to=<id>) against silently wiping out a planned/dated event.
+
+        related_to replaces the target memory's content with `content`. Passing kind="fact"/"background"
+        or dropping the original event's core topic is rejected with an actionable message so the caller
+        either writes a merged summary or saves the new fact separately.
+        """
+        target = self.get_event_memory(memory_id)
+        if not target or target.get("status") != "active":
+            return None
+        if target.get("kind") != "event" or not (target.get("progress") == "planned" or target.get("event_time")):
+            return None
+        orig = target["content"]
+        if kind != "event":
+            return {
+                "action": "rejected",
+                "reason": "related_to_kind_mismatch",
+                "memory": target,
+                "candidates": [],
+                "note": (
+                    f"没有保存：related_to 会用 summary 整体覆盖原记忆，不能用 kind={kind} 覆盖计划中的事件"
+                    f"（原事件：{orig}）。如果要保存独立长期事实，请不传 related_to（若返回候选再传 new_event=true）"
+                    "另存一条，或改用 remember_profile_fact；如果确实是更新该事件，请用 kind=event 并在 summary 里"
+                    "把原事件主题/时间与新信息合并写全。"
+                ),
+            }
+        from ai.memory_model import _bigrams, dropped_time_details, mentions_topic, recall_terms
+
+        shared_terms = recall_terms(content, orig)
+        ascii_overlap = {
+            g for g in _bigrams(content) & _bigrams(orig)
+            if g.isascii() and not g.isdigit() and g not in ("eve", "violet")
+        }
+        overlap = len(shared_terms) + len(ascii_overlap)
+        progress_changing = progress in ("planned", "ongoing", "done", "cancelled") and progress != target.get("progress")
+        keeps_topic = (
+            (overlap >= 1 and mentions_topic(content, orig))
+            or overlap >= 3
+            or (progress_changing and overlap >= 1)
+        )
+        if not keeps_topic and event_time and event_time != target.get("event_time") and user_text:
+            # Preserve phase 9.1.1 date-update behaviour when the user's turn references the original event
+            # and apply_event_update will carry the dropped original date/clock back onto the content.
+            if recall_terms(user_text, orig) and dropped_time_details(orig, content, user_text, event_time):
+                keeps_topic = True
+        if not keeps_topic:
+            return {
+                "action": "rejected",
+                "reason": "related_to_drops_event_topic",
+                "memory": target,
+                "candidates": [],
+                "note": (
+                    f"没有保存：related_to 会用 summary 整体覆盖原记忆，但这次的 summary 丢失了原事件的核心主题"
+                    f"（原事件：{orig}）。如果是同一件事的新进展或补充，请在 summary 里保留原事件主题和时间、"
+                    "与新信息合并写全；如果是另一件事或独立的长期事实，请不要传 related_to，改用 new_event=true 另存"
+                    "或用 remember_profile_fact。"
+                ),
+            }
+        return None
+
     def save_event_memory(
         self,
         content: str,
@@ -1817,6 +1886,12 @@ class VioletDatabase:
 
         # 2) explicit link to an existing memory
         if related_to is not None:
+            rejected = self._check_related_event_overwrite(
+                int(related_to), content=content, kind=kind, event_time=event_time,
+                progress=progress, user_text=preserve_details,
+            )
+            if rejected is not None:
+                return rejected
             memory = self.apply_event_update(
                 int(related_to), content=content, progress=progress, event_time=event_time,
                 valid_until=valid_until, importance=importance, source="user", source_turn_id=source_turn_id,

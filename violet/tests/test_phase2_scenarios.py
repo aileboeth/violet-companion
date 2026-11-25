@@ -266,10 +266,10 @@ def test_s3_unanswered_proactive_backs_off_and_stops_until_user_replies(make_wor
     say(w, "嗯")
     assert w.scheduler.unanswered_count() == 0
     age_everything(w.db, 3)
-    chat(w, proactive="刚泡了杯热茶")
+    chat(w, proactive="下午好呀，还在忙吗")
     arm(w)
     w.scheduler.tick()
-    assert w.client.sent_texts[-1] == "刚泡了杯热茶"
+    assert w.client.sent_texts[-1] == "下午好呀，还在忙吗"
 
 
 # ---------------------------------------------------------------------------

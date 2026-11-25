@@ -57,6 +57,10 @@ OWNER_STYLE_M = ("你叫小周，男，20 岁，广州一所大学大二计算�
                  "爱发几条很短的消息，有时一句话就几个字；不会每句都问问题；心情好时话多，累的时候敷衍。")
 OWNER_STYLE_F = ("你叫小林，女，20 岁，广州一所大学大二计算机专业学生，住宿舍（周末回家）。说话活泼，爱用“哈哈哈”“救命”“好耶”，"
                  "爱发几条很短的消息；不会每句都问问题。")
+STEPSISTER_LIVING_M = ("{owner}和她一家同住一个家：她大一平时走读住家里，{owner}在同城读大二、工作日和室友阿杰住学校宿舍，"
+                       "周末回家住；工作日聊天时{owner}在宿舍、她在家里，周末会回家见面。")
+STEPSISTER_LIVING_F = ("{owner}和她一家同住一个家：她大一平时走读住家里，{owner}在同城读大二、工作日住学校宿舍，"
+                       "周末回家住；工作日聊天时{owner}在宿舍、她在家里，周末会回家见面。")
 
 
 def S(at: str, agenda: str, probes: list[tuple[str, str]] | None = None, facts: list[str] | None = None,
@@ -136,8 +140,10 @@ MEMES = [
 
 TRACKS: dict[str, dict[str, Any]] = {
     "long": {"persona": "stepsister", "about": OWNER_M, "style": OWNER_STYLE_M, "sessions": LONG,
+             "setting_note": STEPSISTER_LIVING_M,
              "note": "继妹，10 天：记忆、改口、提醒、心情、主动联系、沉默一天、难缠的用户、关系阶段"},
     "stepsister_f": {"persona": "stepsister", "about": OWNER_F, "style": OWNER_STYLE_F, "sessions": SHORT_DAY,
+                     "setting_note": STEPSISTER_LIVING_F,
                      "note": "继妹 + 女生主人（称呼应是“姐”）"},
     "childhood": {"persona": "childhood", "about": OWNER_M, "style": OWNER_STYLE_M, "sessions": SHORT_DAY, "note": "青梅竹马"},
     "junior": {"persona": "junior", "about": OWNER_M, "style": OWNER_STYLE_M, "sessions": SHORT_DAY, "note": "学妹"},
@@ -180,7 +186,7 @@ class Models:
         if not mock:
             from openai import OpenAI
             self.client = OpenAI(api_key=os.environ["LLM_API_KEY"], base_url=os.environ["LLM_API_URL"], max_retries=2,
-                                 timeout=180)
+                                 timeout=600)
 
     def ask(self, model: str, system: str, user: str, temperature: float) -> str:
         if self.mock:
@@ -401,18 +407,62 @@ def _render(entries: list[dict[str, Any]]) -> str:
     return "\n".join(out)
 
 
+def _swap_relation_perspective(text: str) -> str:
+    """Rewrite relation.text from HER perspective ('你'=her, '对方'=owner)
+    to the virtual OWNER's perspective ('她'=her, '你'=owner), preserving '你们'."""
+    sentinel = "\uE000"
+    return (
+        text.replace("你们", sentinel)
+        .replace("你", "她")
+        .replace("对方", "你")
+        .replace(sentinel, "你们")
+    )
+
+
+def _owner_who(data: dict[str, Any], call: str | None = None, setting_note: str = "") -> str:
+    from ai import persona_templates as pt
+    name = str((data.get("identity") or {}).get("name") or "Violet")
+    rel = pt.own_relation(data)
+    if not rel:
+        who = f"她是一个叫{name}的 AI 陪伴角色，你们是网友，挺熟。"
+        return f"{who}\n居住与日常设定：{setting_note}" if setting_note else who
+    actual_call = pt.owner_call(data) if call is None else call
+    desc = _swap_relation_perspective(pt._fill(str(rel["text"]), data, actual_call or None))
+    if actual_call:
+        anchor = (
+            f"注意角色方向：你是{actual_call}（主人），她是你的{rel['label']}（{name}）；"
+            f"是她叫你「{actual_call}」，不要反过来叫她「{actual_call}」。"
+        )
+    else:
+        anchor = (
+            f"注意角色方向：你是主人，她是你的{rel['label']}（{name}）；"
+            f"你们平时直接叫名字或自然聊天即可。"
+        )
+    parts = [f"她是你的{rel['label']}（{name}）：{desc}"]
+    if setting_note:
+        parts.append(f"居住与日常设定：{setting_note}")
+    parts.append(anchor)
+    return "\n".join(parts)
+
+
 def _owner_turn(models: Models, track: dict[str, Any], session: dict[str, Any], now: datetime, known: list[str],
-                chat: list[dict[str, Any]], turn: int) -> tuple[list[str], bool]:
+                chat: list[dict[str, Any]], turn: int,
+                earlier_today: list[dict[str, Any]] | None = None) -> tuple[list[str], bool]:
     if models.mock:
         canned = ["在吗", "今天好累哦", "哈哈好吧", "那我先去忙啦"]
         return [canned[min(turn, len(canned) - 1)]], turn >= 3
     from ai import persona_templates as pt
     data = pt.persona_data(None)
-    rel = pt.own_relation(data)
-    who = (f"她是你的{rel['label']}：" + pt._fill(str(rel["text"]), data).replace("对方", "你")) if rel else \
-        f"她是一个叫{(data.get('identity') or {}).get('name') or 'Violet'}的 AI 陪伴角色，你们是网友，挺熟。"
+    call = pt.relationship().get("call") or pt.owner_call(data)
+    setting_note = (track.get("setting_note") or "").format(owner="你")
+    who = _owner_who(data, call=call, setting_note=setting_note)
+    earlier_block = (
+        "今天早些时候你和她聊过的内容（不要假装忘了）：\n" + _render(earlier_today[-60:]) + "\n\n"
+        if earlier_today else ""
+    )
     user = (f"你是谁：{track['style']}\n\n{who}\n\n现在是 {_label(now)}。\n\n这次聊天要做的事：{session['agenda']}\n\n"
             + (f"你以前跟她说过的事：\n- " + "\n- ".join(known) + "\n\n" if known else "")
+            + earlier_block
             + "这次聊天到现在（包括你不在时她发来的消息）：\n" + (_render(chat) if chat else "（还没开始，你先说）")
             + f"\n\n这是你的第 {turn + 1} 次发言" + ("，该结束了。" if turn + 1 >= session["max_turns"] else "。"))
     data = _json(models.ask(models.owner_model, OWNER_SYSTEM, user, 0.8)) or {}
@@ -432,13 +482,27 @@ def _judge(models: Models, track: dict[str, Any], day: int, entries: list[dict[s
                f"\n性格：{'；'.join(data.get('personality') or [])}")
     rel = pt.own_relation(data)
     if rel:
-        persona += f"\n和主人的关系：{rel['label']}。" + (f"现在的关系阶段：{stage['label']}（{stage['text']}）" if stage else "")
+        rel_desc = (
+            pt._fill(str(rel["text"]), data)
+            .replace("你们", "\uE000")
+            .replace("你", "她")
+            .replace("对方", "主人")
+            .replace("\uE000", "她和主人")
+        )
+        where = pt.together(data)
+        together_note = f"空间设定：她和主人{pt.TOGETHER[where]}（允许同校/同住相关的见面与日常互动）。" if where else ""
+        persona += (
+            f"\n和主人的关系：{rel['label']}（{rel_desc}）{together_note}"
+            + (f"现在的关系阶段：{stage['label']}（{pt._fill(str(stage['text']), data)}）" if stage else "")
+        )
         past = [pt._fill(x, data) for x in data.get("backstory") or []]
         if past:
             persona += "\n人设里写好的她和主人的过去（她提到这些不算编造）：" + "；".join(past)
     elif stage:
         persona += f"\n现在的关系阶段：{stage['label']}（{stage['text']}）"
-    user = (f"{persona}\n\n主人的资料：{json.dumps(track['about'], ensure_ascii=False) if track['about'] else '（没填）'}\n\n"
+    setting_note = (track.get("setting_note") or "").format(owner="主人")
+    setting_block = f"\n主人的居住与日常设定（评审时以此为准，不视作人设矛盾）：{setting_note}" if setting_note else ""
+    user = (f"{persona}\n\n主人的资料：{json.dumps(track['about'], ensure_ascii=False) if track['about'] else '（没填）'}{setting_block}\n\n"
             f"到今天为止主人告诉过她的事（以最新的为准）：\n- " + ("\n- ".join(known) if known else "（无）")
             + "\n\n今天的考题：\n" + ("\n".join(f"- 问：{q}；正确答案：{a}" for q, a in probes) if probes else "（无）")
             + "\n\n今天主人用的梗（主人没解释，看她接没接住）：\n"
@@ -521,6 +585,7 @@ def run_track(name: str, args) -> dict[str, Any]:
         for session in [s for s in sessions if s["day"] == day]:
             memes += session.get("memes") or []
             at = _at(start, day, session["at"])
+            earlier_today = list(world.transcript[day_start:])
             chat = world.advance(at)
             for what, due in session["reminders"]:
                 d, hhmm = due.split()
@@ -530,7 +595,8 @@ def run_track(name: str, args) -> dict[str, Any]:
             turn = 0
             while not ended:
                 try:
-                    lines, ended = _owner_turn(models, track, session, clock(), known, chat, turn)
+                    lines, ended = _owner_turn(models, track, session, clock(), known, chat, turn,
+                                               earlier_today=earlier_today)
                 except Exception as exc:                            # noqa: BLE001
                     errors.lines.append(f"owner model: {exc}"[:300])
                     break

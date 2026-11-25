@@ -276,14 +276,17 @@ def register_persona_routes(app: Flask, violetdb, all_agents=None) -> None:
         stage_label = ""
         stage_line = ""
         if stages and stage_idx is not None:
+            from ai.context_engine import ContextEngine
             st = stages[stage_idx]
             stage_label = str(st["label"])
-            sample_raw = str(st.get("sample") or "")
-            sample_hint = (f"这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{pt._fill(sample_raw, pdata, call)}」"
-                           if sample_raw else "")
-            stage_line = (f"\n- 你们现在的阶段（{stage_idx + 1}/{len(stages)}，{stage_label}）："
-                          f"{pt._fill(str(st.get('text') or ''), pdata, call)}{sample_hint}"
-                          "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
+            stage_info = {
+                "index": stage_idx,
+                "labels": [str(s["label"]) for s in stages],
+                "label": stage_label,
+                "text": str(st.get("text") or ""),
+                "sample": str(st.get("sample") or ""),
+            }
+            stage_line = "\n" + ContextEngine._stage_line(stage_info, pdata, call, pt._fill)
         if own_rel:
             rel_label = str(own_rel.get("label") or "")
             rel_text = pt._fill(str(own_rel.get("text") or ""), pdata, call) + call_line + stage_line

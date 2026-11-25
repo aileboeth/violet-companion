@@ -159,8 +159,24 @@ FOLLOW_UP_NOTE = ("对方说过不喜欢被追问，而这条回复以提问结�
 
 # How long a busy state the user announced lasts, from their own words (scenario-time based).
 _ALL_DAY_RE = re.compile(r"(今天一整天|一整天|今天一天|今天全天|全天|今天都|今天要一直|今天得一直|今天一直|今晚都|晚上都)")
-_TWO_DAYS_RE = re.compile(r"(这两天|这俩天|这一两天|明后天)")
-_FEW_DAYS_RE = re.compile(r"(这几天|最近几天|接下来几天|这阵子|这周|这个星期|这礼拜)")
+_FUTURE_TWO_DAYS_RE = re.compile(r"(明后天|今明两天|今明俩天|明后两天)")
+_FUTURE_FEW_DAYS_RE = re.compile(r"(接下来几天|未来几天|后面几天)")
+_AMBIG_TWO_DAYS_RE = re.compile(r"(这两天|这俩天|这一两天)")
+_AMBIG_FEW_DAYS_RE = re.compile(r"(这几天|最近几天|这阵子|这周|这个星期|这礼拜)")
+_ONGOING_BUSY_RE = re.compile(
+    r"(都(?:很|挺|太|比较|特别|超|在)?忙(?!完)|都要|都得|"
+    r"一直(?:很|挺|太|比较|特别|超|在)?忙(?!完)|"
+    r"(?:还|也)?(?:要|得)忙(?!完)|"
+    r"别打扰|不要打扰|勿扰|别找我|没空|不方便)"
+)
+# Conditional future clauses ("等我忙完了找你", "忙完了再聊") do not mean busyness has already ended.
+_CONDITIONAL_END_RE = re.compile(
+    r"(?:等[^，,。！!？?]{0,6}|要是|如果)(?:忙完|考完|搞定|结束)[^，,。！!？?]*"
+    r"|(?:忙完|考完|搞定|结束)[了啦]?(?:再|就|才|后|之后|以后|找你|回你|聊)"
+)
+_BUSY_ENDED_RE = re.compile(
+    r"(忙完了|忙完啦|终于忙完|总算忙完|考完了|考完啦|搞定了|搞定啦|结束了|结束啦|不忙了|闲下来)"
+)
 
 
 def _end_of_day(day: datetime) -> datetime:
@@ -168,14 +184,25 @@ def _end_of_day(day: datetime) -> datetime:
 
 
 def stated_busy_until(text: str | None, now: datetime) -> datetime | None:
-    """End of a busy period the user stated, or None when they gave none (or a short one: the default applies).
+    """End of a busy period the user stated, or None when they gave none (or a short/retrospective one: default applies).
 
-    今天一整天 / 今天都 -> end of today; 这两天 -> end of tomorrow; 这几天 / 这周 -> end of the day after tomorrow
-    (a deliberately short reading of "a few days": the user can always say again). Never longer than stated."""
+    Ended busyness ("忙完了", "考完了", "不忙了") -> None; explicit future spans ("明后天", "今明两天", "接下来几天")
+    -> end of tomorrow / +2 days; ambiguous spans ("这两天", "最近几天", "这周") only extend when accompanied by
+    clear ongoing/future busy markers ("都很忙", "都要", "别找我", "没空"...) so retrospective explanations like
+    "这两天有点忙" fall back to the default TTL; "今天一整天 / 今天都" -> end of today."""
     text = text or ""
-    if _FEW_DAYS_RE.search(text):
+    if not text:
+        return None
+    if _BUSY_ENDED_RE.search(_CONDITIONAL_END_RE.sub("", text)):
+        return None
+    if _FUTURE_FEW_DAYS_RE.search(text):
         return _end_of_day(now + timedelta(days=2))
-    if _TWO_DAYS_RE.search(text):
+    has_ongoing = bool(_ONGOING_BUSY_RE.search(text))
+    if has_ongoing and _AMBIG_FEW_DAYS_RE.search(text):
+        return _end_of_day(now + timedelta(days=2))
+    if _FUTURE_TWO_DAYS_RE.search(text):
+        return _end_of_day(now + timedelta(days=1))
+    if has_ongoing and _AMBIG_TWO_DAYS_RE.search(text):
         return _end_of_day(now + timedelta(days=1))
     if _ALL_DAY_RE.search(text):
         return _end_of_day(now)
