@@ -548,8 +548,7 @@ def direct_note(names: list[str]) -> str | None:
     """The rule that goes with them (the tool descriptions themselves come with the tool schemas)."""
     if not names:
         return None
-    return ("【工具怎么用】需要实时信息、外部资料、对方的数据或工具能做的事时直接调用（可连用几个），闲聊不用查。"
-            "提示要主人同意的操作照说明问主人；查不到或出错就照实说，绝不编造，也别报内部工具名和错误码。")
+    return "【工具怎么用】需实时/外部资料或工具能力时直接调用，闲聊别查；需同意的先问主人；查不到照实说，不编造、不提内部工具名和错误码。"
 
 
 def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
@@ -557,7 +556,7 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
     the code from the real switches and connections, of what she can do in this chat, how, and what not (and why).
     Facts only -- no style."""
     from ai.settings import env_bool, env_str
-    lines = ["【你现在能做的事】（按当前设置列出；没列出的做不到，别说做了）"]
+    lines = ["【你现在能做的事】（未列出则做不到，别说做了）"]
     try:
         from ai import stickers
         from ai.chat import violetdb
@@ -566,26 +565,40 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
             bare = violetdb.fetch_one("SELECT COUNT(*) AS n FROM stickers WHERE enabled = 1 AND "
                                       "(description IS NULL OR description = '')")["n"]
             lines.append(f"- 表情包：收藏里有 {total} 个" + (f"（其中 {bare} 个还没有说明）" if bare else "")
-                         + "；发就单独一行写 [[表情:编号]]（找别的用 find_stickers），收藏对方发的用 save_sticker")
+                         + "；发 [[表情:编号]]，找用 find_stickers，收用 save_sticker")
         else:
-            lines.append("- 表情包：功能关着，发不了也收藏不了")
+            lines.append("- 表情包：关着，发不了也收藏不了")
     except Exception:                                        # noqa: BLE001 -- an old database without the table
         logger.debug("sticker counts unavailable", exc_info=True)
     if env_bool("VIOLET_IMAGE_ENABLED", False):
         if env_str("VIOLET_IMAGE_GEN_MODEL", "").strip():
-            lines.append("- 画图：可以，create_image（每轮最多一张）；收到的图可 edit_image / look_at_image")
+            lines.append("- 画图：可 create_image（每轮限 1 张），收到的图可 edit_image / look_at_image")
         else:
-            lines.append("- 画图：图片功能开着，但还没有设置画图模型，现在画不了")
+            lines.append("- 画图：开着但还没有设置画图模型，现在画不了")
     else:
-        lines.append("- 画图：图片功能关着，现在画不了")
+        lines.append("- 画图：关着，画不了")
     names = sorted(direct if direct is not None else direct_tools(catalog))
+    if not env_bool("VIOLET_CHAT_ALL_PHONE_TOOLS", False):
+        from ai.agents.chat_agent import _CHAT_HIDDEN_PHONE_TOOLS
+        names = [n for n in names if n not in _CHAT_HIDDEN_PHONE_TOOLS]
     web = [n for n in names if n.startswith("violet-web__")]
-    lines.append("- 上网：可以，web_search 搜索、fetch_url 读网页" if web else "- 上网：现在没有联网工具（没开或连不上）")
+    lines.append("- 上网：可 web_search / fetch_url" if web else "- 上网：现在没有联网工具")
     others = [catalog.tools[n] for n in names if n in catalog.tools and not n.startswith("violet-web__")]
-    # names and how only: the descriptions come with the tool schemas (no second copy, fewer tokens)
-    groups = {"查询": [], "可以直接做": [], "要主人同意才会执行": []}
+    # Read-only tools of large servers (>3) are summarized by server so 20+ names aren't duplicated outside tool schemas.
+    read_by_server: dict[str, list[str]] = {}
+    groups: dict[str, list[str]] = {"查询": [], "可以直接做": [], "要主人同意才会执行": []}
     for t in others[:40]:
-        groups["要主人同意才会执行" if t.needs_approval else ("查询" if t.permission == "read" else "可以直接做")].append(t.name)
+        if t.needs_approval:
+            groups["要主人同意才会执行"].append(t.name)
+        elif t.permission == "read":
+            read_by_server.setdefault(t.server, []).append(t.name)
+        else:
+            groups["可以直接做"].append(t.name)
+    for srv, srv_tools in sorted(read_by_server.items()):
+        if len(srv_tools) > 3:
+            groups["查询"].append(f"{srv}（{len(srv_tools)} 个查询工具）")
+        else:
+            groups["查询"].extend(srv_tools)
     for how, tools in groups.items():
         if tools:
             lines.append(f"- 工具（{how}）：" + "、".join(tools))
@@ -595,24 +608,22 @@ def abilities_note(catalog: Catalog, direct: list[str] | None = None) -> str:
         lines.append("- 主人关掉的工具：" + "、".join(sorted(catalog.disabled)[:12]))
     try:                                                     # 2026-11-01: it was missing, and "unlisted = cannot"
         from ai import voice
-        lines.append("- 语音：可以，放进 <voice></voice>（只发语音不重复发字）" if voice.ready()
-                     else "- 语音：还没装好或没有参考录音，发不了语音")
+        lines.append("- 语音：可以，放进 <voice></voice>（不重复发字）" if voice.ready()
+                     else "- 语音：未就绪，发不了语音")
     except Exception:                                        # noqa: BLE001
         logger.debug("voice state unavailable", exc_info=True)
-    lines.append("- 提醒：对方要你到点提醒、叫他起床或喊他一声（哪怕在道晚安时顺口说“明早记得叫我一声”），必须先调用 set_reminder"
-                 "（光嘴上答应系统不会发消息；没说几点先按聊天记录或提醒里以前定过的时间设好并说出来，从没定过才问；提醒只有你这里能设），"
-                 "取消用 cancel_reminder")
-    lines.append("- 记忆：系统自动记；查以前聊过的事用 query_memory")
+    lines.append("- 提醒：对方要到点提醒/叫起床（含睡前顺口说），必须先调 set_reminder（光口头答应不会发；"
+                 "没说几点先按以前定过的时间设好并说明，从没定过才问；提醒只有你这里能设），取消用 cancel_reminder")
+    lines.append("- 记忆：自动记；查旧事用 query_memory")
     from ai import memes                                     # 2026-11-12
     if memes.enabled():
-        lines.append("- 梗：拿不准的新词用 look_up_meme 查"
-                     + ("" if memes.wiki_available() else "（梗百科还没下载，只能查对方教过你的）")
-                     + "；对方讲明白的梗用 remember_meme 记下")
+        lines.append("- 梗：不熟的新词用 look_up_meme"
+                     + ("" if memes.wiki_available() else "（仅限对方教过的）")
+                     + "，讲明白后 remember_meme")
     from ai import mood
     if mood.enabled():
-        lines.append("- 心情：对方真心夸/谢/哄（→better）或认真凶/嫌弃/赶你走（→worse）时必须先调 note_feeling（哪怕嘴上客气带过、简短退一步或发表情包，文字和表情包不记心情；闲聊和玩笑互损不用）")
-    lines.append("- 以后：你自己主动发消息时什么工具都用不了；对方让你“晚点 / 等会儿帮我查”，现在就查好告诉对方，不要答应以后再查"
-                 "（只有 set_reminder 设好的提醒会到点发）")
+        lines.append("- 心情：对方真心夸/谢/哄（→better）或认真凶/嫌弃/赶走（→worse）时先调 note_feeling（哪怕嘴上客气带过、退一步或发表情包；闲聊和玩笑互损不用）")
+    lines.append("- 以后：你自己主动发消息时什么工具都用不了；对方让“晚点帮我查”，现在就查好告诉对方，不要答应以后再查")
     return "\n".join(lines)
 
 

@@ -46,6 +46,8 @@ GUIDE = ("（手机状态只作参考：判断现在合不合适说话、怎么�
          # morning; the alarm in every line made her nag about it for twenty minutes
          "对方亲口说过的事（聊天记录、记忆里的）比手机数据准，对不上时按对方说的来；"
          "手机上的同一件事，这次聊天里提过一次就别再提。）")
+# 2026-11-26: chat replies don't need proactive do-not-disturb rules; keep the per-turn background block lean
+GUIDE_CHAT = "（仅供参考，别逐条复述或提过再提；对不上时按对方说的来。）"
 # 2026-11-09: in replies the alarm is shown only when it is near (VIOLET_PHONE_CHAT_ALARM_HOURS); proactive runs see it
 # up to 24 hours ahead (a morning message)
 CHAT_ALARM_HOURS = 3.0
@@ -114,7 +116,8 @@ def compose(data: dict[str, dict[str, Any]], read_at: str, now: datetime | None 
     parts += _life_parts(data, now, kind)
     if not parts:
         return ""
-    return f"【主人手机此刻（{read_at} 读取）】" + "；".join(parts) + "\n" + GUIDE
+    guide = GUIDE_CHAT if kind == "chat" else GUIDE
+    return f"【主人手机此刻（{read_at} 读取）】" + "；".join(parts) + "\n" + guide
 
 
 def _when(stamp: Any, now: datetime) -> tuple[datetime | None, str]:
@@ -270,7 +273,7 @@ def line(kind: str = "proactive") -> str:
     if recent:
         head, _, guide = text.partition("\n")
         text = (head + "；" + recent if head else f"【主人手机此刻（{current.strftime('%H:%M')} 读取）】{recent}") \
-            + "\n" + (guide or GUIDE)
+            + "\n" + (guide or (GUIDE_CHAT if kind == "chat" else GUIDE))
     cached[kind] = text
     with _lock:
         if not isinstance(_cache["line"], dict) or _cache["line"].get("_data") is not data:

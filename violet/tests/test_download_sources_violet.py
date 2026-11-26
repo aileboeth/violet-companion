@@ -210,3 +210,113 @@ def test_install_sh_takes_the_signed_archive_hash_and_a_mirror_address():
     sh = (Path(inst.__file__).resolve().parent.parent / "install.sh").read_text(encoding="utf-8")
     assert 'if [ -n "${VIOLET_EXPECT_SHA256:-}" ]; then' in sh and 'want="$VIOLET_EXPECT_SHA256"' in sh
     assert "--release-base=*)" in sh
+    # Parallel mirror race + local management shortcut (no download on uninstall when already installed)
+    assert 'mkdir "$tmp/winner.lock"' in sh and 'cp -R "$target_root/app/tools"' in sh
+    assert 'script_bases+=("https://p.jackyu.cn/$release_base" "http://8.217.135.233:9999/$release_base")' in sh
+
+
+def test_order_fastest_prefers_fast_direct_github_abroad_and_fastest_mirror_in_china():
+    auto = vs.sources("auto")
+    # Overseas: GitHub answers quickly (<= 0.8s) -> stays first
+    abroad = vs.order_fastest(auto, "https://github.com/a/b", probe=lambda u, t: 0.25 if u.startswith("https://github.com/") else 0.18)
+    assert abroad[0].key == "github" and set(s.key for s in abroad) == {"github", "jackyu", "ip8217"}
+
+    # Mainland China: GitHub unreachable, 8.217 faster than jackyu -> 8.217 first, GitHub last as fallback
+    def china_probe(url, timeout):
+        if url.startswith("http://8.217"):
+            return 0.2
+        if url.startswith("https://p.jackyu.cn"):
+            return 0.6
+        return None
+    china = vs.order_fastest(auto, "https://github.com/a/b", probe=china_probe)
+    assert [s.key for s in china] == ["ip8217", "jackyu", "github"]
+
+    # Nothing answers -> preserve original order
+    assert [s.key for s in vs.order_fastest(auto, "https://github.com/a/b", probe=lambda u, t: None)] == \
+        ["github", "jackyu", "ip8217"]
+    # Single source -> no probe needed
+    called = []
+    assert [s.key for s in vs.order_fastest([vs.GITHUB], "https://github.com/a/b", probe=lambda u, t: called.append(u))] == ["github"]
+    assert called == []
+
+
+def test_fetch_stream_aborts_crawling_source_when_fallbacks_remain_and_keeps_last_source(tmp_path):
+    class FakeResp:
+        def __init__(self, chunks):
+            self._chunks = list(chunks)
+            self.headers = {"Content-Length": str(sum(len(c) for c in chunks))}
+
+        def read(self, n=-1):
+            return self._chunks.pop(0) if self._chunks else b""
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    # 10 KB/s after 12s -> aborts with SlowDownloadError when allow_slow=False
+    ticks = iter([0.0, 12.0, 24.0])
+    with pytest.raises(vs.SlowDownloadError):
+        vs.fetch_stream(
+            "https://example.invalid/bin", 1024 * 1024, allow_slow=False,
+            min_bps=32 * 1024, grace=10.0, clock=lambda: next(ticks),
+            opener=lambda req, timeout=None: FakeResp([b"x" * 1024, b"y" * 1024]),
+        )
+    assert vs.reason(vs.SlowDownloadError("too slow")) == "下载太慢"
+
+    # Same slow stream succeeds when allow_slow=True (last candidate)
+    ticks2 = iter([0.0, 12.0, 24.0])
+    out = vs.fetch_stream(
+        "https://example.invalid/bin", 1024 * 1024, allow_slow=True,
+        min_bps=32 * 1024, grace=10.0, clock=lambda: next(ticks2),
+        opener=lambda req, timeout=None: FakeResp([b"hello", b"world"]),
+    )
+    assert out == b"helloworld"
+
+    # OverflowError deletes partial target file
+    target = tmp_path / "partial.tar.gz"
+    with pytest.raises(OverflowError):
+        vs.fetch_stream(
+            "https://example.invalid/big", 5, target=target,
+            opener=lambda req, timeout=None: FakeResp([b"1234", b"5678"]),
+        )
+    assert not target.exists()
+
+
+def test_pip_sources_respects_env_and_picks_fastest_mirror(monkeypatch):
+    monkeypatch.setenv("PIP_INDEX_URL", "https://custom.pypi/simple")
+    assert vs.pip_sources(probe=lambda u, t: (_ for _ in ()).throw(AssertionError("should not probe"))) == [[]]
+    monkeypatch.delenv("PIP_INDEX_URL", raising=False)
+    monkeypatch.setattr(vs, "_has_pip_config", lambda: False)
+
+    # China: official PyPI fails, Tsinghua fastest -> Tsinghua, Aliyun, PyPI
+    def china_pip(url, timeout):
+        if "tsinghua" in url:
+            return 0.1
+        if "aliyun" in url:
+            return 0.3
+        return None
+    assert vs.pip_sources(probe=china_pip) == [["-i", vs.PYPI_TSINGHUA], ["-i", vs.PYPI_ALIYUN], []]
+
+    # Abroad: official PyPI answers in 0.2s -> official PyPI first
+    assert vs.pip_sources(probe=lambda u, t: 0.2 if "pypi.org" in u else 0.9)[0] == []
+
+
+def test_mcp_relay_export_is_silent_before_install_json_exists(tmp_path, monkeypatch):
+    from tools import violet_relay as vr
+    monkeypatch.setattr(vr, "UNIT_PATH", tmp_path / "nonexistent.service")
+    res = inst.mcp_relay(inst.Options(root=tmp_path / "fresh"), "export")
+    assert res == {"ok": True, "installed": False}
+
+
+def test_snowluma_measure_parallel_handles_failures():
+    from tools import violet_snowluma as sl
+
+    def fake(item):
+        if item == "bad":
+            raise RuntimeError("boom")
+        return 1234.5 if item == "fast" else 0.0
+
+    got = sl._measure_parallel(["bad", "fast", "dead"], fake)
+    assert got == {"bad": 0.0, "fast": 1234.5, "dead": 0.0}

@@ -245,6 +245,62 @@ def backed_by(text: str, content: str) -> bool:
 _POSSESSION_CLAIM_RE = re.compile(r"(带|拿|买|借)(回|到)")
 _POSSESSION_EVENT_RE = re.compile(r"(买|挑|借|拿|带回|选了|入手)")
 
+# 2026-11-26: anaphoric drink/eat clauses ("我刚才已经喝过一些了" / "吃过一点了", naming no new food/drink item)
+# refer back to a same-day happened life event about acquiring/preparing/having a matching drink or food item.
+_ANAPHORIC_CONSUMPTION_RE = re.compile(
+    r"^(?:其实|不过|但是|可是|反正|而且|再说|倒也|倒是)?"
+    r"(?:我)?"
+    r"(?:今天|早上|上午|中午|下午|晚上|这会儿|刚才|刚刚|刚|已经|早就|早|也|还|都|先|自己|其实|倒|倒是){0,5}"
+    r"(?:把它|把那[个盒杯份块袋碗瓶]|那个|那盒|那杯|那份|这块|这杯|这盒|这个|剩下的)?"
+    r"(?P<verb>喝|吃|尝)(?:了|过|完)"
+    r"(?:一?[点些口半小]|一小[口半点块]|几[口块片点]|两[口块片]|半[盒杯碗块个瓶袋份]|"
+    r"少半|大半|一半|一点点|一些|一点|好几口|几小口|不少|挺多|好多|很多|剩下(?:的一[点些半]|那[点些半])?)?"
+    r"(?:了|啦|呀|啊|呢|嘛|哦|哈|吧|的|来着|而已|罢了){0,2}$"
+)
+_CONSUMABLE_ACTION_RE = re.compile(r"(?:买|点|泡|冲|煮|煲|烤|煎|炒|蒸|做|吃|喝|尝|拎|带|切|削|抢到)")
+_DRINK_ITEM_RE = re.compile(
+    r"(?:牛奶|酸奶|奶茶(?!店)|咖啡(?!馆|厅|机|桌|杯)|拿铁|美式|豆浆|果汁|汽水|可乐|雪碧|气泡水|苏打水|"
+    r"蜂蜜水|柠檬水|花草茶|洋甘菊茶|果茶|绿茶|红茶|乌龙茶|姜茶|热茶|冰茶|花茶|清茶|茶(?!几|壶|杯|具|桌|馆|室)|"
+    r"银耳羹|甜汤|排骨汤|汤(?!匙|勺|碗|锅)|饮品|饮料|可可|奶昔)"
+)
+_FOOD_ITEM_RE = re.compile(
+    r"(?:早饭|早餐|午饭|午餐|晚饭|晚餐|便当(?!盒)|拉面|米线|炒饭|饭团|泡面|拌面|碗面|"
+    r"白粥|粥|包子|肉包|吐司|面包(?!机)|饼干|蛋糕|点心|甜点|蛋挞|厚蛋烧|荷包蛋|煎鸡蛋|鸡蛋|"
+    r"油条|辣条|薯片|零食|坚果|水果(?!刀|盘|茶|汁|奶)|小番茄|"
+    r"苹果(?!汁|茶|醋|汽水|味)|草莓(?!牛奶|酸奶|奶茶|果汁|奶昔|汽水|茶|味)|"
+    r"寿司|三明治|曲奇|布丁|银耳羹|甜汤|排骨汤|汤(?!匙|勺|碗|锅))"
+)
+
+
+def _anaphoric_consumption_backed(claiming: list[tuple[str, str]], recent: list[dict[str, Any]], now: str) -> bool:
+    """True when every self-claim on the line is an anaphoric eat/drink/taste clause backed by a same-day event."""
+    day = str(now)[:10]
+    today_contents = [
+        str(e.get("content") or "")
+        for e in recent
+        if str(e.get("occurred_at") or "")[:10] == day
+    ]
+    if not today_contents:
+        return False
+    has_drink = any(_CONSUMABLE_ACTION_RE.search(c) and _DRINK_ITEM_RE.search(c) for c in today_contents)
+    has_food = any(_CONSUMABLE_ACTION_RE.search(c) and _FOOD_ITEM_RE.search(c) for c in today_contents)
+    if not (has_drink or has_food):
+        return False
+    matched_any = False
+    for clause, claim in claiming:
+        if USER_REFERENCE_RE.search(claim):
+            continue
+        m = _ANAPHORIC_CONSUMPTION_RE.match(clause)
+        if m is None:
+            return False
+        verb = m.group("verb")
+        if verb == "喝" and not has_drink:
+            return False
+        if verb == "吃" and not has_food:
+            return False
+        matched_any = True
+    return matched_any
+
 
 def _state_backed(line: str, recent: list[dict], now) -> bool:
     """Phase 8.9.9: "人已经站在书店门口了" is backed by a recorded trip to the bookstore within the last day, "带回家了" by
@@ -270,8 +326,9 @@ _FUTURE_RE = re.compile(r"(会|要|打算|想|准备|等|如果|要是|的话|�
 _ASKING_WORD_RE = re.compile(r"(什么|啥|哪|谁|怎么|有没有|是不是)")
 
 
-def _claims(line: str) -> list[str]:
-    out, future, user_attributed = [], False, False
+def _claiming_clauses(line: str) -> list[tuple[str, str]]:
+    out: list[tuple[str, str]] = []
+    future, user_attributed = False, False
     pieces = re.split(f"({CLAUSE_SPLIT_RE.pattern})", line)
     # Pre-scan sentence spans for second-person trait commentary ("刚看完这个就去吃饭，心理素质挺强啊")
     clauses = [(pieces[i], pieces[i + 1] if i + 1 < len(pieces) else "") for i in range(0, len(pieces), 2)]
@@ -299,7 +356,7 @@ def _claims(line: str) -> list[str]:
             user_attributed=user_attributed or is_trait_comment,
         )
         if part is not None:
-            out.append(part)
+            out.append((clause.strip(), part))
         if _SENTENCE_END_RE.search(after):
             future = False
             user_attributed = False
@@ -308,6 +365,10 @@ def _claims(line: str) -> list[str]:
             if _USER_ATTRIBUTION_RE.search(clause) and not asking:
                 user_attributed = True
     return out
+
+
+def _claims(line: str) -> list[str]:
+    return [part for _, part in _claiming_clauses(line)]
 
 
 def _claim(clause: str, subjectless: bool = True, user_attributed: bool = False) -> str | None:
@@ -764,9 +825,10 @@ class ConsistencyGuard:
                 prior_today_facts |= _extract_today_facts(line)
             # hedges ("想", "下次") and references to the user ("你") only count inside the claiming clause:
             # "我昨天去了海边，下次带你去" is still a claim
-            claims = _claims(line)
-            if not claims:
+            claiming = _claiming_clauses(line)
+            if not claiming:
                 continue
+            claims = [part for _, part in claiming]
             if self.turn_used_web and WEB_ACTION_RE.search(line) and not LIVED_RE.search(line):
                 # phase 9.3: "刚查了一下 / 看了原文" on a turn where Violet really searched / read a page is that action,
                 # not an unrecorded experience (what the page says is still not hers -- the notice tells Chat so)
@@ -793,6 +855,8 @@ class ConsistencyGuard:
             if any(_event_backs(e) for e in recent):
                 continue
             if backstory and any(backs(as_done, b) for b in backstory):
+                continue
+            if _anaphoric_consumption_backed(claiming, recent, now):
                 continue
             if STATE_CLAIM_RE.search(line) and _state_backed(line, recent, parse_time(now)):
                 continue

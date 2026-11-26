@@ -39,7 +39,7 @@ logger = logging.getLogger("violet.context")
 MASK = "[已停用的信息]"
 # 2026-11-11 (audit R3): what she is shown no longer depends on keywords in the owner's message. Each section holds
 # the same kind of facts on every turn; how to use them is the model's job.
-NOW_UNKNOWN_LINE = "- 对方此刻在哪里、在做什么：没有记录（不要按常住地或生活规律推断；对方让你猜时，说明是猜的）"
+NOW_UNKNOWN_LINE = "- 对方此刻在哪里、在做什么：没有记录（不要按常住地或生活规律推断）"
 # the user's own word on where they are / what they do / whether they are free outranks the timetable plan
 USER_STATED_SOURCES = ("user_stated", "dashboard")
 PLAN_ANSWERED_KINDS = ("location", "activity", "availability")
@@ -162,8 +162,10 @@ _HISTORY_ANCHORS: dict[tuple[str, str], Any] = {}      # (database, mode) -> id 
 # chat had 0% cache on every first call while the groups had 88-92%)
 # 2026-11-11: "profile" and "known_keys" are the same on every turn now (not picked by the message's words) and stay
 # in the fixed part
+# 2026-11-26: "relationship" moved back into stable system prefix (no running minute counter exists anymore),
+# keeping the per-turn 〔背景〕 block right above the owner's message lean so their words stay in focus.
 VOLATILE_SECTIONS = {"situation", "commitments", "recall", "restricted", "onboarding", "base",
-                     "persona_dynamic", "violet_life", "external_info", "social", "ai_experience", "relationship",
+                     "persona_dynamic", "violet_life", "external_info", "social", "ai_experience",
                      "memes"}
 
 
@@ -251,7 +253,7 @@ class ContextEngine:
         kinds = {s["kind"] for s in situations}
         if "location" not in kinds and "activity" not in kinds:
             lines.append(NOW_UNKNOWN_LINE)
-        return _Section("situation", 3, "【当前情境（会过期；过期的不再代表现在）】", lines), situations
+        return _Section("situation", 3, "【当前情境（会过期）】", lines), situations
 
     def _schedule_status_line(self, situations: list[dict[str, Any]] | None = None) -> str | None:
         """Phase 9.4.4: "by the timetable the user may be in class until HH:MM" -- a plan, never where the user is;
@@ -316,22 +318,19 @@ class ContextEngine:
     FIRST_MEETING = ("- 这是你们第一次聊天，你们刚认识。不要装作早就认识对方（不说“认得出你”“跟你很熟”），"
                      "也不撒娇、不吃醋、不说想念；像刚加上好友那样，自然、有点好奇，慢慢熟起来。")
     NEW_TODAY = "- 你们今天才开始聊天，还在互相熟悉：可以聊得开心，但还不吃醋、不说想念、不用亲昵的称呼。"
-    APART = ("- 你们是隔着手机聊天的：你有你自己那边的生活，不在对方身边，看不见对方，也不约现实里见面；"
-             "说到一起做什么，只能是想象或者以后的打算。")
-    IDENTITY = ("- 对方知道你不是真人。对方问你是不是 AI 时，按你自己的性格回答就行（承认、装傻、岔开、嘴硬都可以），"
-                "但不要说自己是真人、活人。")
+    APART = "- 你们隔着手机聊天：不在对方身边、看不见对方、不约现实见面；说到一起做事只当想象或以后打算。"
+    IDENTITY = "- 对方知道你不是真人；问起时按性格答（承认/装傻/岔开均可），绝不说自己是真人或活人。"
 
     @staticmethod
     def _stage_line(now_stage: dict[str, Any], data: dict[str, Any], call: str, fill_fn) -> str:
         sample_hint = (
-            "这一阶段语气感受（只学亲疏和长短，严禁照抄原句或复用里面的具体物件/事件，"
-            "没在【你的生活状态】里写过的做饭/煲汤/烤饼干等绝不乱套，也不无视对方真实居住情况）："
+            "语气感受（严禁照抄原句或复用里面的具体物件/事件，仅按【你的生活状态】与对方真实居住情况说）："
             f"「{fill_fn(now_stage['sample'], data, call)}」"
             if now_stage.get("sample") else ""
         )
         return (f"- 你们现在的阶段（{now_stage['index'] + 1}/{len(now_stage['labels'])}，{now_stage['label']}）："
                 f"{fill_fn(now_stage['text'], data, call)}{sample_hint}"
-                "阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。")
+                "阶段慢慢变，别抢在阶段前面。")
 
     def _bond_section(self) -> _Section:
         """2026-11-12 (virtual test: the default Violet said "反正我认得出你" and "有点想你" on the first day; the 病娇
@@ -406,9 +405,7 @@ class ContextEngine:
         where = together(data)
         if where:
             from ai.persona_templates import TOGETHER
-            lines.append(f"- 在你们的故事里，你们{TOGETHER[where]}：可以说在同一个地方发生的事，也可以约着一起做事、见面，"
-                         "这是你们俩的故事。但对方此刻在哪、在做什么、长什么样、穿什么，只按对方自己说的，不要替对方编；"
-                         "对方的真实情况（比如住宿舍、在外地）和故事对不上时，按对方的实际情况来。")
+            lines.append(f"- 故事里你们{TOGETHER[where]}，可聊同地事或约见面；但对方此刻在哪、做什么、长什么样、穿什么，只按对方自己说的，不替编，与对方真实情况冲突时按对方实际来。")
         else:
             lines.append(self.APART)
         if not data.get("kind") == "ai":                    # the AI persona says what it is in its own words
@@ -837,7 +834,7 @@ class ContextEngine:
         return f"{mmdd} {period}" if period else mmdd
 
     def _life_section(self, mode: str, user_message: str, call_context: dict[str, Any], store) -> _Section:
-        header = "【你的生活状态（只有标为『已发生』的才是你做过的事，别现编没写的事，早些时段的事别说成“刚”在做，也别和今天前面自己说过的话矛盾；对方说自己的事时先回应对方）】"
+        header = "【你的生活状态（仅『已发生』为真，早些时段的事别说成“刚”在做，别现编、别矛盾）】"
         if mode == "chat":
             # 2026-11-11 (audit R3): shown on every turn. Before, keywords decided ("书", "听", a long message, a
             # question about her) whether she saw her own day at all -- one turn she knew what she had done today,
@@ -890,7 +887,7 @@ class ContextEngine:
 
         def said(content: str, row: dict[str, Any] | None = None, told: bool = False, doing: str | None = None) -> str:
             if any(mentions_life(r, content, config, doing=doing) for r in violet_said):
-                return "（这次聊天里已经说过了，别再重复；对方问起再接着聊）"
+                return "（已说过，别重复）"
             if (row and row.get("shared_with_user_at")) or told or (
                     row and row.get("occurred_at")
                     and violet_told(content, parse_time(row["occurred_at"]), earlier, config, doing=doing)):
@@ -1105,9 +1102,9 @@ class ContextEngine:
             onboarding_section, onboarding_key = self._onboarding_section(user_message, call_context)
             sections.append(onboarding_section)
         sections.append(self._base_section())
-        # 2026-10-30 (token use): the persona -- the part that changes least -- right after the fixed instructions, so
-        # the provider's prefix cache (DeepSeek, OpenAI) can serve the same beginning of every call; order kept otherwise
-        sections.sort(key=lambda s: 0 if s.name == "persona_core" else 1)
+        # 2026-10-30 (token use): persona & relationship stay right after the fixed instructions for prefix cache
+        # and coherent character framing before the dialogue turns.
+        sections.sort(key=lambda s: 0 if s.name == "persona_core" else (1 if s.name == "relationship" else 2))
 
         budget = env_int("VIOLET_CONTEXT_MAX_CHARS", 4000)
         trimmed = self._fit(sections, budget)

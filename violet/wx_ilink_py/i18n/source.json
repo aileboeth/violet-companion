@@ -1,7 +1,6 @@
 {
 "- 你们现在的阶段（{0}/{1}，{2}）：{3}{4}阶段是慢慢变的：不要突然像换了一个人，也不要抢在阶段前面。": [
-"ai/persona_templates.py",
-"wx_ilink_py/persona_routes.py"
+"ai/persona_templates.py"
 ],
 ".env 里的提示词（不是版本文件中的任何一个）": [
 "control.js"
@@ -792,6 +791,9 @@
 "下载 CosyVoice 源码（GitHub）": [
 "tools/violet_voice.py"
 ],
+"下载太慢": [
+"tools/violet_sources.py"
+],
 "下载来源": [
 "ai/control_config.py"
 ],
@@ -799,6 +801,9 @@
 "control_memes.js"
 ],
 "下载源码失败：{0}": [
+"tools/violet_voice.py"
+],
+"下载的文件太大：{0}": [
 "tools/violet_voice.py"
 ],
 "下载的源码和记录的 SHA-256 不一致": [
@@ -7741,8 +7746,7 @@
 "control_flow.js"
 ],
 "这一阶段语气感受（只拿捏亲疏感，严禁照抄原句）：「{0}」": [
-"ai/persona_templates.py",
-"wx_ilink_py/persona_routes.py"
+"ai/persona_templates.py"
 ],
 "这个 Key 没有权限使用该模型（接口返回 403）": [
 "ai/setup_status.py"

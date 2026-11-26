@@ -744,8 +744,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         servers = start_fake_tools()
         prepare(args.env, work, servers, args.mock)
-        os.environ.update({"VIOLET_ASYNC_MEMORY": "1", "VIOLET_LIFE_ENGINE": "1", "VIOLET_HOLIDAY_GREETING": "0",
-                           "VIOLET_IMAGE_ENABLED": "0", "VIOLET_MEMES": "0" if args.no_memes else "1"})
+        _apply_env_overrides(work, {
+            "VIOLET_ASYNC_MEMORY": "1",
+            "VIOLET_LIFE_ENGINE": "1",
+            "VIOLET_HOLIDAY_GREETING": "0",
+            "VIOLET_IMAGE_ENABLED": "0",
+            "VIOLET_MEMES": "0" if args.no_memes else "1",
+        })
         if args.memes_file:
             from ai import memes
             memes.import_file(args.memes_file)
@@ -767,6 +772,28 @@ def main(argv: list[str] | None = None) -> int:
         from ai.settings import set_clock
         set_clock(None)
         shutil.rmtree(work, ignore_errors=True)
+
+
+def _apply_env_overrides(work: Path, overrides: dict[str, str]) -> None:
+    """Apply runtime overrides to both os.environ and work/eval.env so reload_env() cannot clobber them."""
+    os.environ.update(overrides)
+    env_path = work / "eval.env"
+    if not env_path.exists():
+        return
+    lines: list[str] = []
+    seen: set[str] = set()
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        key, sep, _ = raw.partition("=")
+        if sep and key in overrides:
+            if key not in seen:
+                lines.append(f"{key}={overrides[key]}")
+                seen.add(key)
+        else:
+            lines.append(raw)
+    for key, value in overrides.items():
+        if key not in seen:
+            lines.append(f"{key}={value}")
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _copy_proactive_settings(env_file: Path | None, work: Path) -> None:

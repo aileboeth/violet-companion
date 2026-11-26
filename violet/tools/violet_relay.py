@@ -135,27 +135,14 @@ def unit_text(binary: Path | str, device_port: int, client_port: int) -> str:
         "SystemCallArchitectures=native", "", "[Install]", "WantedBy=multi-user.target", ""])
 
 
-def _fetch(url: str, limit: int, timeout: float = 60.0,
-           report: Callable[[int, int], None] | None = None) -> bytes:
+def _fetch(url: str, limit: int, timeout: float = 20.0,
+           report: Callable[[int, int], None] | None = None, *, allow_slow: bool = True) -> bytes:
     """report(received, total) after every chunk (total 0 when the server did not say)."""
-    req = urllib.request.Request(url, headers={"User-Agent": "violet-installer"})
-    chunks, got = [], 0
-    with urllib.request.urlopen(req, timeout=timeout) as resp:      # noqa: S310 -- fixed https GitHub URLs
-        try:
-            total = int(resp.headers.get("Content-Length") or 0)
-        except ValueError:
-            total = 0
-        while True:
-            chunk = resp.read(65536)
-            if not chunk:
-                break
-            got += len(chunk)
-            if got > limit:
-                raise RelayError(f"下载的文件太大：{url}")
-            chunks.append(chunk)
-            if report is not None:
-                report(got, total)
-    return b"".join(chunks)
+    src_mod = _tool("violet_sources")
+    try:
+        return src_mod.fetch_stream(url, limit, timeout=timeout, report=report, allow_slow=allow_slow)
+    except OverflowError:
+        raise RelayError(f"下载的文件太大：{url}") from None
 
 
 def _say(progress: Callable[[int, str], None] | None, percent: int, step: str) -> None:
@@ -181,9 +168,14 @@ def _download_relay(arch: str, fetch: Callable[..., bytes], progress: Callable[[
     SHA256SUMS.txt.sig (Violet MCP's relay key, tools/violet_sign.py MCP_RELAY_KEY) is required through a mirror;
     from github.com a release without it is accepted (Violet MCP 1.4.3 and older), a wrong one is not."""
     sign, src_mod = _tool("violet_sign"), _tool("violet_sources")
+    candidates = list(sources or [src_mod.GITHUB])
+    if fetch is _fetch and len(candidates) > 1:
+        candidates = src_mod.order_fastest(candidates, release_url("SHA256SUMS.txt"))
+    last_source = candidates[-1]
 
     def attempt(source: Any) -> tuple[str, bytes]:
         where = "" if source.direct else f"（{source.label}）"
+        allow_slow = source == last_source
         _say(progress, 10, f"下载校验清单 SHA256SUMS.txt{where}")
         raw = fetch(source.url(release_url("SHA256SUMS.txt")), 65536)
         try:
@@ -207,13 +199,16 @@ def _download_relay(arch: str, fetch: Callable[..., bytes], progress: Callable[[
                 last[0] = percent
                 progress(percent, f"下载 {name}{where}：{got / 1048576:.1f} / {total / 1048576:.1f} MB" if total
                          else f"下载 {name}{where}：{got / 1048576:.1f} MB")
-        data = fetch(source.url(release_url(name)), MAX_BINARY, report=report)
+        if fetch is _fetch:
+            data = _fetch(source.url(release_url(name)), MAX_BINARY, report=report, allow_slow=allow_slow)
+        else:
+            data = fetch(source.url(release_url(name)), MAX_BINARY, report=report)
         _say(progress, 82, "校验 SHA-256")
         if hashlib.sha256(data).hexdigest() != digest:
             raise RelayError(f"{name} 的 SHA-256 和发布里的 SHA256SUMS.txt 不一致")
         return name, data
     try:
-        (name, data), source = src_mod.first(list(sources or [src_mod.GITHUB]), attempt)
+        (name, data), source = src_mod.first(candidates, attempt)
     except src_mod.SourcesFailed as exc:
         raise RelayError(f"下载中继失败，没有安装：{exc}") from None
     return name, data, source.label

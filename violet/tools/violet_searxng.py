@@ -64,25 +64,13 @@ def _say(progress: Progress | None, percent: int, step: str) -> None:
         progress(percent, step)
 
 
-def _fetch(url: str, limit: int, report: Callable[[int, int], None] | None = None, timeout: float = 60.0) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": "violet-installer"})
-    chunks, got = [], 0
-    with urllib.request.urlopen(req, timeout=timeout) as resp:      # noqa: S310 -- a fixed https GitHub URL
-        try:
-            total = int(resp.headers.get("Content-Length") or 0)
-        except ValueError:
-            total = 0
-        while True:
-            chunk = resp.read(65536)
-            if not chunk:
-                break
-            got += len(chunk)
-            if got > limit:
-                raise SearxngError("下载的文件太大")
-            chunks.append(chunk)
-            if report is not None:
-                report(got, total)
-    return b"".join(chunks)
+def _fetch(url: str, limit: int, report: Callable[[int, int], None] | None = None,
+           timeout: float = 20.0, *, allow_slow: bool = True) -> bytes:
+    src_mod = _tool("violet_sources")
+    try:
+        return src_mod.fetch_stream(url, limit, timeout=timeout, report=report, allow_slow=allow_slow)
+    except OverflowError:
+        raise SearxngError("下载的文件太大") from None
 
 
 def _tool(name: str) -> Any:
@@ -98,6 +86,9 @@ def _download_source(fetch: Callable[..., bytes], progress: Progress | None,
     """SearXNG's source archive from the first source that works (Violet 0.7.59): (bytes, the source's label)."""
     src_mod = _tool("violet_sources")
     candidates = [s for s in (sources or [src_mod.GITHUB]) if s.key != "custom"] or [src_mod.GITHUB]
+    if fetch is _fetch and len(candidates) > 1:
+        candidates = src_mod.order_fastest(candidates, SOURCE_URL)
+    last_source = candidates[-1]
 
     def attempt(source: Any) -> bytes:
         label = "GitHub" if source.direct else source.label
@@ -110,6 +101,8 @@ def _download_source(fetch: Callable[..., bytes], progress: Progress | None,
                 last[0] = pct
                 progress(pct, f"下载 SearXNG 源码（{label}）：{got / 1048576:.1f}"
                          + (f" / {total / 1048576:.1f}" if total else "") + " MB")
+        if fetch is _fetch:
+            return _fetch(source.url(SOURCE_URL), MAX_SOURCE, report=report, allow_slow=(source == last_source))
         return fetch(source.url(SOURCE_URL), MAX_SOURCE, report=report)
     try:
         data, source = src_mod.first(candidates, attempt)
@@ -585,12 +578,17 @@ def install(layout: Any, state: dict[str, Any], *, python: Path, port_free: Call
             if progress is not None:
                 progress(seen[0], "安装依赖：" + line.strip()[:90])
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    for step_cmd, what in ((pip + ["-U", "pip", "setuptools", "wheel", "pyyaml", "msgspec", "typing_extensions"], "基础工具"),
-                           (pip + ["-r", str(src / "requirements.txt")], "SearXNG 的依赖"),
-                           (pip + ["--use-pep517", "--no-build-isolation", "-e", str(src)], "SearXNG"),
-                           (pip + ["granian"], "Web 服务器（granian）")):
+    pip_opts = _tool("violet_sources").pip_sources() if stream is _stream else [[]]
+    for args, what in ((["-U", "pip", "setuptools", "wheel", "pyyaml", "msgspec", "typing_extensions"], "基础工具"),
+                       (["-r", str(src / "requirements.txt")], "SearXNG 的依赖"),
+                       (["--use-pep517", "--no-build-isolation", "-e", str(src)], "SearXNG"),
+                       (["granian"], "Web 服务器（granian）")):
         _say(progress, seen[0], f"安装{what}")
-        code, tail = stream(step_cmd, on_line, env)
+        code, tail = 1, ""
+        for extra in pip_opts:
+            code, tail = stream(pip + extra + args, on_line, env)
+            if code == 0:
+                break
         if code != 0:
             if what.startswith("Web"):                # optional: SearXNG's own server is used instead
                 notes.append("granian 没有装上，改用 SearXNG 自带的服务器")

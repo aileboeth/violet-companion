@@ -58,9 +58,25 @@ violet_main() {
           __VIOLET_RELEASE_BASE*) die "请以 root 运行，或在前面加 sudo" ;;
         esac
         tmp_script="$(mktemp)"
-        if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 "$release_base/install.sh" -o "$tmp_script"
-        elif command -v wget >/dev/null 2>&1; then wget -q -O "$tmp_script" "$release_base/install.sh"
-        else die "需要 curl 或 wget"; fi
+        local -a script_bases=("$release_base")
+        case "$release_base" in
+          https://github.com/*) script_bases+=("https://p.jackyu.cn/$release_base" "http://8.217.135.233:9999/$release_base") ;;
+        esac
+        local sb="" got_script=0
+        for sb in "${script_bases[@]}"; do
+          if command -v curl >/dev/null 2>&1; then
+            if curl -fsSL --retry 1 --connect-timeout 6 --max-time 15 "$sb/install.sh" -o "$tmp_script"; then
+              release_base="$sb"; got_script=1; break
+            fi
+          elif command -v wget >/dev/null 2>&1; then
+            if wget -q -T 15 -t 2 -O "$tmp_script" "$sb/install.sh"; then
+              release_base="$sb"; got_script=1; break
+            fi
+          else
+            die "需要 curl 或 wget"
+          fi
+        done
+        [ "$got_script" = "1" ] || die "下载安装脚本失败（GitHub 和内置加速站都连不上）"
         script="$tmp_script"
       fi
       local -a carry=()
@@ -134,8 +150,8 @@ PY
   fetch_quick() {   # 0.7.66: like fetch, but fails (instead of stopping) and gives up on a dead or crawling address
     # (the user's server: GitHub sent 50 KB/s, then hung for 10 minutes on a 65-byte file)
     if command -v curl >/dev/null 2>&1; then
-      curl -fsSL --retry 1 --connect-timeout 15 --speed-limit 32768 --speed-time 30 --max-time 600 "$1" -o "$2"
-    elif command -v wget >/dev/null 2>&1; then wget -q -T 30 -t 2 -O "$2" "$1"
+      curl -fsSL --retry 1 --connect-timeout 10 --speed-limit 32768 --speed-time 20 --max-time 600 "$1" -o "$2"
+    elif command -v wget >/dev/null 2>&1; then wget -q -T 20 -t 2 -O "$2" "$1"
     else die "需要 curl 或 wget 来下载程序"; fi
   }
 
@@ -166,10 +182,37 @@ PY
     fi
   fi
 
-  # the program: next to this script, else the release archive from the same address
+  # the program: next to this script, else already installed on disk for management commands, else the release archive
   local here=""
   if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
     here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  fi
+  if [ -z "$here" ] || [ ! -f "$here/tools/violet_installer.py" ]; then
+    case "$command" in
+      uninstall|status|doctor|backup|restore|start|stop|restart)
+        local target_root="" next_root=0
+        if [ "$user_install" = "1" ]; then target_root="$HOME/.local/share/violet"; else target_root="/opt/violet"; fi
+        for arg in "$@"; do
+          if [ "$next_root" = "1" ]; then target_root="$arg"; next_root=0; continue; fi
+          case "$arg" in
+            --root) next_root=1 ;;
+            --root=*) target_root="${arg#--root=}" ;;
+          esac
+        done
+        if [ -f "$target_root/app/tools/violet_installer.py" ]; then
+          if [ "$command" = "uninstall" ]; then
+            VIOLET_TMP="$(mktemp -d)"
+            trap 'rm -rf "$VIOLET_TMP"' EXIT
+            mkdir -p "$VIOLET_TMP/violet"
+            cp -R "$target_root/app/tools" "$VIOLET_TMP/violet/tools"
+            [ -f "$target_root/app/VERSION" ] && cp "$target_root/app/VERSION" "$VIOLET_TMP/violet/VERSION"
+            here="$VIOLET_TMP/violet"
+          else
+            here="$target_root/app"
+          fi
+        fi
+        ;;
+    esac
   fi
   if [ -z "$here" ] || [ ! -f "$here/tools/violet_installer.py" ]; then
     case "$release_base" in
@@ -186,6 +229,53 @@ PY
     case "$release_base" in
       https://github.com/*) bases+=("https://p.jackyu.cn/$release_base" "http://8.217.135.233:9999/$release_base") ;;
     esac
+    # Race the tiny sha256 file in parallel so mainland China servers jump straight to the fastest mirror
+    # instead of waiting for GitHub to time out first (overseas servers still pick GitHub first in ~0.2s).
+    if [ "${#bases[@]}" -gt 1 ] && command -v curl >/dev/null 2>&1; then
+      local -a probe_pids=()
+      local idx=0
+      for b in "${bases[@]}"; do
+        (
+          curl -fsSL --connect-timeout 4 --max-time 6 "$b/violet.tar.gz.sha256" -o "$tmp/probe.$idx" 2>/dev/null &
+          cpid=$!
+          trap 'kill "$cpid" 2>/dev/null || true' TERM INT EXIT
+          if wait "$cpid" 2>/dev/null && grep -Eq '^[0-9a-fA-F]{64}([[:space:]]|$)' "$tmp/probe.$idx"; then
+            if mkdir "$tmp/winner.lock" 2>/dev/null; then
+              printf '%s\n' "$idx" > "$tmp/winner"
+            fi
+          fi
+        ) &
+        probe_pids+=("$!")
+        idx=$((idx + 1))
+      done
+      local ticks=0 alive=0 p
+      while [ "$ticks" -lt 50 ] && [ ! -f "$tmp/winner" ]; do
+        alive=0
+        for p in "${probe_pids[@]}"; do
+          if kill -0 "$p" 2>/dev/null; then alive=1; break; fi
+        done
+        [ "$alive" = "0" ] && break
+        sleep 0.1
+        ticks=$((ticks + 1))
+      done
+      for p in "${probe_pids[@]}"; do
+        kill "$p" 2>/dev/null || true
+      done
+      wait 2>/dev/null || true
+      if [ -f "$tmp/winner" ]; then
+        local win_idx=""
+        win_idx="$(cat "$tmp/winner" 2>/dev/null || true)"
+        if [ -n "$win_idx" ] && [ "$win_idx" != "0" ]; then
+          local -a ordered=("${bases[$win_idx]}")
+          idx=0
+          for b in "${bases[@]}"; do
+            [ "$idx" = "$win_idx" ] || ordered+=("$b")
+            idx=$((idx + 1))
+          done
+          bases=("${ordered[@]}")
+        fi
+      fi
+    fi
     local base="" b
     for b in "${bases[@]}"; do
       say "== 下载 Violet：$b"

@@ -435,6 +435,8 @@ VIOLET_USER_INITIATED_GAP_MINUTES=30
 CHAT_LLM_MODEL=grok-4.2
 CHAT_LLM_MODEL_TEMPERATURE=0.85
 # 提示词默认是 persona/chat_prompt_versions/chat.v4.txt（后台可选其他版本）；设置 CHAT_LLM_PROMPT 会覆盖它
+# 聊天轮次默认隐藏纯诊断类手机工具（health/permission_state/system_properties/locale_info/screen_info/time_now/app_info）以减少工具 schema 噪音；设为 1 暴露全部
+VIOLET_CHAT_ALL_PHONE_TOOLS=0
 
 # ── Memory Agent ──────────────────────────────────────────────────────────────
 MEMORY_LLM_MODEL_TEMPERATURE=0.2

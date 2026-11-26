@@ -39,9 +39,11 @@ def _save(agent, **args):
 
 def test_related_to_rejects_fact_overwriting_planned_event_red_team_t13(violetdb):
     """Red-team T13: linking an English-proficiency fact to the CET-4 exam must not wipe the exam."""
+    from datetime import datetime, timedelta
     from ai.agents import MemoryAgent
     from ai.agents.memory_agent import write_step_succeeded
 
+    exam_date = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
     agent = MemoryAgent()
     with turn("我25号要考英语四级，有点慌", "t1", 1):
         exam = _save(
@@ -49,7 +51,7 @@ def test_related_to_rejects_fact_overwriting_planned_event_red_team_t13(violetdb
             summary="用户要考英语四级，感到有点慌",
             kind="event",
             progress="planned",
-            event_date="2026-11-25",
+            event_date=exam_date,
             importance=4,
         )
     assert exam["ok"] is True
@@ -68,19 +70,21 @@ def test_related_to_rejects_fact_overwriting_planned_event_red_team_t13(violetdb
     assert res["reason"] == "related_to_kind_mismatch"
     assert res["memory_id"] == exam_id
     assert res["existing_content"] == "用户要考英语四级，感到有点慌"
-    assert res["existing_event_time"] == "2026-11-25"
+    assert res["existing_event_time"] == exam_date
     assert "new_event=true" in res["note"] and "remember_profile_fact" in res["note"]
     assert write_step_succeeded("save_memory", raw) is False
 
     stored = violetdb.get_event_memory(exam_id)
     assert stored["content"] == "用户要考英语四级，感到有点慌"
     assert stored["progress"] == "planned"
-    assert stored["event_time"] == "2026-11-25"
+    assert stored["event_time"] == exam_date
 
 
 def test_related_to_rejects_topic_drop_even_with_kind_event(violetdb):
+    from datetime import datetime, timedelta
     from ai.agents import MemoryAgent
 
+    exam_date = (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d")
     agent = MemoryAgent()
     with turn("我25号要考英语四级，有点慌", "t1", 1):
         exam_id = _save(
@@ -88,7 +92,7 @@ def test_related_to_rejects_topic_drop_even_with_kind_event(violetdb):
             summary="用户要考英语四级，感到有点慌",
             kind="event",
             progress="planned",
-            event_date="2026-11-25",
+            event_date=exam_date,
         )["memory_id"]
 
     # Model passes kind="event" (or omits kind) while replacing content with unrelated English proficiency

@@ -614,7 +614,23 @@ def build_blocked(machine: Callable[[], str] | None = None) -> str | None:
     return None
 
 
-def apt_speed(base: str, size: int = 1024 * 1024, timeout: float = 15.0,
+def _measure_parallel(items: list[str] | tuple[str, ...], fn: Callable[[str], float]) -> dict[str, float]:
+    """Run ``fn`` across ``items`` concurrently so one dead/hanging host does not add its timeout to the rest."""
+    import concurrent.futures
+    if len(items) <= 1:
+        return {item: fn(item) for item in items}
+    out: dict[str, float] = {item: 0.0 for item in items}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(items)) as pool:
+        futs = {pool.submit(fn, item): item for item in items}
+        for fut, item in futs.items():
+            try:
+                out[item] = float(fut.result())
+            except Exception:                                                           # noqa: BLE001
+                out[item] = 0.0
+    return out
+
+
+def apt_speed(base: str, size: int = 1024 * 1024, timeout: float = 10.0,
               clock: Callable[[], float] = time.monotonic) -> float:
     """Bytes a second for the first MB of a large index file of this Debian source (0 = it did not answer)."""
     url = (base or "http://deb.debian.org") + "/debian/dists/bookworm/main/binary-amd64/Packages.xz"
@@ -636,7 +652,7 @@ def apt_mirror(speed: Callable[[str], float] = apt_speed) -> str:
     """The fastest Debian package source ("" = deb.debian.org). 2026-11-10, the user's server in China: deb.debian.org
     answered at once but sent 64 KB/s (the build crawled for 9 minutes over 45 packages), USTC 4.7 MB/s -- so the
     speed of a real download decides, not whether it answers."""
-    speeds = {base: speed(base) for base in APT_MIRRORS}
+    speeds = _measure_parallel(APT_MIRRORS, speed) if speed is apt_speed else {base: speed(base) for base in APT_MIRRORS}
     best = max(APT_MIRRORS, key=lambda b: speeds[b])
     return best if speeds[best] > 0 else ""
 
@@ -657,7 +673,7 @@ def qq_sources() -> list[str]:
     return found.group(1).split() if found else []
 
 
-def qq_speed(base: str, size: int = 1024 * 1024, timeout: float = 15.0,
+def qq_speed(base: str, size: int = 1024 * 1024, timeout: float = 10.0,
              clock: Callable[[], float] = time.monotonic) -> float:
     """Bytes a second for the first MB of the QQ package from this address (0 = it did not answer)."""
     req = urllib.request.Request(f"{base}/QQ_3.2.32_260812_amd64_01.deb",
@@ -680,7 +696,7 @@ def qq_order(speed: Callable[[str], float] = qq_speed) -> list[str]:
     had Tencent fail once and then hang on GitHub itself for 15 minutes while a mirror sent 0.9 MB/s. Addresses that do
     not answer keep their place at the end (the build still tries them)."""
     sources = qq_sources()
-    speeds = {s: speed(s) for s in sources}
+    speeds = _measure_parallel(sources, speed) if speed is qq_speed else {s: speed(s) for s in sources}
     return sorted(sources, key=lambda s: (-speeds[s], sources.index(s)))
 
 

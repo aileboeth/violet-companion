@@ -94,13 +94,16 @@ class OnboardingPlanner:
             known |= about_owner.known_keys()
         except Exception:                               # noqa: BLE001
             pass
-        try:                                            # skip address_name when active persona defines relation.call
+        try:                                            # skip keys already fixed by the active persona's relationship
             from ai.channels.context import current
             from ai.persona_templates import owner_call, persona_data
             data = persona_data(current().channel)
-            rel_call = (data.get("relation") or {}).get("call")
+            rel = data.get("relation") or {}
+            rel_call = rel.get("call")
             if owner_call(data) or (isinstance(rel_call, str) and rel_call.strip()):
                 known.add("address_name")
+            if rel.get("together") == "home":
+                known.add("residence.usual")
         except Exception:                               # noqa: BLE001
             pass
         declined = self.profile.declined_keys()

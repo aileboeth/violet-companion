@@ -204,6 +204,12 @@ def latest_release(repo: str | None = None, opener: Callable[..., Any] | None = 
     candidates = list(sources or [src_mod.GITHUB])
     if not official:
         candidates = [s for s in candidates if s.direct] or [src_mod.GITHUB]
+    if opener is None and len(candidates) > 1:
+        candidates = src_mod.order_fastest(
+            candidates,
+            f"https://github.com/{repo}/releases/latest/download/release.json",
+            timeout=min(5.0, float(timeout)),
+        )
 
     def attempt(source: Any) -> dict:
         meta_url = source.url(f"https://github.com/{repo}/releases/latest/download/release.json")
@@ -995,15 +1001,21 @@ def ensure_venv(layout: Layout, python: str, *, offline_wheels: Path | None = No
         done = run([python, "-m", "venv", str(layout.venv)], capture_output=True, text=True)
         if done.returncode != 0:
             raise InstallError("创建虚拟环境失败：" + (done.stderr or done.stdout or "")[-500:])
-    cmd = [str(layout.python), "-m", "pip", "install", "--disable-pip-version-check", "-q", "-r",
-           str(layout.app / "requirements.txt")]
+    base_cmd = [str(layout.python), "-m", "pip", "install", "--disable-pip-version-check", "-q", "-r",
+                str(layout.app / "requirements.txt")]
     if offline_wheels is not None:
-        cmd[4:4] = ["--no-index", "--find-links", str(offline_wheels)]
+        base_cmd[4:4] = ["--no-index", "--find-links", str(offline_wheels)]
     log("  安装依赖（第一次需要几分钟）…")
-    done = run(cmd, capture_output=True, text=True)
-    if done.returncode != 0:
+    index_choices = _tool("violet_sources").pip_sources() if (offline_wheels is None and run is subprocess.run) else [[]]
+    done = None
+    for extra in index_choices:
+        cmd = [*base_cmd[:4], *extra, *base_cmd[4:]] if extra else list(base_cmd)
+        done = run(cmd, capture_output=True, text=True)
+        if done.returncode == 0:
+            break
+    if done is None or done.returncode != 0:
         raise InstallError("安装依赖失败（检查网络 / pip 源；离线安装可用 --wheels 目录）：\n"
-                           + (done.stderr or done.stdout or "")[-1500:])
+                           + ((done.stderr or done.stdout or "") if done is not None else "")[-1500:])
 
 
 def venv_python(layout: Layout) -> Path:
@@ -2595,6 +2607,9 @@ def mcp_relay(opts: Options, action: str, run: Callable[..., Any] = subprocess.r
     layout = Layout(opts.root)
     state = load_state(layout)
     if not state:
+        # ExecStartPre runs `mcp-relay export --json` during first boot before install.json is saved.
+        if action == "export" and not relay.UNIT_PATH.exists():
+            return {"ok": True, "installed": False}
         raise InstallError(f"{layout.root} 没有安装 Violet")
     if action != "status" and (os.name == "nt" or not _is_root()):
         raise InstallError("中继要以 root 在 Linux 上安装（/opt/violet/violet 会自动切换到 root）")

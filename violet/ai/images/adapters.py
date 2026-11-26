@@ -180,10 +180,46 @@ def _usage(payload: dict[str, Any]) -> tuple[dict[str, Any], float | None]:
     return usage, cost
 
 
+def _default_response_format(model: str, explicit: Any) -> str | None:
+    """Ask OpenAI-compatible image relays for b64_json by default so mainland China servers do not have to fetch
+    blocked overseas CDN URLs (e.g. xAI grok-imagine-image). OpenAI's gpt-image-* models always return b64_json and
+    reject response_format with HTTP 400, so omit it for them unless explicitly configured."""
+    if explicit is not None:
+        val = str(explicit).strip()
+        return val or None
+    if (model or "").strip().lower().startswith("gpt-image"):
+        return None
+    return "b64_json"
+
+
+def _rejected_optional_fields(exc: AdapterError, present: set[str]) -> set[str]:
+    """Optional request keys explicitly rejected by a 400/422 validation error (accepted='no', safe to drop & retry)."""
+    if exc.code not in ("http_400", "http_422") or exc.accepted != "no":
+        return set()
+    msg = str(exc).lower()
+    return {k for k in ("response_format", "quality") if k in present and k in msg}
+
+
 class OpenAIImagesAdapter(HttpAdapterBase):
+    def _post_with_param_fallback(self, path: str, request: AdapterRequest, *,
+                                  json_body: dict[str, Any] | None = None,
+                                  data: dict[str, Any] | None = None,
+                                  files: list | None = None) -> dict[str, Any]:
+        for _ in range(3):
+            try:
+                return self._post(path, request, json_body=json_body, data=data, files=files)
+            except AdapterError as exc:
+                container = json_body if json_body is not None else data
+                drop = _rejected_optional_fields(exc, set(container or ()))
+                if not drop or container is None:
+                    raise
+                for key in drop:
+                    container.pop(key, None)
+        raise AdapterError("http_400", "provider rejected optional parameters", "no")
+
     def run(self, request: AdapterRequest) -> AdapterOutput:
         model = self.entry.model_id
-        fmt = self.entry.options.get("response_format")              # e.g. "b64_json" when the model supports it
+        fmt = _default_response_format(model, self.entry.options.get("response_format"))
         if request.kind == "image_generate":
             body: dict[str, Any] = {"model": model, "prompt": request.prompt, "n": request.n}
             if request.size:
@@ -194,7 +230,7 @@ class OpenAIImagesAdapter(HttpAdapterBase):
                 body["background"] = "transparent"
             if fmt:
                 body["response_format"] = fmt
-            payload = self._post("/images/generations", request, json_body=body)
+            payload = self._post_with_param_fallback("/images/generations", request, json_body=body)
         elif request.kind in ("image_edit", "image_variation"):
             images = request.inputs + (request.references if request.kind == "image_edit" else [])
             if not images:
@@ -210,7 +246,7 @@ class OpenAIImagesAdapter(HttpAdapterBase):
             if fmt:
                 data["response_format"] = fmt
             path = "/images/edits" if request.kind == "image_edit" else "/images/variations"
-            payload = self._post(path, request, data=data, files=files)
+            payload = self._post_with_param_fallback(path, request, data=data, files=files)
         else:
             raise AdapterError("capability_not_supported", f"openai_images adapter cannot do {request.kind}")
         items = payload.get("data")
@@ -221,7 +257,12 @@ class OpenAIImagesAdapter(HttpAdapterBase):
             if isinstance(item, dict) and item.get("b64_json"):
                 images.append(RawImage("b64", item["b64_json"]))
             elif isinstance(item, dict) and item.get("url"):
-                images.append(RawImage("url", item["url"]))
+                url = str(item["url"]).strip()
+                m = DATA_URL_RE.fullmatch(url)
+                if m:
+                    images.append(RawImage("b64", re.sub(r"\s+", "", m.group(2)), m.group(1).lower()))
+                else:
+                    images.append(RawImage("url", url))
             else:
                 raise AdapterError("unknown_response", "unrecognised image item", "yes")
         usage, cost = _usage(payload)

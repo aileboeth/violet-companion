@@ -62,7 +62,14 @@ class ImageService:
     def fetcher(self):
         if self._fetcher is None:
             from ai.web.netguard import NetPolicy, SafeFetcher
-            self._fetcher = SafeFetcher(replace(NetPolicy.from_env(), max_bytes=env_int("VIOLET_IMAGE_MAX_BYTES", 10_000_000)))
+            policy = NetPolicy.from_env()
+            self._fetcher = SafeFetcher(replace(
+                policy,
+                max_bytes=env_int("VIOLET_IMAGE_MAX_BYTES", 10_000_000),
+                connect_timeout=max(10.0, policy.connect_timeout),
+                read_timeout=max(20.0, policy.read_timeout),
+                total_timeout=max(45.0, policy.total_timeout),
+            ))
         return self._fetcher
 
     # -- task rows ------------------------------------------------------------------------
@@ -258,7 +265,8 @@ class ImageService:
         else:
             from ai.web.netguard import WebPolicyError
             try:
-                fetched = self.fetcher.fetch(raw.value, accept_types=tuple(FORMATS))
+                # Object storage / relay CDNs often serve PNG/JPEG as octet-stream; validate_image sniffs real bytes.
+                fetched = self.fetcher.fetch(raw.value, accept_types=(*FORMATS, "application/octet-stream", "binary/octet-stream"))
             except WebPolicyError as exc:
                 raise MediaError(f"download_{exc.code}", f"result url refused or unreachable: {exc.code}") from None
             data = fetched.body

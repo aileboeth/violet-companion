@@ -135,10 +135,12 @@ def check(root: Path, *, cpuinfo: str | None = None, meminfo: str | None = None,
 
 # ------------------------------------------------------------------------------------------------ helpers
 
-def _fetch(url: str, target: Path, timeout: float = 120.0) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": "violet-installer"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp, open(target, "wb") as fh:   # noqa: S310 -- fixed URLs
-        shutil.copyfileobj(resp, fh, 1 << 20)
+def _fetch(url: str, target: Path, timeout: float = 30.0, *, allow_slow: bool = True) -> None:
+    src_mod = _tool("violet_sources")
+    try:
+        src_mod.fetch_stream(url, 512 * 1024 * 1024, timeout=timeout, allow_slow=allow_slow, target=target)
+    except OverflowError:
+        raise VoiceError(f"下载的文件太大：{url}") from None
 
 
 def _tool(name: str) -> Any:
@@ -162,18 +164,25 @@ def _download_sources(work: Path, fetch: Callable[[str, Path], None], progress: 
     """Both source archives into ``work``, from the first source that works for each (Violet 0.7.59). A mirror's
     copy must have the SHA-256 in SOURCE_SHA256. Returns the label of the source used last."""
     src_mod = _tool("violet_sources")
+    candidates = list(sources or [src_mod.GITHUB])
+    if fetch is _fetch and len(candidates) > 1:
+        candidates = src_mod.order_fastest(candidates, next(iter(SOURCES.values())))
+    last_source = candidates[-1]
     label = "GitHub"
     for name, url in SOURCES.items():
         target = work / f"{name}.tar.gz"
 
         def attempt(source: Any, name: str = name, url: str = url, target: Path = target) -> None:
             _say(progress, 7, "下载 CosyVoice 源码（" + ("GitHub" if source.direct else source.label) + "）")
-            fetch(source.url(url), target)
+            if fetch is _fetch:
+                _fetch(source.url(url), target, allow_slow=(source == last_source))
+            else:
+                fetch(source.url(url), target)
             if not source.direct and _sha256(target) != SOURCE_SHA256[name]:
                 target.unlink(missing_ok=True)
                 raise VoiceError("下载的源码和记录的 SHA-256 不一致")
         try:
-            _result, used = src_mod.first(list(sources or [src_mod.GITHUB]), attempt)
+            _result, used = src_mod.first(candidates, attempt)
         except src_mod.SourcesFailed as exc:
             raise VoiceError(f"下载源码失败：{exc}") from None
         label = used.label
@@ -562,10 +571,11 @@ def install(layout: Any, state: dict[str, Any], *, python: Path, app: Path, port
              (["torch==2.3.1+cpu", "torchaudio==2.3.1+cpu", "-f", TORCH_LINKS], "PyTorch（CPU 版，约 200 MB）"),
              (["--no-build-isolation", "openai-whisper==20231117"], "whisper 分词器"),
              (PACKAGES, "CosyVoice 的依赖")]
+    pip_opts = _tool("violet_sources").pip_sources() if stream is _stream else _pip_sources()
     for args, what in steps:
         _say(progress, seen[0], f"安装{what}")
         tail = ""
-        for source in _pip_sources():
+        for source in pip_opts:
             code, tail = stream(pip + source + args, on_line, env)
             if code == 0:
                 break

@@ -268,7 +268,7 @@ def _clip_words(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: max(1, limit - 1)].rstrip("，,、；;：: ") + "…"
 
 
-def compact_description(text: str | None, limit: int = 42) -> str:
+def compact_description(text: str | None, limit: int = 26) -> str:
     """Short one-line cue for prompts; SQLite keeps the full description for find_stickers and by_description."""
     raw = " ".join(str(text or "").split())
     if not raw:
@@ -604,5 +604,5 @@ def chat_section(db) -> str:
     if not lines:
         return ""
     # 2026-11-11: one way to send -- the marker line (ai/sticker_tools.py says why)
-    return ("【你收藏的表情包】合适时可单独一行写 [[表情:编号]]（只写标记，别把说明写成字；一次最多一个，"
-            "没有真正合适的就不发，不能代替回答）。常用如下，找别的用 find_stickers：\n" + "\n".join(lines))
+    return ("【你收藏的表情包】合适时单独一行写 [[表情:编号]]（只写标记、一次最多一个、没有真正合适的就不发；找别的用 find_stickers）：\n"
+            + "\n".join(lines))

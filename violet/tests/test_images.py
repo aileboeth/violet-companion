@@ -275,6 +275,53 @@ def test_openai_images_adapter_requests_and_formats(violetdb):
     assert svc.vary(a).ok
 
 
+def test_openai_images_defaults_b64_json_for_non_gpt_image_and_falls_back_on_400(violetdb):
+    cfg = only(config(), "openai/gpt-image-x")
+    # 1. gpt-image-* omits response_format by default
+    seen_gpt = http(lambda r: httpx.Response(200, json={"data": [{"b64_json": PNG_B64}]}))
+    assert service(violetdb, cfg).generate("猫").ok
+    assert "response_format" not in json.loads(seen_gpt[0].content)
+
+    # 2. Non-gpt-image (e.g. grok-imagine-image-2.0) requests b64_json by default
+    cfg_grok = only(config(), "openai/gpt-image-x")
+    model(cfg_grok, "openai/gpt-image-x")["model_id"] = "grok-imagine-image-2.0"
+    seen_grok = http(lambda r: httpx.Response(200, json={"data": [{"b64_json": PNG_B64}]}))
+    assert service(violetdb, cfg_grok).generate("蓝圆").ok
+    assert json.loads(seen_grok[0].content)["response_format"] == "b64_json"
+
+    # 3. Strict endpoint rejecting quality and/or response_format with 400 safely retries without rejected keys
+    def strict_handler(request):
+        body = json.loads(request.content)
+        if "quality" in body:
+            return httpx.Response(400, json={"error": {"message": "Argument not supported on this model: quality"}})
+        if "response_format" in body:
+            return httpx.Response(400, json={"error": {"message": "Unknown parameter: response_format"}})
+        return httpx.Response(200, json={"data": [{"url": f"data:image/png;base64,{PNG_B64}"}]})
+    seen_strict = http(strict_handler)
+    res = service(violetdb, cfg_grok).generate("蓝圆")
+    assert res.ok and len(seen_strict) == 3
+    final_body = json.loads(seen_strict[-1].content)
+    assert "quality" not in final_body and "response_format" not in final_body
+
+
+def test_url_results_accept_octet_stream_when_magic_bytes_are_valid_image(violetdb):
+    from tests.test_web_security import make_fetcher
+    web = LocalWeb()
+    try:
+        web.page("music.example.org", "/out/raw.bin", PNG, headers={"Content-Type": "application/octet-stream"})
+        web.page("music.example.org", "/out/bad.bin", b"<svg onload=alert(1)>", headers={"Content-Type": "application/octet-stream"})
+        cfg = only(config(), "openai/gpt-image-x")
+        answers = iter(["http://music.example.org/out/raw.bin", "http://music.example.org/out/bad.bin"])
+        http(lambda r: httpx.Response(200, json={"data": [{"url": next(answers)}]}))
+        svc = service(violetdb, cfg, fetcher=make_fetcher(web, max_bytes=5_000_000))
+        good = svc.generate("a")
+        bad = svc.generate("b")
+        assert good.ok and svc.media.get(good.asset_ids[0])["mime_type"] == "image/png"
+        assert not bad.ok and bad.error_code == "output_unsupported_format"
+    finally:
+        web.close()
+
+
 @pytest.mark.parametrize("response, code, accepted_unknown", [
     (lambda r: httpx.Response(401, json={"error": {"message": "bad key"}}), "http_401", False),
     (lambda r: httpx.Response(400, json={"error": {"message": "bad size"}}), "http_400", False),
