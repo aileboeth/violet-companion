@@ -69,14 +69,14 @@ SUBJECTLESS_CLAIM_RE = re.compile(
 )
 # phase 8.9.13 (real ab-v2e): fear, worry, guesses and hearsay before the action are no claim either --
 # "我怕我看完难受好几天", "都说看完心里沉甸甸的"
-_HEDGE = (r"(没|不|别|想|打算|准备|要不要|要是|如果|会不会|可能会|下次|以后|觉得|感觉|好像|"
+_HEDGE = (r"(没|不|别|想|打算|准备|要不要|要是|如果|会不会|可能会|下次|以后|到时候|觉得|感觉|好像|"
           r"怕|担心|万一|估计|可能|也许|会|听说|都说|据说|有人说|别人说|听人说)")
 # "这名字我听过好多回了": heard OF a name / a title / what people say -- knowledge, not having listened to something
 # words that only make sense after something said before them
 _LEANING_START_RE = re.compile(r"^(不过|但是|可是|只是|而且|所以|然后|另外|再说)[，,、\s]*")
 _HEARSAY_RE = re.compile(r"(名字|这名|书名|片名|听说|有人说|都说|据说|人提|提起|说起|听人)")
 _VERB_FORMS = (
-    r"(看了一下|看了看|看了一眼|看了眼|想了想|想了一下|看了你|听了你|吃了一惊|吃了亏|吃了一嘴|"
+    r"(看了一下|看了看|看了一眼|看了眼|想了想|想了一下|看了你|听了你|听了(?:一|两|几)句|吃了一惊|吃了亏|吃了一嘴|"
     r"做了个?(?:梦|鬼脸|深呼吸|决定|选择)|做好(?:了)?(?:心理)?(?:准备|打算|功课|计划)|"
     r"拍了(?:拍|一下|下)(?:桌子|大腿|脑门|胸口|脸|头)|"
     r"喝了(?:一?口水)?[^，,。！!？?]{0,6}(?:呛|喷)|"
@@ -159,6 +159,22 @@ CAMERA_CLAIM_RE = re.compile(
     r"这是(?:一张)?真实的?照片|真人照片|现拍|原图直出|手机拍的)")
 CAMERA_NEGATED_RE = re.compile(r"(不是|并非|不算|没有|没|不能算)[^，,。！!？?]{0,6}(自拍|拍|照片|摄像头|实拍)")
 _PAT_GESTURE_RE = re.compile(r"拍(?:了(?:拍|一下|下)|拍)(?:桌子|大腿|脑门|胸口|脸|头|肩|肩膀|手|你)")
+# 2026-11-27 (v0.7.82): catch fabricated "I already sent you the photo/screenshot/file" claims
+# when this turn actually sent zero media assets (turn_sent_media=False).
+_MEDIA_NOUN = r"(?:照片|图片|截图|视频|文件|单据|合同|附件|原图)"
+MEDIA_SEND_CLAIM_RE = re.compile(
+    rf"(?:{_MEDIA_NOUN}[^，,。！!？?；;\n]{{0,6}}?(?:发给?你|发过去|传给?你|传过去|发出来|发出去)[了啦]"
+    rf"|(?:发|传)了(?:一?[张份个段条])?{_MEDIA_NOUN}(?:给你|过去))"
+)
+_MEDIA_SEND_BLOCK_RE = re.compile(
+    r"(?:没|没有|还没|未|不能|发不了|传不了|发不出|传不出|发不过去|传不过去|没办法发|没法发|别|不要|不是|并非|"
+    r"待会儿?|等会儿?|等下|一会儿|回头|晚点|晚些|稍后|马上|明天|下次|以后|到时候|准备|打算|想|要(?:把|发|传)|"
+    r"可以|能(?:把|发|传)|如果|要是|假如|假设|万一|的话|怕|担心|好像|以为|差点|等(?:我|一下))"
+)
+_MEDIA_OTHER_SENDER_RE = re.compile(
+    r"(?:(?:你|他|她|对方|他们|她们|别人|老师|老板|房东|朋友|同学)(?:刚|刚刚|刚才|已经|昨天|今天|都|也)?把"
+    r"|(?:你|他|她|对方|他们|她们|别人|老师|老板|房东|朋友|同学)(?:刚|刚刚|刚才|已经|昨天|今天|都|也)?$)"
+)
 CLAUSE_SPLIT_RE = re.compile(r"[，,。！!？?；;~～…]+")
 # Phase 9.4 (real run cys-p94-sched-1 #4, "我们英语老师要是也这样就好了"): the persona's school / work patterns only see
 # "我们老师", "我们的同学"; a word between the possessive and the role ("我们英语老师", "我的数学同学", "我们这边公司")
@@ -170,7 +186,9 @@ _NOT_A_MODIFIER = set("去问找跟和给让叫说告帮请见想要会能起也
 _WORK_BACKSTORY_RE = re.compile(r"我(?:今天|明天|昨天)?(?:要|得|在)?去?(?:上班|下班|加班|出差)")
 
 
-CLAIMS_HUMAN_RE = re.compile(r"我(是|也是|就是|可是)(个|一个)?(真人|真实的人|人类|活人|活生生的人)")
+CLAIMS_HUMAN_RE = re.compile(
+    r"我(?:真的|确实|本来|当然|肯定|明明|绝对)?(是|也是|就是|可是)(个|一个)?(?:活生生(?:的)?)?(真人|真实的人|人类|活人|活生生的人)"
+)
 
 # 2026-11-13 (0.7.72 server test, then 2 of 3 real runs after the abilities note said it): "我晚点再试一次",
 # "我回头再帮你看看", "晚点我再瞅一眼" -- a lookup promised for later. Her later messages of her own have no tools, so
@@ -204,6 +222,29 @@ def owned_role_claim(text: str) -> str | None:
     for match in _OWNED_ROLE_RE.finditer(text or ""):
         if not set(match.group(2)) & _NOT_A_MODIFIER:
             return match.group(0)
+    return None
+
+
+def _unbacked_media_send(line: str) -> str | None:
+    """Return the matched unbacked media-send claim phrase in ``line``, or None."""
+    pieces = re.split(f"({CLAUSE_SPLIT_RE.pattern})", line or "")
+    for i in range(0, len(pieces), 2):
+        clause = pieces[i].strip()
+        after = pieces[i + 1] if i + 1 < len(pieces) else ""
+        if not clause:
+            continue
+        if re.search(r"[?？]", after) or _QUESTION_END_RE.search(clause) or _ASKING_WORD_RE.search(clause):
+            continue
+        m = MEDIA_SEND_CLAIM_RE.search(clause)
+        if m is None:
+            continue
+        prefix = clause[:m.start()]
+        upto = clause[:m.end()]
+        if _MEDIA_SEND_BLOCK_RE.search(upto):
+            continue
+        if "我" not in clause and _MEDIA_OTHER_SENDER_RE.search(prefix):
+            continue
+        return m.group(0)
     return None
 
 
@@ -650,6 +691,8 @@ class ConsistencyGuard:
     def _backstory_lines(self) -> list[str]:
         """2026-11-18: shared past lines from a persona template's 'backstory' back her claims about those memories."""
         raw = [str(x) for x in (self.core.data.get("backstory") or []) if x]
+        if self.core.origin:
+            raw.append(self.core.origin)
         if not raw:
             return []
         call = _owner_call() or "对方"
@@ -660,6 +703,27 @@ class ConsistencyGuard:
             if "对方" in filled:
                 out.append(filled.replace("对方", "你"))
         return out
+
+    def _story_context(self) -> tuple[list[str], list[str]]:
+        """Return (all_story_backing_texts, active_story_texts) for ConsistencyGuard synergy."""
+        try:
+            from ai.story_store import StoryStore, effective_mode
+            if effective_mode(self.core) == "off":
+                return [], []
+            store = StoryStore(self.db)
+            all_texts = store.backing_texts()
+            arc = store.active_arc()
+            active_texts: list[str] = []
+            if arc:
+                for field in ("title", "premise", "open_hook", "he_direction", "user_role"):
+                    val = str(arc.get(field) or "").strip()
+                    if val:
+                        active_texts.append(val)
+                active_texts.extend(arc.get("canon_beats") or [])
+                active_texts.extend(arc.get("revealed_beats") or [])
+            return all_texts, active_texts
+        except Exception:                                   # noqa: BLE001 -- table absent in minimal unit DBs
+            return [], []
 
     # ------------------------------------------------------------------
     # 1. Life event proposals
@@ -741,6 +805,7 @@ class ConsistencyGuard:
     # ------------------------------------------------------------------
     turn_used_web = False          # phase 9.3: set by guard_reply when this turn's Chat run used the web tools
     turn_used_schedule = False     # phase 9.4.2: ... or the timetable tools
+    turn_sent_media = False        # 2026-11-27 (v0.7.82): ... or actually sent an image / media asset
 
     def _today_assistant_messages(self, now: str) -> list[str]:
         """Violet's own assistant messages from today (since midnight & context cut, up to now)."""
@@ -761,7 +826,8 @@ class ConsistencyGuard:
                 out.append(str(r["content"]))
         return out
 
-    def check_reply(self, text: str, now: str | None = None) -> list[Violation]:
+    def check_reply(self, text: str, now: str | None = None, turn_sent_media: bool | None = None) -> list[Violation]:
+        sent_media = bool(self.turn_sent_media) if turn_sent_media is None else bool(turn_sent_media)
         now = now or self.db.now()
         recent = self.db.fetch_all(
             "SELECT content, occurred_at, thread_id, source, source_detail "
@@ -776,6 +842,7 @@ class ConsistencyGuard:
         reading_terms = [t for r in self.db.fetch_all("SELECT title FROM life_threads WHERE status = 'active'")
                          for t in life_terms(r["title"], self.config)]
         backstory = self._backstory_lines()
+        story_texts, active_story_texts = self._story_context()
         experiences = self._user_experiences()
         prior_today_facts: set[str] = set()
         if not getattr(self.core, "is_ai", False):
@@ -812,6 +879,11 @@ class ConsistencyGuard:
                 violations.append(persona)
             if CAMERA_CLAIM_RE.search(line) and not CAMERA_NEGATED_RE.search(line) and not _PAT_GESTURE_RE.search(line):
                 violations.append(Violation("camera_claim", "an AI-generated picture told as a photo", line))
+            if not sent_media:
+                media_claim = _unbacked_media_send(line)
+                if media_claim:
+                    violations.append(Violation("unbacked_media_send",
+                                                f"claimed to have sent media ({media_claim}) without sending any", line))
             if promised_lookup(line, self.turn_used_web):
                 violations.append(Violation("promised_later_lookup", "a lookup promised for later", line))
             if getattr(self.core, "is_ai", False):
@@ -856,6 +928,8 @@ class ConsistencyGuard:
                 continue
             if backstory and any(backs(as_done, b) for b in backstory):
                 continue
+            if story_texts and any(backs(as_done, s) for s in story_texts):
+                continue
             if _anaphoric_consumption_backed(claiming, recent, now):
                 continue
             if STATE_CLAIM_RE.search(line) and _state_backed(line, recent, parse_time(now)):
@@ -871,6 +945,9 @@ class ConsistencyGuard:
                 violations.append(Violation("user_experience_as_own", "the user's experience told as Violet's", line))
             elif any(touches_topic(as_done, t) for t in finding_titles):
                 violations.append(Violation("external_as_experience", "something read on the web told as lived", line))
+            elif active_story_texts and any(mentions_topic(as_done, s) or touches_topic(as_done, s) for s in active_story_texts):
+                # 2026-11-26: allow natural in-arc improvisation tied to the active storyline (canonicalized async by StoryRecorder)
+                continue
             else:
                 violations.append(Violation("unrecorded_experience", "no recorded event behind this claim", line))
         return violations

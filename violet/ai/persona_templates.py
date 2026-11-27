@@ -32,7 +32,9 @@ MEMORY_TABLES = ("core_memories", "event_memories", "memory_revisions", "commitm
                  # tasks from before were still listed to the model
                  "mood_state", "task_sessions",
                  # 2026-11-12: the memes the owner taught her (ai/memes.py)
-                 "owner_memes")
+                 "owner_memes",
+                 # 2026-11-26: interactive story arcs (ai/story_store.py)
+                 "story_arcs")
 
 
 def control_dir() -> Path:
@@ -82,6 +84,13 @@ def preview(data: dict[str, Any]) -> dict[str, Any]:
     return {"title": data.get("_title") or ident.get("name") or "人设", "summary": data.get("_summary") or "",
             "blank": bool(data.get("blank")), "name": ident.get("name") or "",
             "self_description": ident.get("self_description") or "",
+            "origin": _fill(str(data.get("origin") or ""), data),
+            "story_ceiling": str(data.get("story_ceiling") or ""),
+            "story_seed_titles": [
+                {"key": str(s.get("key") or ""), "title": str(s.get("title") or ""), "tone": str(s.get("tone") or "drama")}
+                for s in (data.get("story_seeds") or [])
+                if isinstance(s, dict) and s.get("title")
+            ],
             "personality": _labels(data.get("personality")), "habits": _labels(data.get("communication_habits")),
             "interests": _labels(data.get("long_term_interests")), "values": _labels(data.get("values")),
             "flaws": _labels(data.get("flaws")),
@@ -592,6 +601,49 @@ def set_channel(channel: str, template: str | None, kind: str | None = None, cal
         data.pop(channel, None)
     _write(control_dir() / CHANNEL_FILE, data)
     return data
+
+
+def template_key(channel: str | None = None) -> str:
+    """The template key active for ``channel`` (or the main persona when None / not overridden)."""
+    if channel:
+        own = (channel_map().get(channel) or {}).get("template")
+        if own:
+            return str(own)
+    return str(current().get("template") or "violet")
+
+
+def enrich_builtin_story_fields(data: dict[str, Any], channel: str | None = None) -> dict[str, Any]:
+    """Backfill new story fields (origin / story_seeds / story_ceiling) for legacy copies of built-in templates.
+
+    Never overwrites fields already present in ``data`` and never touches custom / blank / ai personas.
+    """
+    if not isinstance(data, dict) or data.get("blank") or data.get("kind") == "ai" or data.get("prompt_text"):
+        return data
+    key = template_key(channel)
+    if not key or key in ("custom", "blank", "ai"):
+        return data
+    if "origin" in data and "story_seeds" in data:
+        return data
+    tpl_path = TEMPLATE_DIR / f"{key}.json"
+    if not tpl_path.is_file():
+        return data
+    try:
+        shipped = json.loads(tpl_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return data
+    if not isinstance(shipped, dict):
+        return data
+    out = dict(data)
+    shipped_name = str((shipped.get("identity") or {}).get("name") or "")
+    cur_name = str((data.get("identity") or {}).get("name") or "")
+    rename = bool(shipped_name and cur_name and shipped_name != cur_name)
+    for field in ("origin", "story_seeds", "story_ceiling"):
+        if field not in out and field in shipped:
+            val = shipped[field]
+            if rename:
+                val = json.loads(json.dumps(val, ensure_ascii=False).replace(shipped_name, cur_name))
+            out[field] = val
+    return out
 
 
 def core_path(channel: str | None) -> Path | None:

@@ -106,10 +106,38 @@ class LifeScheduler:
             logger.info("[explorer] %s", result)
         return result
 
+    _QUIET_STORY_OUTCOMES = frozenset({
+        "off", "waiting", "cooldown", "too_few_turns", "test_mode",
+        "waiting_user_at_climax", "waiting_user_engagement",
+    })
+
+    def _tick_story(self, scope: str) -> str | None:
+        try:
+            from ai.story_director import StoryDirector
+            story_out = StoryDirector(self.db).tick(self.clock())
+            outcome = story_out.get("outcome")
+            if outcome and outcome not in self._QUIET_STORY_OUTCOMES:
+                logger.info("[story] %s: %s", scope, outcome)
+                return str(outcome)
+        except Exception:
+            logger.debug("[story] tick failed (%s)", scope, exc_info=True)
+        return None
+
     def tick(self) -> dict[str, Any]:
         mode = self.control.mode()
         if mode != "on":
-            result = {"outcome": mode}
+            result: dict[str, Any] = {"outcome": mode}
+            from ai.story_store import configured_mode as story_configured_mode
+            if story_configured_mode() != "off":
+                from ai import memory_scope
+                for scope in memory_scope.all_scopes():
+                    with memory_scope.run_as(scope):
+                        story_outcome = self._tick_story(scope)
+                    if story_outcome:
+                        if scope == memory_scope.MAIN:
+                            result = {**result, "story": story_outcome}
+                        else:
+                            result.setdefault("story_personas", {})[scope] = story_outcome
         else:
             # 2026-11-02 (ai/memory_scope): every persona lives her own days; the main persona's result is returned
             from ai import memory_scope
@@ -121,6 +149,9 @@ class LifeScheduler:
                     except Exception as exc:
                         logger.exception("[life] tick failed (%s)", scope)
                         one = {"outcome": "error", "error": f"{exc.__class__.__name__}: {exc}"}
+                    story_outcome = self._tick_story(scope)
+                    if story_outcome:
+                        one = {**one, "story": story_outcome}
                 if one.get("outcome") not in ("already_ran", "too_early", "disabled"):
                     logger.info("[life] %s: %s", scope, one)
                 if scope == memory_scope.MAIN:
@@ -133,9 +164,10 @@ class LifeScheduler:
         return result
 
     def start(self) -> bool:
+        from ai.story_store import configured_mode as story_configured_mode
         from ai.web.explorer import WebExplorer
-        if self.control.mode() == "off" and not WebExplorer.authorized():
-            logger.info("[life] life engine is off (VIOLET_LIFE_ENGINE / life_config.enabled) and WebExplorer is not authorised")
+        if self.control.mode() == "off" and not WebExplorer.authorized() and story_configured_mode() == "off":
+            logger.info("[life] life engine, story engine and WebExplorer are all off")
             return False
         if self._thread and self._thread.is_alive():
             return True

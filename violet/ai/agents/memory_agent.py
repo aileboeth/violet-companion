@@ -142,7 +142,8 @@ PROFILE_RULES = """【用户档案规则（代码强制执行）】
 5. 用户表示不想回答某个了解类问题时，调用 decline_profile_question，之后不再问。
 6. 健康、财务、宗教、政治、联系方式、证件号、精确住址等敏感信息不要保存（系统也会拒绝）。
 7. Violet 回复里提到的 Violet 自己的生活（看书、听歌、记笔记等）是她的虚拟生活，不是用户的经历，不要保存成用户记忆或档案（系统也会拒绝）。
-8. 网上查到的新闻、文章内容是外部资料，不是用户的经历，不要保存成用户记忆（系统也会拒绝）。"""
+8. 网上查到的新闻、文章内容是外部资料，不是用户的经历，不要保存成用户记忆（系统也会拒绝）。
+9. 角色正在进行的虚拟故事线（剧情风波、虚构配角/地点/物件，以及用户顺着角色故事线给出的安慰、陪伴承诺或剧情地点约定）由故事场记单独记录，绝不要写入用户的 event_memories 或 user_situations；只保存真正属于用户自己现实生活的事实、事件、计划与状态。"""
 
 
 def her_name() -> str:
@@ -895,6 +896,25 @@ class MemoryAgent(BaseAgent):
             f"- id={r['id']}; 时间={r['due_at']}; 内容={r['content']}" for r in rows
         )
 
+    @staticmethod
+    def _format_active_story_exclusion() -> str:
+        try:
+            from ai.story_store import StoryStore, effective_mode
+            if effective_mode() == "off":
+                return ""
+            arc = StoryStore(violetdb).active_arc()
+        except Exception:                                    # noqa: BLE001
+            return ""
+        if not arc:
+            return ""
+        title = str(arc.get("title") or "").strip() or "当前故事线"
+        cast = [str(x).strip() for x in ((arc.get("outline") or {}).get("premise_cast") or []) if str(x).strip()]
+        cast_part = f"（相关人物/要素：{'、'.join(cast[:6])}）" if cast else ""
+        return (
+            f"【排除虚构故事线】当前正在进行的虚拟故事线「{title}」{cast_part}"
+            "由故事场记单独记录，绝不要把围绕该故事线的剧情、安慰承诺或虚构地点写入用户的 event_memories 或 user_situations。"
+        )
+
     def build_context_messages(
         self,
         user_message: str,
@@ -917,6 +937,7 @@ class MemoryAgent(BaseAgent):
         header = (f"当前时间：{clock_text(now)}\n日期：{day_words(now)}。写进记忆的日期和星期必须和这里一致；"
                   f"event_date 用 today / tomorrow 时按日历算，凌晨说的“明天”直接写日期")
         from ai.model_params import CACHE_MARK, LATE_SYSTEM_LABEL
+        story_exclusion = self._format_active_story_exclusion()
         system_parts = [
             self._config.reply_prompt,
             who_is_who(),
@@ -933,6 +954,7 @@ class MemoryAgent(BaseAgent):
             *profile_sections,
             self._format_open_events(),
             self._format_pending_commitments(),
+            *([story_exclusion] if story_exclusion else []),
         ]
         user_parts = [
             header,

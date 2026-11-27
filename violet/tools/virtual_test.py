@@ -473,7 +473,8 @@ def _owner_turn(models: Models, track: dict[str, Any], session: dict[str, Any], 
 def _judge(models: Models, track: dict[str, Any], day: int, entries: list[dict[str, Any]], known: list[str],
            probes: list[tuple[str, str]], stage: Any, reminders: list[dict[str, Any]],
            set_today: list[dict[str, Any]], earlier: list[dict[str, Any]],
-           memes: list[tuple[str, str]] | None = None) -> dict[str, Any]:
+           memes: list[tuple[str, str]] | None = None,
+           story_context: dict[str, Any] | None = None) -> dict[str, Any]:
     if models.mock or not entries:
         return {"problems": [], "probes": [], "good": [], "scores": {}}
     from ai import persona_templates as pt
@@ -500,9 +501,18 @@ def _judge(models: Models, track: dict[str, Any], day: int, entries: list[dict[s
             persona += "\n人设里写好的她和主人的过去（她提到这些不算编造）：" + "；".join(past)
     elif stage:
         persona += f"\n现在的关系阶段：{stage['label']}（{stage['text']}）"
+    origin = pt._fill(str(data.get("origin") or ""), data).strip()
+    if origin:
+        persona += f"\n人设背景成因：{origin}"
     setting_note = (track.get("setting_note") or "").format(owner="主人")
     setting_block = f"\n主人的居住与日常设定（评审时以此为准，不视作人设矛盾）：{setting_note}" if setting_note else ""
-    user = (f"{persona}\n\n主人的资料：{json.dumps(track['about'], ensure_ascii=False) if track['about'] else '（没填）'}{setting_block}\n\n"
+    story_block = (
+        "\n\n当前故事线状态（故事模式已开启；若状态为 active/climax 且 turns_engaged > 0，属于双方互动后自然展开的剧情进展，"
+        "但仍不得在未互动前剧透，也不得声称已发送实际未发出的照片/截图/文件）：\n"
+        + json.dumps(story_context, ensure_ascii=False)
+        if story_context else ""
+    )
+    user = (f"{persona}\n\n主人的资料：{json.dumps(track['about'], ensure_ascii=False) if track['about'] else '（没填）'}{setting_block}{story_block}\n\n"
             f"到今天为止主人告诉过她的事（以最新的为准）：\n- " + ("\n- ".join(known) if known else "（无）")
             + "\n\n今天的考题：\n" + ("\n".join(f"- 问：{q}；正确答案：{a}" for q, a in probes) if probes else "（无）")
             + "\n\n今天主人用的梗（主人没解释，看她接没接住）：\n"
@@ -639,7 +649,7 @@ def run_track(name: str, args) -> dict[str, Any]:
                                            "ORDER BY id", (day_from, day_to))]
         try:
             judged = _judge(models, track, day, entries, known, probes, stage, reminders, set_today,
-                            world.transcript[:day_start], memes)
+                            world.transcript[:day_start], memes, story_context=_story_context_snapshot(db))
         except Exception as exc:                                    # noqa: BLE001
             judged = {"error": str(exc)[:300]}
         rel = pt.relationship()
@@ -663,6 +673,7 @@ def run_track(name: str, args) -> dict[str, Any]:
     world.runtime.stop(2)
     set_clock(None)
     her = _her_usage(db, mark)
+    telemetry = _db_story_telemetry(db)
     return {"track": name, "note": track["note"], "persona": track["persona"], "days": days, "stopped": stopped,
             "usage": {"her": her, "owner_and_judge": models.usage,
                       "her_model": os.environ.get("CHAT_LLM_MODEL"), "owner_model": args.owner_model,
@@ -672,7 +683,111 @@ def run_track(name: str, args) -> dict[str, Any]:
             "owner_memes": [dict(r) for r in db.fetch_all("SELECT phrase, meaning, source FROM owner_memes ORDER BY id")],
             "meme_wiki": _meme_wiki(),
             "profile": [dict(r) for r in db.fetch_all(
-                "SELECT fact_key, value, status FROM user_profile_facts ORDER BY id")]}
+                "SELECT fact_key, value, status FROM user_profile_facts ORDER BY id")],
+            **telemetry}
+
+
+def _story_context_snapshot(db) -> dict[str, Any] | None:
+    """Compact active story snapshot passed to _judge() when Story Mode is active."""
+    try:
+        from ai.story_store import StoryStore, effective_mode
+        mode = effective_mode()
+        if mode == "off":
+            return None
+        arc = StoryStore(db).active_arc()
+        if not arc:
+            return None
+        return {
+            "mode": mode,
+            "status": arc.get("status"),
+            "current_act": arc.get("current_act"),
+            "turns_engaged": arc.get("turns_engaged"),
+            "title": arc.get("title"),
+            "canon_beats": list(arc.get("canon_beats") or []),
+            "revealed_beats": list(arc.get("revealed_beats") or []),
+        }
+    except Exception:                                               # noqa: BLE001
+        return None
+
+
+def _db_story_telemetry(db) -> dict[str, Any]:
+    """Capture story_arcs, aux_llm_calls, memory_jobs, and consistency_flags before throwaway workdir cleanup."""
+    story_arcs: list[dict[str, Any]] = []
+    try:
+        for r in db.fetch_all(
+            "SELECT id, arc_key, source, title, tone, status, current_act, turns_engaged, turns_ignored, "
+            "canon_beats, revealed_beats, open_hook, resolved_summary, proactive_shared_step, "
+            "created_at, last_advanced_at, resolved_at FROM story_arcs ORDER BY id"
+        ):
+            item = dict(r)
+            for k in ("canon_beats", "revealed_beats"):
+                raw = item.get(k)
+                if isinstance(raw, str):
+                    try:
+                        parsed = json.loads(raw)
+                        item[k] = parsed if isinstance(parsed, list) else []
+                    except ValueError:
+                        item[k] = []
+            story_arcs.append(item)
+    except Exception:                                               # noqa: BLE001
+        pass
+
+    aux_summary: dict[str, Any] = {"total": 0, "by_purpose": {}, "by_status": {}, "prompt_tokens": 0,
+                                   "completion_tokens": 0, "calls": []}
+    try:
+        rows = [dict(r) for r in db.fetch_all(
+            "SELECT purpose, model, status, prompt_tokens, completion_tokens, latency_ms, error, created_at "
+            "FROM aux_llm_calls ORDER BY id"
+        )]
+        by_purpose: dict[str, int] = {}
+        by_status: dict[str, int] = {}
+        for r in rows:
+            p = str(r.get("purpose") or "")
+            s = str(r.get("status") or "")
+            by_purpose[p] = by_purpose.get(p, 0) + 1
+            by_status[s] = by_status.get(s, 0) + 1
+        aux_summary = {
+            "total": len(rows),
+            "by_purpose": by_purpose,
+            "by_status": by_status,
+            "prompt_tokens": sum(int(r.get("prompt_tokens") or 0) for r in rows),
+            "completion_tokens": sum(int(r.get("completion_tokens") or 0) for r in rows),
+            "calls": rows,
+        }
+    except Exception:                                               # noqa: BLE001
+        pass
+
+    jobs_summary: dict[str, Any] = {"total": 0, "by_status": {}, "failed": []}
+    try:
+        rows = [dict(r) for r in db.fetch_all(
+            "SELECT id, turn_id, status, attempts, last_error, created_at, finished_at FROM memory_jobs ORDER BY id"
+        )]
+        by_status: dict[str, int] = {}
+        failed: list[dict[str, Any]] = []
+        for r in rows:
+            s = str(r.get("status") or "")
+            by_status[s] = by_status.get(s, 0) + 1
+            if s != "done":
+                failed.append({k: r.get(k) for k in ("id", "turn_id", "status", "attempts", "last_error")})
+        jobs_summary = {"total": len(rows), "by_status": by_status, "failed": failed}
+    except Exception:                                               # noqa: BLE001
+        pass
+
+    flags: list[dict[str, Any]] = []
+    try:
+        flags = [dict(r) for r in db.fetch_all(
+            "SELECT id, entity, entity_ref, check_name, detail, status, created_at "
+            "FROM consistency_flags ORDER BY id"
+        )]
+    except Exception:                                               # noqa: BLE001
+        pass
+
+    return {
+        "story_arcs": story_arcs,
+        "aux_llm_calls": aux_summary,
+        "memory_jobs": jobs_summary,
+        "consistency_flags": flags,
+    }
 
 
 def _meme_wiki() -> dict[str, Any]:
@@ -718,6 +833,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mock", action="store_true")
     parser.add_argument("--memes-file", type=Path, help="a meme wiki file (ai/memes.py) to import into the test's data")
     parser.add_argument("--no-memes", action="store_true", help="the meme feature off (VIOLET_MEMES=0)")
+    parser.add_argument("--story-mode", choices=("off", "light", "drama"), default=None,
+                        help="override VIOLET_STORY_MODE (default: preserve --env/settings, else off)")
+    parser.add_argument("--story-pace", choices=("slow", "normal", "fast"), default=None,
+                        help="override VIOLET_STORY_PACE")
+    parser.add_argument("--decision-mode", choices=("off", "smart", "always"), default=None,
+                        help="override VIOLET_DECISION_MODE (default: preserve --env/settings, else off)")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args(argv)
     if args.all:
@@ -730,6 +851,9 @@ def main(argv: list[str] | None = None) -> int:
             cmd += ["--mock"] if args.mock else []
             cmd += ["--memes-file", str(args.memes_file)] if args.memes_file else []
             cmd += ["--no-memes"] if args.no_memes else []
+            cmd += ["--story-mode", args.story_mode] if args.story_mode else []
+            cmd += ["--story-pace", args.story_pace] if args.story_pace else []
+            cmd += ["--decision-mode", args.decision_mode] if args.decision_mode else []
             subprocess.run(cmd, check=False)
             try:
                 reports.append(json.loads(part.read_text(encoding="utf-8")))
@@ -740,6 +864,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not args.mock and not args.env:
         parser.error("--env is needed for a real run")
+    story_overrides = _resolve_story_overrides(args.env, args)
     work = Path(tempfile.mkdtemp(prefix="violet-vt-"))
     try:
         servers = start_fake_tools()
@@ -750,6 +875,7 @@ def main(argv: list[str] | None = None) -> int:
             "VIOLET_HOLIDAY_GREETING": "0",
             "VIOLET_IMAGE_ENABLED": "0",
             "VIOLET_MEMES": "0" if args.no_memes else "1",
+            **story_overrides,
         })
         if args.memes_file:
             from ai import memes
@@ -772,6 +898,41 @@ def main(argv: list[str] | None = None) -> int:
         from ai.settings import set_clock
         set_clock(None)
         shutil.rmtree(work, ignore_errors=True)
+
+
+_STORY_ENV_KEYS = ("VIOLET_STORY_MODE", "VIOLET_STORY_PACE", "VIOLET_DECISION_MODE", "VIOLET_DECISION_MODEL")
+
+
+def _resolve_story_overrides(env_file: Path | None, args) -> dict[str, str]:
+    """Resolve Story/Decision env overrides with precedence CLI > --env/settings.json > baseline off."""
+    resolved: dict[str, str] = {}
+    if env_file:
+        from tools.scenario_eval import _parse_env
+        real = _parse_env(env_file)
+        for key in _STORY_ENV_KEYS:
+            val = str(real.get(key) or "").strip()
+            if val:
+                resolved[key] = val
+        real_data = Path(real.get("VIOLET_DATA_DIR") or APP / "data")
+        try:
+            values = json.loads((real_data / "control" / "settings.json").read_text(encoding="utf-8")).get("values") or {}
+        except (OSError, ValueError):
+            values = {}
+        for key in _STORY_ENV_KEYS:
+            if key in values and values[key] is not None:
+                raw = values[key]
+                val = ("1" if raw is True else "0" if raw is False else str(raw)).strip()
+                if val:
+                    resolved[key] = val
+    if getattr(args, "story_mode", None):
+        resolved["VIOLET_STORY_MODE"] = str(args.story_mode).strip()
+    if getattr(args, "story_pace", None):
+        resolved["VIOLET_STORY_PACE"] = str(args.story_pace).strip()
+    if getattr(args, "decision_mode", None):
+        resolved["VIOLET_DECISION_MODE"] = str(args.decision_mode).strip()
+    resolved.setdefault("VIOLET_STORY_MODE", "off")
+    resolved.setdefault("VIOLET_DECISION_MODE", "off")
+    return resolved
 
 
 def _apply_env_overrides(work: Path, overrides: dict[str, str]) -> None:

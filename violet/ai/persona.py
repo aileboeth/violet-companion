@@ -54,16 +54,17 @@ def life_config() -> dict[str, Any]:
 
 
 class PersonaCore:
-    def __init__(self, data: dict[str, Any], sha256: str):
+    def __init__(self, data: dict[str, Any], sha256: str, channel: str | None = None):
         self.data = data
         self.sha256 = sha256
+        self._channel = channel
 
     @classmethod
     def load(cls, db=None, channel: str | None = None) -> "PersonaCore":
         # 2026-10-29: a persona chosen in the Control Center (a template, or the blank one) lives in the data folder,
         # so an update of Violet never replaces it; without one, the shipped persona is used as before.
         # 2026-10-30: a channel may have its own (channel: given, else the channel of the turn being processed)
-        from ai.persona_templates import core_path
+        from ai.persona_templates import core_path, enrich_builtin_story_fields
         if channel is None:
             from ai.channels.context import current
             channel = current().channel
@@ -71,9 +72,10 @@ class PersonaCore:
         if chosen is not None:
             raw = chosen.read_text(encoding="utf-8")
             data, digest = json.loads(raw), hashlib.sha256(raw.encode("utf-8")).hexdigest()
+            data = enrich_builtin_story_fields(data, channel)
         else:
             data, digest = _load_json("persona_core.json")
-        core = cls(data, digest)
+        core = cls(data, digest, channel=channel)
         if db is not None:
             db.execute(
                 "INSERT OR IGNORE INTO persona_core_versions (version, sha256, content, loaded_at) VALUES (?, ?, ?, ?)",
@@ -102,7 +104,25 @@ class PersonaCore:
         """2026-10-30: an AI that knows it is one (persona/templates/ai.json): real experiences, no virtual life."""
         return self.data.get("kind") == "ai"
 
-    def render(self) -> str:
+    @property
+    def is_blank(self) -> bool:
+        return bool(self.data.get("blank"))
+
+    @property
+    def origin(self) -> str:
+        return str(self.data.get("origin") or "").strip()
+
+    @property
+    def story_seeds(self) -> list[dict[str, Any]]:
+        raw = self.data.get("story_seeds")
+        return [s for s in raw if isinstance(s, dict) and s.get("title")] if isinstance(raw, list) else []
+
+    @property
+    def story_ceiling(self) -> str:
+        val = str(self.data.get("story_ceiling") or "").strip().lower()
+        return val if val in ("off", "light", "drama") else ""
+
+    def render(self, include_backstory: bool = True) -> str:
         d = self.data
         ident = d.get("identity", {})
         if self.is_ai:
@@ -124,6 +144,8 @@ class PersonaCore:
         lines = [f"【{name} 的稳定人设（v{self.version}）：这就是你自己】"]
         if ident.get("self_description"):
             lines.append(f"- 日常：{ident['self_description']}")
+        if d.get("origin"):
+            lines.append(f"- 身世底色（不要初见就主动倒苦水，随聊天时机自然流露）：{d['origin']}")
         for title, key in (("性格", "personality"), ("说话习惯", "communication_habits"), ("看重", "values"),
                            ("小缺点", "flaws"), ("生活边界", "living_constraints")):
             items = d.get(key) or []
@@ -132,7 +154,7 @@ class PersonaCore:
         interests = "、".join(i["label"] for i in d.get("long_term_interests", []))
         if interests:
             lines.append(f"- 兴趣：{interests}")
-        if self.has_backstory:
+        if include_backstory and self.has_backstory:
             backstory = d.get("backstory") or []
             if backstory:
                 lines.append("- 你和对方的过去（聊到再提）：" + "；".join(backstory))
@@ -149,7 +171,8 @@ class PersonaCore:
         try:
             from ai.channels.context import current
             from ai.persona_templates import relationship
-            call = relationship(current().channel).get("call") or None
+            ch = self._channel if self._channel is not None else current().channel
+            call = relationship(ch).get("call") or None
         except Exception:                                   # noqa: BLE001
             call = None
         return _fill("\n".join(lines), d, call)

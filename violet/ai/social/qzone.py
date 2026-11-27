@@ -91,7 +91,17 @@ def compose(db, channel: str | None = None) -> dict[str, Any]:
     from ai.social.engine import _persona_text
     ch = str(channel or "napcat")
     with memory_scope.use(memory_scope.for_channel(ch)):
-        recent = db.fetch_all("SELECT content, created_at FROM social_posts WHERE status = 'sent' ORDER BY id DESC LIMIT 5")
+        from ai.social.engine import scope_social_channels
+        post_channels = scope_social_channels(db, "social_posts")
+        if post_channels:
+            ph = ",".join("?" * len(post_channels))
+            recent = db.fetch_all(
+                f"SELECT content, created_at FROM social_posts WHERE status = 'sent' AND channel IN ({ph}) "
+                "ORDER BY id DESC LIMIT 5",
+                tuple(post_channels),
+            )
+        else:
+            recent = []
         now = db.now()
         lines = [f"现在是 {now[:16].replace('T', ' ')}。", "", "【你最近的生活】", *(_material(db) or ["（这几天没有记下特别的事）"]),
                  "", "【你最近发过的动态】", *([f"- {str(r['created_at'])[5:16]} {r['content']}" for r in recent] or ["（还没发过）"]),
@@ -150,17 +160,27 @@ def due(db, now: datetime | None = None) -> str | None:
         return "只在 9:00 到 23:00 之间发"
     day = now.date().isoformat()
     limit = env_int("VIOLET_QZONE_DAILY", 1)
-    sent = db.fetch_one("SELECT COUNT(*) AS n FROM social_posts WHERE status = 'sent' AND origin = 'auto' "
-                        "AND created_at >= ?", (day,))["n"]
-    if limit and sent >= limit:
-        return "今天已经发够了"
-    last = db.fetch_one("SELECT MAX(created_at) AS at FROM social_posts WHERE status = 'sent'")
-    if last and last["at"]:
-        try:
-            if now - datetime.fromisoformat(str(last["at"])[:19]) < timedelta(hours=MIN_GAP_HOURS):
-                return f"离上一条不到 {MIN_GAP_HOURS} 小时"
-        except ValueError:
-            pass
+    from ai.social.engine import scope_social_channels
+    post_channels = scope_social_channels(db, "social_posts")
+    if post_channels:
+        ph = ",".join("?" * len(post_channels))
+        sent = db.fetch_one(
+            f"SELECT COUNT(*) AS n FROM social_posts WHERE status = 'sent' AND origin = 'auto' "
+            f"AND channel IN ({ph}) AND created_at >= ?",
+            (*post_channels, day),
+        )["n"]
+        if limit and sent >= limit:
+            return "今天已经发够了"
+        last = db.fetch_one(
+            f"SELECT MAX(created_at) AS at FROM social_posts WHERE status = 'sent' AND channel IN ({ph})",
+            tuple(post_channels),
+        )
+        if last and last["at"]:
+            try:
+                if now - datetime.fromisoformat(str(last["at"])[:19]) < timedelta(hours=MIN_GAP_HOURS):
+                    return f"离上一条不到 {MIN_GAP_HOURS} 小时"
+            except ValueError:
+                pass
     return None
 
 

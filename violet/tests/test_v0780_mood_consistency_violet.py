@@ -384,7 +384,7 @@ def test_consistency_same_day_self_contradiction_and_life_section_header(isolate
 
     # guard_reply rewrites (or drops) same_day_contradiction as a certain finding
     violetdb.execute("DELETE FROM messages")
-    violetdb.add_assistant_message("text", "刚吃完午饭", created_at=f"{day}T12:00:00+08:00")
+    violetdb.add_assistant_message("text", "刚吃完午饭", created_at=f"{day}T00:01:00+08:00")
     rewritten, found = guard_reply("我午饭还没吃呢\n你下午有课吗", regenerate=lambda note: "下午还有点犯困\n你下午有课吗")
     assert "same_day_contradiction" in [v.check for v in found]
     assert rewritten == "下午还有点犯困\n你下午有课吗"

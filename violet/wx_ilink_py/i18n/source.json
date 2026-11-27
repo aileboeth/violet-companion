@@ -88,6 +88,9 @@
 "GitHub 发布页": [
 "control_phone.js"
 ],
+"HE 方向：": [
+"control_persona.js"
+],
 "IANA 名称，例如 Asia/Shanghai；上课时间都是这个时区的钟点": [
 "control_schedule.js"
 ],
@@ -779,6 +782,9 @@
 "下次检查：{0}": [
 "control.js"
 ],
+"下轮导演便签：": [
+"control_persona.js"
+],
 "下载": [
 "control_memes.js"
 ],
@@ -890,6 +896,9 @@
 ],
 "不希望被追问": [
 "control.js"
+],
+"不带剧情": [
+"control_persona.js"
 ],
 "不常改的（{0} 项）": [
 "control.js"
@@ -1159,6 +1168,9 @@
 "人设与生活读取失败：": [
 "control_persona.js"
 ],
+"人设主线": [
+"control_persona.js"
+],
 "人设列表尚未加载完成": [
 "control_persona.js"
 ],
@@ -1282,9 +1294,6 @@
 "从哪里导入": [
 "control.html"
 ],
-"从小一起长大：太熟了，熟到你忘了她是女生": [
-"persona/templates/childhood.json"
-],
 "从文件导入": [
 "control_memes.js"
 ],
@@ -1345,6 +1354,9 @@
 "ai/schedule/importer.py",
 "control_schedule.js"
 ],
+"你们一起渡过的事（共 {0} 段回忆）": [
+"control_persona.js"
+],
 "你们之间的梗、你的口头禅：你在聊天里给她讲明白一个梗时，她会自己记在这里；也可以在这里加、改。每个人设各记各的，清除记忆时一起清除。": [
 "control_memes.js"
 ],
@@ -1398,6 +1410,9 @@
 ],
 "你的原话：": [
 "control.js"
+],
+"你的态度与选择：": [
+"control_persona.js"
 ],
 "你的每条消息平均": [
 "control.js"
@@ -1516,6 +1531,7 @@
 ],
 "保存失败：": [
 "control.js",
+"control_persona.js",
 "wx_ilink_py/phone_mcp_routes.py"
 ],
 "保存她的样子": [
@@ -1673,6 +1689,9 @@
 "健康、财务、证件号、联系方式、精确住址等默认不自动保存": [
 "ai/control_config.py"
 ],
+"偷看暗线设定（含剧透）": [
+"control_persona.js"
+],
 "允许 Violet 不问你、直接使用 {0}？这是会改动东西的工具，她会真的执行它的操作（工具本身能做什么由提供它的服务器决定）。": [
 "control_mcp.js"
 ],
@@ -1828,8 +1847,14 @@
 "关系：{0} · 叫你“{1}”": [
 "control.js"
 ],
+"关键人物与物件：": [
+"control_persona.js"
+],
 "关键字、模块名（例如 channels、mcp）": [
 "control.html"
+],
+"关键转折": [
+"ai/story_store.py"
 ],
 "关闭": [
 "ai/control_config.py",
@@ -1838,6 +1863,10 @@
 "control.js",
 "control_channels.js",
 "control_memes.js",
+"control_persona.js"
+],
+"关闭前置决断": [
+"ai/control_config.py",
 "control_persona.js"
 ],
 "关闭后下一次检查起不再记录新的生活进展，打开后马上开始；临时暂停也可以用下面的“暂停 / 恢复”": [
@@ -1857,6 +1886,10 @@
 ],
 "关闭（任务在服务器上继续）": [
 "control.js"
+],
+"关闭（纯平淡日常）": [
+"ai/control_config.py",
+"control_persona.js"
 ],
 "兴趣": [
 "control_persona.js"
@@ -1925,6 +1958,9 @@
 "决定时给模型看最近多少条消息（包括已经看过的）": [
 "ai/control_config.py"
 ],
+"决断模型（可选，如 gpt-6-luna）": [
+"control_persona.js"
+],
 "冷场时想说话的频率": [
 "ai/control_config.py"
 ],
@@ -1953,6 +1989,9 @@
 ],
 "出错时的兜底回复": [
 "ai/control_config.py"
+],
+"分章活大纲（随你的选择动态微调，始终保证 HE）：": [
+"control_persona.js"
 ],
 "分类 {0}": [
 "control.js"
@@ -2102,6 +2141,9 @@
 "wx_ilink_py/control_routes.py",
 "wx_ilink_py/mcp_routes.py"
 ],
+"判断剧情进度、本轮策略与建议工具": [
+"control_flow.js"
+],
 "别人私聊她": [
 "ai/control_config.py",
 "control_social.js"
@@ -2131,6 +2173,18 @@
 ],
 "刷新页面（加载新版本）": [
 "control_setup.js"
+],
+"前置决断每天最多几次": [
+"ai/control_config.py"
+],
+"前置决断超时（秒）": [
+"ai/control_config.py"
+],
+"剧情": [
+"control_persona.js"
+],
+"剧情浓度": [
+"control_persona.js"
 ],
 "加上": [
 "control_memes.js"
@@ -2285,6 +2339,15 @@
 ],
 "双": [
 "control_schedule.js"
+],
+"双层决断": [
+"control_persona.js"
+],
+"双层回合决断": [
+"control_persona.js"
+],
+"双层回合决断模式": [
+"ai/control_config.py"
 ],
 "发 QQ 动态": [
 "ai/control_config.py"
@@ -2491,6 +2554,12 @@
 "可选": [
 "control_setup.js"
 ],
+"可选：单独指定更快的模型（如 gpt-6-luna、gpt-5-mini）负责大纲与前置决断；留空则自动复用 Memory / Chat 模型": [
+"ai/control_config.py"
+],
+"可选：填写想看的题材或不想出现的桥段，留空则按人设自由发挥（结局始终保证 Happy Ending）": [
+"ai/control_config.py"
+],
 "各 Agent 当前模型": [
 "control.html"
 ],
@@ -2517,9 +2586,6 @@
 ],
 "同班同学": [
 "persona/templates/quiet.json"
-],
-"同社团低一级的后辈：想站在你旁边，不是一直站在你后面": [
-"persona/templates/junior.json"
 ],
 "名字": [
 "control.html",
@@ -2552,6 +2618,12 @@
 ],
 "后台无操作多久要重新登录（分钟）": [
 "ai/control_config.py"
+],
+"后台暗线与完整分章大纲已默认隐藏（防剧透）": [
+"control_persona.js"
+],
+"后台暗线与完整活大纲（含剧透）": [
+"control_persona.js"
 ],
 "后台替换": [
 "control.js"
@@ -2662,6 +2734,9 @@
 "回到现在的人设": [
 "control.js"
 ],
+"回合决断": [
+"control_flow.js"
+],
 "回复": [
 "control_persona.js"
 ],
@@ -2755,6 +2830,9 @@
 "图片页：识图模型": [
 "control_images.js"
 ],
+"圆满收束": [
+"ai/story_store.py"
+],
 "在 QQ 开放平台免费创建一个官方机器人，填两项就能用。只能私聊，不会被封号。": [
 "control_channels.js"
 ],
@@ -2784,6 +2862,15 @@
 ],
 "在吗": [
 "control_persona.js"
+],
+"在外拘谨怕添麻烦、唯独在你面前眼里发亮的直球后辈": [
+"persona/templates/junior.json"
+],
+"在外爽朗靠得住、唯独在你面前会露出软肋的青梅竹马": [
+"persona/templates/childhood.json"
+],
+"在外胆小怯懦、见生人就躲，只在家对你嘴硬依赖的继妹": [
+"persona/templates/stepsister.json"
 ],
 "在手机“设置 → 远程访问”里填这三项": [
 "control_phone.js"
@@ -2892,6 +2979,9 @@
 ],
 "夏栀（学妹）": [
 "persona/templates/junior.json"
+],
+"外人眼里冷漠难近的高冷女神，唯独对你轻声偏执、记得你所有的事": [
+"persona/templates/quiet.json"
 ],
 "外部网络": [
 "control_diag.js"
@@ -3146,9 +3236,6 @@
 "安装语音": [
 "control_voice.js"
 ],
-"安静、黏人、记得你所有的事：很怕被你丢下": [
-"persona/templates/quiet.json"
-],
 "安静体贴、很会倾听，像一个温柔的姐姐": [
 "persona/templates/gentle.json"
 ],
@@ -3346,6 +3433,15 @@
 "小说": [
 "ai/persona_templates.py"
 ],
+"小说式跨天连续剧情（结局始终保证温暖 Happy Ending；默认 Violet 保持轻起伏，AI 与空白人设不启用）": [
+"ai/control_config.py"
+],
+"小说感": [
+"control_persona.js"
+],
+"小说感（都市/身世/强剧情）": [
+"ai/control_config.py"
+],
 "少追问": [
 "ai/control_config.py"
 ],
@@ -3369,6 +3465,9 @@
 ],
 "展开 / 收起": [
 "control_mcp.js"
+],
+"展开中": [
+"ai/story_store.py"
 ],
 "展示每次检查是发出了消息，还是为什么跳过": [
 "control.js"
@@ -3412,6 +3511,9 @@
 ],
 "已不在这个群": [
 "control_social.js"
+],
+"已互动 {0} 轮": [
+"control_persona.js"
 ],
 "已保存": [
 "control.js",
@@ -3500,6 +3602,9 @@
 "已到检查时间": [
 "control.js"
 ],
+"已动态改写": [
+"control_persona.js"
+],
 "已发": [
 "control_social.js"
 ],
@@ -3531,6 +3636,9 @@
 "control.js"
 ],
 "已固定在阶段 {0}「{1}」，下一条消息起生效": [
+"control_persona.js"
+],
+"已坐实正史：": [
 "control_persona.js"
 ],
 "已填 {0} 项": [
@@ -3588,6 +3696,12 @@
 ],
 "已开启 · {0}": [
 "control.js"
+],
+"已开启新故事线": [
+"control_persona.js"
+],
+"已开启自由原创故事线": [
+"control_persona.js"
 ],
 "已开始": [
 "control.js"
@@ -3664,6 +3778,9 @@
 "已撤销": [
 "control_schedule.js"
 ],
+"已收束为 Happy Ending": [
+"control_persona.js"
+],
 "已放弃": [
 "control_persona.js"
 ],
@@ -3680,6 +3797,9 @@
 "已更新": [
 "control_setup.js"
 ],
+"已更新故事线": [
+"control_persona.js"
+],
 "已更正": [
 "control_persona.js"
 ],
@@ -3692,6 +3812,9 @@
 ],
 "已检查连接": [
 "control.js"
+],
+"已淡出": [
+"ai/story_store.py"
 ],
 "已添加": [
 "control_mcp.js"
@@ -3810,6 +3933,12 @@
 "希望她少主动发消息": [
 "control.js"
 ],
+"带入剧情": [
+"control_persona.js"
+],
+"带入当前故事线": [
+"control_persona.js"
+],
 "帮你管 QQ 群": [
 "ai/permissions.py"
 ],
@@ -3864,6 +3993,9 @@
 ],
 "开启图片功能": [
 "control_images.js"
+],
+"开启新故事": [
+"control_persona.js"
 ],
 "开始": [
 "ai/schedule/importer.py",
@@ -3939,11 +4071,23 @@
 "归档“{0}”？归档后 Violet 查课表时不再用这个学期（数据保留，可以取消归档）。": [
 "control_schedule.js"
 ],
+"归档当前故事线并开启一条全新的故事？": [
+"control_persona.js"
+],
 "当前": [
 "control_persona.js"
 ],
+"当前人设不启用虚拟故事线": [
+"wx_ilink_py/persona_routes.py"
+],
 "当前人设与阶段": [
 "control.js"
+],
+"当前人设保持轻起伏": [
+"control_persona.js"
+],
+"当前人设（AI 或空白人设）不启用虚拟小说故事线。": [
+"control_persona.js"
 ],
 "当前处于「保持距离」状态": [
 "control_persona.js"
@@ -3960,8 +4104,17 @@
 "当前密码（确认身份）": [
 "control.html"
 ],
+"当前幕": [
+"control_persona.js"
+],
 "当前心情": [
 "control.js"
+],
+"当前悬念：": [
+"control_persona.js"
+],
+"当前没有进行中的故事线": [
+"wx_ilink_py/persona_routes.py"
 ],
 "当前版本 {0}。{1}。服务器连不上 GitHub 时，可以在下面的“版本更新 → 下载来源”换成加速站。": [
 "control_setup.js"
@@ -4019,6 +4172,9 @@
 ],
 "待完成": [
 "control_setup.js"
+],
+"待展开": [
+"control_persona.js"
 ],
 "待批准": [
 "control_channels.js",
@@ -4098,6 +4254,12 @@
 "必需的设置都完成了，Violet 可以正常聊天。下面的可选项可以随时调整，点一项直接过去。": [
 "control_setup.js"
 ],
+"快速测试": [
+"control_persona.js"
+],
+"快速测试（每 2 轮推进·跳过天数门槛）": [
+"ai/control_config.py"
+],
 "怎么不理我了": [
 "control_persona.js"
 ],
@@ -4151,6 +4313,12 @@
 ],
 "慢慢认识你": [
 "ai/control_config.py"
+],
+"慢热（1–3 天自然连载）": [
+"ai/control_config.py"
+],
+"慢热（默认）": [
+"control_persona.js"
 ],
 "成功（{0} 毫秒）：{1}": [
 "control_mcp.js"
@@ -4357,6 +4525,9 @@
 "换一个端口": [
 "control_phone.js"
 ],
+"换一条新故事": [
+"control_persona.js"
+],
 "换人设": [
 "control_persona.js"
 ],
@@ -4415,6 +4586,15 @@
 ],
 "接口返回 404：多半是 API 地址不对（一般以 /v1 结尾）；地址没错的话，就是这个服务不支持列出模型": [
 "ai/setup_status.py"
+],
+"控制伏笔与转折推进的速度；测试剧情体验时可切到“快速测试”": [
+"ai/control_config.py"
+],
+"推进一小步": [
+"control_persona.js"
+],
+"推进节奏": [
+"control_persona.js"
 ],
 "提交失败：": [
 "control_setup.js"
@@ -4576,6 +4756,32 @@
 ],
 "放弃生活线“{0}”？之后不会再推进。": [
 "control_persona.js"
+],
+"故事线": [
+"control_persona.js"
+],
+"故事线已关闭，当前仅按原有平淡日常运行。": [
+"control_persona.js"
+],
+"故事线已关闭，请先开启剧情模式": [
+"wx_ilink_py/persona_routes.py"
+],
+"故事线已推进一小步": [
+"control_persona.js"
+],
+"故事线推进节奏": [
+"ai/control_config.py",
+"control_persona.js"
+],
+"故事线浓度": [
+"ai/control_config.py",
+"control_persona.js"
+],
+"故事线设置已保存": [
+"control_persona.js"
+],
+"故事题材偏好 / 避雷": [
+"ai/control_config.py"
 ],
 "教学周": [
 "control.html"
@@ -4816,6 +5022,13 @@
 "显示整个屏幕": [
 "control_channels.js"
 ],
+"智能混合双层（推荐）": [
+"ai/control_config.py",
+"control_persona.js"
+],
+"智能混合双层（推荐）：普通闲聊零额外延迟直出，命中剧情或复杂意图时先由第一层做进展与工具决断，再由聊天层按人设回复": [
+"ai/control_config.py"
+],
 "暂停": [
 "control.html",
 "control_persona.js"
@@ -4825,6 +5038,15 @@
 ],
 "暂无记录": [
 "control.js"
+],
+"暗线埋伏笔": [
+"ai/story_store.py"
+],
+"暗线背景：": [
+"control_persona.js"
+],
+"暴露边界：": [
+"control_persona.js"
 ],
 "曲": [
 "ai/persona_templates.py"
@@ -5055,6 +5277,9 @@
 "未开始": [
 "wx_ilink_py/ops_page_routes.py"
 ],
+"未揭晓的心事（待聊天触发）": [
+"ai/story_store.py"
+],
 "未检查": [
 "control_setup.js"
 ],
@@ -5139,6 +5364,10 @@
 "control_setup.js"
 ],
 "标准": [
+"ai/control_config.py",
+"control_persona.js"
+],
+"标准（半天–1 天推进）": [
 "ai/control_config.py"
 ],
 "核对": [
@@ -5506,6 +5735,10 @@
 "每次都带上的长期事实（条）": [
 "ai/control_config.py"
 ],
+"每轮同步双层": [
+"ai/control_config.py",
+"control_persona.js"
+],
 "每轮对话平均 {0} token": [
 "control.js"
 ],
@@ -5636,13 +5869,13 @@
 "没有考试": [
 "control_schedule.js"
 ],
-"没有血缘的继妹：把你的好当了真，不想只当妹妹": [
-"persona/templates/stepsister.json"
-],
 "没有要保存的修改": [
 "wx_ilink_py/channel_routes.py",
 "wx_ilink_py/control_routes.py",
 "wx_ilink_py/schedule_routes.py"
+],
+"没有要保存的项": [
+"wx_ilink_py/persona_routes.py"
 ],
 "没有计划": [
 "control_persona.js"
@@ -5935,6 +6168,12 @@
 ],
 "渠道管理没有启动": [
 "wx_ilink_py/channel_routes.py"
+],
+"温和收束当前故事线为 Happy Ending，并沉淀为你们的共同回忆？": [
+"control_persona.js"
+],
+"温和收束（HE）": [
+"control_persona.js"
 ],
 "温度": [
 "control.js",
@@ -6406,6 +6645,9 @@
 "私聊里收藏的": [
 "ai/stickers.py"
 ],
+"种子：{0}": [
+"control_persona.js"
+],
 "称呼": [
 "control_persona.js"
 ],
@@ -6456,6 +6698,9 @@
 "第 {0} 天起": [
 "control_persona.js"
 ],
+"第 {0} 幕 ·": [
+"control_persona.js"
+],
 "第 {0} 次 · {1} · {2}": [
 "control.js"
 ],
@@ -6464,6 +6709,9 @@
 ],
 "第 {0} 行：": [
 "control_schedule.js"
+],
+"第 {0}/{1} 幕": [
+"control_persona.js"
 ],
 "第 {0}–{1} 节": [
 "control_schedule.js"
@@ -6477,6 +6725,18 @@
 ],
 "第一周的星期一": [
 "control_schedule.js"
+],
+"第一层决断 / 故事大纲模型": [
+"ai/control_config.py"
+],
+"第一层决断模型": [
+"control_persona.js"
+],
+"第一层同步决断的超时上限；超时自动回退为直接聊天，不卡住回复": [
+"ai/control_config.py"
+],
+"第一层同步回合决断的每日调用上限": [
+"ai/control_config.py"
 ],
 "第一次用？四步录好课表": [
 "control.html"
@@ -6495,6 +6755,9 @@
 ],
 "等待": [
 "control_flow.js"
+],
+"等待开启": [
+"control_persona.js"
 ],
 "等待扫码": [
 "control_channels.js",
@@ -6755,6 +7018,9 @@
 "聊天中偶尔自然地问一个关于你的问题（每次最多一个，被拒绝的不再问）": [
 "ai/control_config.py"
 ],
+"聊天中已揭晓的线索：": [
+"control_persona.js"
+],
 "聊天历史保留几轮": [
 "ai/control_config.py"
 ],
@@ -6935,6 +7201,12 @@
 ],
 "自建 SearXNG（可选）": [
 "control.js"
+],
+"自由原创": [
+"control_persona.js"
+],
+"自由原创一条": [
+"control_persona.js"
 ],
 "至少选一个搜索引擎": [
 "control.js"
@@ -7302,6 +7574,9 @@
 "请主人批准": [
 "ai/permissions.py"
 ],
+"请先在模型服务页配置模型后再开启自由原创故事线": [
+"wx_ilink_py/persona_routes.py"
+],
 "请只回复两个字：在的": [
 "ai/setup_status.py"
 ],
@@ -7511,11 +7786,20 @@
 "跳过的周": [
 "control_schedule.js"
 ],
+"身世底色": [
+"control_persona.js"
+],
 "身份": [
 "control_persona.js"
 ],
 "身形和特征": [
 "control_persona.js"
+],
+"轻起伏": [
+"control_persona.js"
+],
+"轻起伏（偏写实日常波折）": [
+"ai/control_config.py"
 ],
 "辅助模型最近 24 小时：{0}。": [
 "control.js"
@@ -7657,6 +7941,9 @@
 "还没有图片。": [
 "control_images.js"
 ],
+"还没有在聊天里点破具体线索，继续聊天中留意她的小异常或关心追问。": [
+"control_persona.js"
+],
 "还没有填写 API 地址或 API Key": [
 "ai/setup_status.py"
 ],
@@ -7713,6 +8000,9 @@
 ],
 "还没有课表：按下面“四步录好课表”来，先新建一个学期。": [
 "control_schedule.js"
+],
+"还没有进行中的故事线。随着你们聊天自然开启，或点击下方按钮立即开启（方便测试）。": [
+"control_persona.js"
 ],
 "还没检查": [
 "control.js",
@@ -8116,11 +8406,17 @@
 "随便写一句（120 字以内），点试听，她就用上面录音的声音把这句说出来。和录音原文无关，不用一样。": [
 "control_voice.js"
 ],
+"随时间与聊天互动慢慢展开的连续剧情，你的选择会改变走向，结局始终为 Happy Ending。": [
+"control_persona.js"
+],
 "随机生成一个新的安全入口": [
 "control.html"
 ],
 "隐藏": [
 "control_phone.js"
+],
+"隐藏暗线": [
+"control_persona.js"
 ],
 "需要 x86_64 的 CPU（这台是 {0}）": [
 "tools/violet_voice.py"
@@ -8169,6 +8465,12 @@
 ],
 "预览之后课表又被修改过了，请重新预览再确认": [
 "ai/schedule/importer.py"
+],
+"题材偏好 / 避雷（可选，结局始终为 HE）": [
+"control_persona.js"
+],
+"题材偏好或避雷": [
+"control_persona.js"
 ],
 "高级：代理、接口地址": [
 "control_channels.js"

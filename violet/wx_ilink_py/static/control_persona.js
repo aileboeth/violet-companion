@@ -61,7 +61,7 @@
       h("div", { class: "row" }, h("strong", { text: (d.identity && d.identity.name) || (d.blank ? "空白人设（还没有名字）" : "Violet") }),
         pill(`v${fmt(p.core && p.core.version)}`), h("span", { class: "note", text: ((p.core && p.core.sha256) || "").slice(0, 12) })),
       h("p", { text: (d.identity && d.identity.virtual_declaration) || "" }),
-      h("div", { class: "pl-grid" }, listBlock("性格", d.personality), listBlock("说话习惯", d.communication_habits),
+      h("div", { class: "pl-grid" }, listBlock("身世底色", d.origin ? [d.origin] : []), listBlock("性格", d.personality), listBlock("说话习惯", d.communication_habits),
         listBlock("长期兴趣", d.long_term_interests), listBlock("价值观", d.values), listBlock("缺点", d.flaws),
         listBlock("生活边界", d.living_constraints), listBlock("共同回忆", d.backstory), listBlock("不要这样", d.avoid),
         listBlock("关系阶段", stageLabels)),
@@ -270,6 +270,7 @@
         h("p", { class: "pv-lead", text: e.summary || t.summary || "" }),
         t.self_description ? h("blockquote", { class: "pv-quote", text: t.self_description }) : null,
         t.relation ? h("p", { class: "pv-relation" }, pill("自带关系"), h("strong", { text: " " + t.relation }), h("span", { text: "　" + (t.relation_text || "") })) : null,
+        t.origin ? h("p", { class: "pv-relation" }, pill("身世底色"), h("span", { text: "　" + t.origin })) : null,
         t.blank ? h("p", { class: "note", text: "没有名字、性格和经历，什么都从和你聊天开始慢慢长出来。" }) : null,
         stageBlock,
         blocks.length ? h("div", { class: "pv-grid" }, ...blocks) : (t.blank || stageBlock ? null : h("p", { class: "note", text: "这个人设没有写细节。" })),
@@ -455,6 +456,167 @@
     return true;
   }
 
+  // 2026-11-26: spoiler-safe story arc card (#pl-story)
+  const STORY_MODE_LABELS = { off: "已关闭", light: "轻起伏", drama: "小说感" };
+  let storySpoilerOpen = false;
+  async function renderStory(spoilerOpt) {
+    const box = $("#pl-story");
+    if (!box) return;
+    if (spoilerOpt !== undefined) storySpoilerOpen = !!spoilerOpt;
+    let d;
+    try {
+      d = await api("GET", `/api/persona/story${storySpoilerOpen ? "?spoiler=1" : ""}`);
+    } catch (e) {
+      box.replaceChildren(h("h3", { id: "pl-sec-story", text: "故事线" }), h("p", { class: "err", text: e.message }));
+      return;
+    }
+    const modeSel = h("select", { "aria-label": "故事线浓度" },
+      h("option", { value: "off", text: "关闭（纯平淡日常）" }),
+      h("option", { value: "light", text: "轻起伏" }),
+      h("option", { value: "drama", text: "小说感" }));
+    modeSel.value = d.mode || "drama";
+    const paceSel = h("select", { "aria-label": "故事线推进节奏" },
+      h("option", { value: "slow", text: "慢热（默认）" }),
+      h("option", { value: "normal", text: "标准" }),
+      h("option", { value: "fast", text: "快速测试" }));
+    paceSel.value = d.pace || "slow";
+    const decSel = h("select", { "aria-label": "双层回合决断" },
+      h("option", { value: "smart", text: "智能混合双层（推荐）" }),
+      h("option", { value: "always", text: "每轮同步双层" }),
+      h("option", { value: "off", text: "关闭前置决断" }));
+    decSel.value = d.decision_mode || "smart";
+    const decModelInput = h("input", { maxlength: 120, "aria-label": "第一层决断模型", placeholder: "决断模型（可选，如 gpt-6-luna）" });
+    decModelInput.value = d.decision_model || "";
+    const prefInput = h("input", { maxlength: 200, "aria-label": "题材偏好或避雷", placeholder: "题材偏好 / 避雷（可选，结局始终为 HE）" });
+    prefInput.value = d.preference || "";
+
+    const saveCfg = async () => {
+      try {
+        await api("POST", "/api/persona/story/config", {
+          mode: modeSel.value, pace: paceSel.value, decision_mode: decSel.value,
+          decision_model: decModelInput.value.trim(), preference: prefInput.value.trim(), spoiler: storySpoilerOpen,
+        });
+        toast("故事线设置已保存");
+        renderStory(storySpoilerOpen);
+      } catch (e) { toast("保存失败：" + e.message, false); }
+    };
+
+    const runStoryAction = async (url, body, okMsg) => {
+      try {
+        const r = await api("POST", url, { ...(body || {}), spoiler: storySpoilerOpen });
+        toast(okMsg || "已更新故事线");
+        if (r && r.outcome === "resolved") storySpoilerOpen = false;
+        renderStory(storySpoilerOpen);
+      } catch (e) { toast("操作失败：" + e.message, false); }
+    };
+
+    const controls = h("div", { class: "story-controls" },
+      h("label", {}, "剧情浓度 ", modeSel),
+      h("label", {}, "推进节奏 ", paceSel),
+      h("label", {}, "双层决断 ", decSel),
+      decModelInput,
+      prefInput,
+      h("button", { type: "button", class: "ghost small", text: "保存", onclick: saveCfg }));
+
+    const arc = d.active;
+    const actProg = arc && arc.act_progress && arc.act_progress.total
+      ? `第 ${arc.act_progress.current}/${arc.act_progress.total} 幕` : null;
+    const headPills = [
+      pill(STORY_MODE_LABELS[d.effective_mode] || d.effective_mode, d.effective_mode === "off" ? "" : "ok"),
+      d.persona_ceiling === "light" && d.mode === "drama" ? pill("当前人设保持轻起伏") : null,
+      arc ? pill(arc.status_label || arc.status, arc.status === "climax" ? "warn" : "ok") : pill("等待开启"),
+      actProg ? pill(actProg) : null,
+    ].filter(Boolean);
+
+    let bodyNode;
+    if (!d.persona_supported) {
+      bodyNode = h("div", { class: "story-body" }, h("p", { class: "note", text: "当前人设（AI 或空白人设）不启用虚拟小说故事线。" }));
+    } else if (d.effective_mode === "off") {
+      bodyNode = h("div", { class: "story-body" }, h("p", { class: "note", text: "故事线已关闭，当前仅按原有平淡日常运行。" }));
+    } else if (!arc) {
+      bodyNode = h("div", { class: "story-body" },
+        h("p", { class: "note", text: "还没有进行中的故事线。随着你们聊天自然开启，或点击下方按钮立即开启（方便测试）。" }),
+        h("div", { class: "story-actions" },
+          h("button", { type: "button", class: "ghost small", text: "开启新故事", onclick: () => runStoryAction("/api/persona/story/new", {}, "已开启新故事线") }),
+          h("button", { type: "button", class: "ghost small", text: "自由原创一条", onclick: () => runStoryAction("/api/persona/story/new", { prefer_free: true }, "已开启自由原创故事线") })));
+    } else {
+      const revealed = arc.revealed_beats || [];
+      const outline = (arc.outline && typeof arc.outline === "object") ? arc.outline : {};
+      const outlineActs = Array.isArray(outline.acts) ? outline.acts : [];
+      const outlineCast = Array.isArray(outline.premise_cast) ? outline.premise_cast : [];
+      const ACT_STAT = { done: ["已完成", "ok"], current: ["当前幕", "warn"], pending: ["待展开", ""] };
+      const spoilerBox = d.spoiler
+        ? h("div", { class: "story-spoiler-box" },
+          h("div", { class: "row" }, h("strong", { text: "后台暗线与完整活大纲（含剧透）" }),
+            h("button", { type: "button", class: "ghost small", text: "隐藏暗线", onclick: () => renderStory(false) })),
+          arc.premise ? h("p", { class: "note" }, h("span", { text: "暗线背景：" }), " ", h("span", { translate: "no", text: arc.premise })) : null,
+          arc.open_hook ? h("p", { class: "note" }, h("span", { text: "当前悬念：" }), " ", h("span", { translate: "no", text: arc.open_hook })) : null,
+          arc.he_direction ? h("p", { class: "note" }, h("span", { text: "HE 方向：" }), " ", h("span", { translate: "no", text: arc.he_direction })) : null,
+          arc.next_turn_brief ? h("p", { class: "note" }, h("span", { text: "下轮导演便签：" }), " ", h("span", { translate: "no", text: arc.next_turn_brief })) : null,
+          outlineCast.length ? h("p", { class: "note" }, h("span", { text: "关键人物与物件：" }), " ", h("span", { translate: "no", text: outlineCast.join("、") })) : null,
+          outlineActs.length
+            ? h("div", { class: "story-outline" },
+              h("div", { class: "note", text: "分章活大纲（随你的选择动态微调，始终保证 HE）：" }),
+              ...outlineActs.map((a) => {
+                const [stText, stKind] = ACT_STAT[a.status] || [a.status || "", ""];
+                return h("div", { class: "story-act" + (a.status === "current" ? " is-current" : "") },
+                  h("div", { class: "row" },
+                    h("strong", {}, `第 ${a.act} 幕 · `, h("span", { translate: "no", text: a.title })),
+                    pill(stText, stKind),
+                    a.revised ? pill("已动态改写", "warn") : null),
+                  a.summary ? h("p", { class: "note", text: a.summary, translate: "no" }) : null,
+                  a.reveal_boundary ? h("p", { class: "note" }, h("span", { text: "暴露边界：" }), " ", h("span", { translate: "no", text: a.reveal_boundary })) : null);
+              }))
+            : null,
+          (arc.canon_beats && arc.canon_beats.length)
+            ? h("div", {}, h("div", { class: "note", text: "已坐实正史：" }),
+              h("ul", { class: "story-beats" }, ...arc.canon_beats.map((b) => h("li", { text: b, translate: "no" }))))
+            : null)
+        : h("div", { class: "story-spoiler-box locked" },
+          h("span", { class: "note", text: "后台暗线与完整分章大纲已默认隐藏（防剧透）" }),
+          h("button", { type: "button", class: "ghost small", text: "偷看暗线设定（含剧透）", onclick: () => renderStory(true) }));
+
+      bodyNode = h("div", { class: "story-body" },
+        h("div", { class: "story-title-row" },
+          h("strong", { text: arc.title, translate: arc.title_hidden ? undefined : "no" }),
+          pill(arc.source === "free" ? "自由原创" : "人设主线"),
+          h("span", { class: "note", text: `已互动 ${arc.turns_engaged || 0} 轮` })),
+        revealed.length
+          ? h("div", {}, h("div", { class: "note", text: "聊天中已揭晓的线索：" }),
+            h("ul", { class: "story-beats" }, ...revealed.map((b) => h("li", { text: b, translate: "no" }))))
+          : h("p", { class: "note", text: "还没有在聊天里点破具体线索，继续聊天中留意她的小异常或关心追问。" }),
+        arc.user_role ? h("p", { class: "note" }, h("span", { text: "你的态度与选择：" }), " ", h("span", { translate: "no", text: arc.user_role })) : null,
+        spoilerBox,
+        h("div", { class: "story-actions" },
+          h("button", { type: "button", class: "ghost small", text: "推进一小步", onclick: () => runStoryAction("/api/persona/story/advance", {}, "故事线已推进一小步") }),
+          h("button", { type: "button", class: "ghost small", text: "温和收束（HE）", onclick: async () => {
+            if (await confirmBox("温和收束当前故事线为 Happy Ending，并沉淀为你们的共同回忆？")) {
+              runStoryAction("/api/persona/story/resolve", {}, "已收束为 Happy Ending");
+            }
+          } }),
+          h("button", { type: "button", class: "ghost small", text: "换一条新故事", onclick: async () => {
+            if (await confirmBox("归档当前故事线并开启一条全新的故事？")) {
+              runStoryAction("/api/persona/story/new", {}, "已开启新故事线");
+            }
+          } })));
+    }
+
+    const resolvedList = d.resolved || [];
+    const resolvedBox = resolvedList.length
+      ? h("details", { class: "story-resolved" },
+        h("summary", { text: `你们一起渡过的事（共 ${resolvedList.length} 段回忆）` }),
+        h("ul", {}, ...resolvedList.map((r) => h("li", { text: `${r.title}：${r.resolved_summary}`, translate: "no" }))))
+      : null;
+
+    box.replaceChildren(...[
+      h("div", { class: "story-head" }, h("h3", { id: "pl-sec-story", text: "故事线" }), ...headPills),
+      h("p", { class: "note", text: "随时间与聊天互动慢慢展开的连续剧情，你的选择会改变走向，结局始终为 Happy Ending。" }),
+      controls,
+      bodyNode,
+      resolvedBox,
+    ].filter(Boolean));
+  }
+
   // 2026-11-19: stateless in-memory persona sandbox preview (POST /api/persona/sandbox)
   const SANDBOX_CHIPS = ["在吗", "今天累死了", "你平时都干嘛呀", "刚吃完饭", "怎么不理我了"];
   function openSandbox(d, initTpl, initStage) {
@@ -469,6 +631,8 @@
 
     const stgSel = h("select", { "aria-label": "试聊阶段" });
     const stgLabel = h("label", {}, "阶段 ", stgSel);
+    const storySel = h("select", { "aria-label": "带入剧情" });
+    const storyLabel = h("label", {}, "剧情 ", storySel);
     const thread = h("div", { class: "sb-thread" });
     const input = h("input", { maxlength: 1000, placeholder: "输入一句话试试她的语气，回车发送…", autocomplete: "off" });
     const sendBtn = h("button", { type: "button", text: "发送" });
@@ -476,8 +640,22 @@
     let busy = false;
 
     const currentOpt = () => allOpts.find((o) => o.key === tplSel.value) || null;
+    function syncStoryOpts() {
+      const opt = currentOpt();
+      const seeds = (opt && opt.t && opt.t.story_seed_titles) || [];
+      const isMain = !!(data.current && opt && opt.key === data.current.template);
+      const opts = [h("option", { value: "off", text: "不带剧情" })];
+      if (isMain) opts.push(h("option", { value: "active", text: "带入当前故事线" }));
+      for (const s of seeds) {
+        opts.push(h("option", { value: `seed:${s.key}`, text: `种子：${s.title}` }));
+      }
+      storyLabel.hidden = opts.length <= 1;
+      storySel.replaceChildren(...opts);
+      storySel.value = "off";
+    }
     function syncStages(preferStage) {
       const opt = currentOpt();
+      syncStoryOpts();
       const items = (opt && opt.t && opt.t.stage_items) || [];
       if (!items.length) {
         stgLabel.hidden = true;
@@ -528,6 +706,7 @@
         message: msg,
         template: tplSel.value || null,
         stage: stgLabel.hidden ? null : Number(stgSel.value),
+        story_mode: storyLabel.hidden ? "off" : storySel.value,
         history: history.slice(-10),
       };
       try {
@@ -563,6 +742,7 @@
 
     tplSel.addEventListener("change", () => { syncStages(null); clearChat(); });
     stgSel.addEventListener("change", clearChat);
+    storySel.addEventListener("change", clearChat);
     sendBtn.addEventListener("click", () => sendText());
     input.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.isComposing) { ev.preventDefault(); sendText(); } });
 
@@ -575,6 +755,7 @@
         h("div", { class: "sb-bar" },
           h("label", {}, "人设 ", tplSel),
           stgLabel,
+          storyLabel,
           h("button", { type: "button", class: "ghost sb-clear", text: "清空对话", onclick: clearChat })),
         thread,
         h("div", { class: "sb-compose" }, input, sendBtn)));
@@ -755,7 +936,7 @@
     renderWho(d);
     const hasStageCard = renderStageCard(d);
     jumpNav($("#pl-jump"), [["关于你", "pl-about"], ["谁在和你聊", "pl-who"], hasStageCard ? ["关系阶段", "pl-stage"] : null,
-      ["人设库", "pl-sec-templates"], ["测试模式", "pl-test"], ["她的样子", "pl-look-box"], ["人设详情", "pl-core-box"]]);
+      ["故事线", "pl-story"], ["人设库", "pl-sec-templates"], ["测试模式", "pl-test"], ["她的样子", "pl-look-box"], ["人设详情", "pl-core-box"]]);
     renderTest(d);
     const ownUsers = (d.used_by || {}).custom || [];
     const switchTo = (t) => async () => {
@@ -847,9 +1028,10 @@
 
   loaders.life = () => loaders.persona();           // 2026-11-11 regroup: her life is a sub-tab of the same page
   loaders.persona = async () => {
-    jumpNav($("#pl-jump"), [["关于你", "pl-about"], ["谁在和你聊", "pl-who"], ["人设库", "pl-sec-templates"], ["测试模式", "pl-test"],
+    jumpNav($("#pl-jump"), [["关于你", "pl-about"], ["谁在和你聊", "pl-who"], ["故事线", "pl-story"], ["人设库", "pl-sec-templates"], ["测试模式", "pl-test"],
       ["她的样子", "pl-look-box"], ["人设详情", "pl-core-box"]]);
     renderTemplates();
+    renderStory();
     renderLook();
     try {
       const [p, l] = await Promise.all([api("GET", "/api/persona"), api("GET", "/api/life")]);

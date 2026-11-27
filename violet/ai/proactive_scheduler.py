@@ -608,6 +608,9 @@ class ProactiveScheduler:
         schedule_moments = self._schedule_moments(current)
         if schedule_moments:
             state["allowed_schedule_moments"] = schedule_moments
+        story_beat = self._shareable_story_beat(current, warmth_level=level)
+        if story_beat:
+            state["offered_story_beat"] = story_beat
         unanswered = self._unanswered_proactive(current)
         recent, habit_note = self._recent_proactive(current)
         plans = self._shareable_open_plans(current)
@@ -635,6 +638,7 @@ class ProactiveScheduler:
             open_plans=plans,
             web_findings=state.get("allowed_web_findings") or [],
             schedule_moments=schedule_moments,
+            story_beat=story_beat,
             recent=recent,
             habit_note=habit_note,
             class_ok=class_ok,
@@ -677,6 +681,7 @@ class ProactiveScheduler:
         habit_note: str | None,
         class_ok: bool,
         less_proactive: bool = False,
+        story_beat: dict[str, Any] | None = None,
     ) -> tuple[str, str]:
         from ai.relationship import WARMTH_LABELS
         gap = _format_gap(since_user)
@@ -726,8 +731,20 @@ class ProactiveScheduler:
         else:
             lines.append("- 时机判断：对方打游戏、刷视频、刷手机不算勿扰；只有深夜疑似睡觉或对方正忙/别打扰时才输出 [NO_REPLY]。")
 
+        if story_beat and view.stage != "distance":
+            if topic not in ("miss_unanswered", "upcoming_event"):
+                topic = "story_beat"
+            if story_beat.get("status") == "seeded":
+                lines.append(
+                    f"- 你心里藏着一点轻伏笔（别直接挑明，只可自然露出一丝停顿或小情绪，不提也正常）：\n  · {story_beat['hook']}"
+                )
+            else:
+                lines.append(
+                    "- 你眼下正被一件事牵动心绪（适合自然向对方倾诉、试探求助或顺口提一句，别像念旁白）：\n"
+                    f"  · {story_beat['hook']}"
+                )
         if life_events:
-            if topic != "miss_unanswered":
+            if topic not in ("miss_unanswered", "story_beat"):
                 topic = "daily_share" if any(e.get("type") == "violet_daily_event" for e in life_events) else "life_share"
             lines.append("- 你最近刚发生、还没告诉对方的小事（选一件自然随口提一句，用自己的语气）：")
             for ev in life_events:
@@ -795,6 +812,48 @@ class ProactiveScheduler:
     # ------------------------------------------------------------------
     # Shareable content collectors
     # ------------------------------------------------------------------
+    def _shareable_story_beat(self, current: datetime, warmth_level: int | None = None) -> dict[str, Any] | None:
+        """2026-11-26: offer at most one fresh active story beat for proactive chat (respects all DND/limits)."""
+        try:
+            from ai.persona import PersonaCore
+            from ai.story_store import StoryStore, effective_mode
+            core = PersonaCore.load()
+            if effective_mode(core) == "off":
+                return None
+            if self.unanswered_count(current) > 0:
+                return None
+            arc = StoryStore(violetdb).active_arc()
+            if not arc or not (arc.get("open_hook") or "").strip():
+                return None
+            status = str(arc.get("status") or "")
+            turns_engaged = int(arc.get("turns_engaged") or 0)
+            if warmth_level is None:
+                _, _, _, warmth_level, _ = self._warmth_profile(current)
+            warmth = int(warmth_level or 0)
+            if status == "seeded":
+                if warmth == 0:
+                    return None
+                created = parse_time(arc.get("created_at"))
+                cur_dt = current.replace(tzinfo=_zone()) if current.tzinfo is None else current
+                if created is not None and (cur_dt - created) < timedelta(hours=12):
+                    return None
+            elif turns_engaged < (2 if warmth == 0 else 1):
+                return None
+            step_key = f"{status}:{str(arc.get('last_advanced_at') or '')[:16]}"
+            if arc.get("proactive_shared_step") == step_key:
+                return None
+            return {
+                "id": int(arc["id"]),
+                "step_key": step_key,
+                "status": status,
+                "turns_engaged": turns_engaged,
+                "title": arc.get("title") or "",
+                "hook": str(arc["open_hook"]).strip(),
+            }
+        except Exception:                                    # noqa: BLE001
+            logger.debug("[ProactiveScheduler] story beat unavailable", exc_info=True)
+            return None
+
     def _shareable_life_events(self) -> list[dict[str, Any]]:
         try:
             from ai.life_store import LifeStore
@@ -991,6 +1050,17 @@ class ProactiveScheduler:
     # ------------------------------------------------------------------
     # Send handling & post-send tracking (derived directly from sent text)
     # ------------------------------------------------------------------
+    @staticmethod
+    def _clean_sent_messages(messages: list[Any]) -> list[Any]:
+        from ai.channels.outbound import without_seal
+        cleaned: list[Any] = []
+        for m in messages or []:
+            item = without_seal(m)
+            if isinstance(item, dict):
+                item = {k: v for k, v in item.items() if not str(k).startswith("_")}
+            cleaned.append(item)
+        return cleaned
+
     def _handle_pipeline_result(self, pipeline: dict[str, Any], event_context: dict[str, Any] | None = None,
                                 kind: str | None = None) -> None:
         event_id = pipeline.get("event_id")
@@ -1023,10 +1093,11 @@ class ProactiveScheduler:
             violetdb.update_proactive_event(event_id, status="failed", reason=f"send error: {exc}"[:500])
             return
         if report is None:
-            violetdb.update_proactive_event(event_id, status="sent", sent_messages=messages)
-            self._after_proactive_sent(event_context, messages, event_id)
+            clean_messages = self._clean_sent_messages(messages)
+            violetdb.update_proactive_event(event_id, status="sent", sent_messages=clean_messages)
+            self._after_proactive_sent(event_context, clean_messages, event_id)
             return
-        sent = report.get("sent_messages") or []
+        sent = self._clean_sent_messages(report.get("sent_messages") or [])
         if sent:
             reason = None
             if report.get("failed_count") or report.get("cancelled_count"):
@@ -1077,6 +1148,13 @@ class ProactiveScheduler:
             if offered_schedule:
                 from ai.schedule.awareness import record_mentions
                 record_mentions(violetdb, offered_schedule, None, sent_text, event_id)
+            offered_story = state.get("offered_story_beat")
+            if isinstance(offered_story, dict) and offered_story.get("id") and offered_story.get("step_key"):
+                if (event_context or {}).get("summary_topic") == "story_beat" or touches_topic(
+                    sent_text, offered_story.get("hook") or ""
+                ):
+                    from ai.story_store import StoryStore
+                    StoryStore(violetdb).mark_proactive_shared(int(offered_story["id"]), str(offered_story["step_key"]))
 
             self._set_next_proactive_at(self._backoff_next_time(now_china()))
         except Exception:
@@ -1271,7 +1349,7 @@ class ProactiveScheduler:
                 report = {"sent_messages": [], "error": f"{exc.__class__.__name__}: {exc}"}
             if report is None:
                 report = {"sent_messages": result["messages"]}
-            sent = report.get("sent_messages") or []
+            sent = self._clean_sent_messages(report.get("sent_messages") or [])
             if sent:
                 violetdb.update_commitment(commitment["id"], status="sent", delivered_at=violetdb.now(),
                                            proactive_event_id=event_id, last_error=result.get("error"))

@@ -389,7 +389,8 @@ class SocialEngine:
                                          unread_from=int(conv["watermark"] or 0), people=people,
                                          owner_ids=owner_ids, today=today, last_said_at=(said or {}).get("at"),
                                          now=self.db.now(), trigger=trigger, sticker_lines=sticker_lines,
-                                         admin_ids=admin_ids, feeling="" if testing else mood.note(self.db),
+                                         admin_ids=admin_ids,
+                                         feeling="" if testing else mood.note(self.db, include_cause=False),
                                          meme_lines=meme_lines)
         # 2026-11-23 (P0-2): owner_asked is ONLY True when an owner message in unread actually addresses Violet
         # (@Violet / mentions her name / replies to her / poke, or in a 1-on-1 owner DM) -- NEVER from a casual
@@ -927,16 +928,51 @@ def _persona_text(db, channel: str | None = None) -> str:
         return "【你自己】一个普通、友善的人。"
 
 
+_SOCIAL_CHANNEL_TABLES = frozenset({"social_conversations", "social_posts"})
+
+
+def scope_social_channels(db, table: str) -> list[str]:
+    """Return distinct channel ids in ``table`` belonging to the active ``memory_scope``.
+
+    Evaluates ``memory_scope.for_channel(ch) == memory_scope.current()`` over the table's actual channels
+    so single-persona setups (and unit tests without a ``channels.json`` entry for ``"napcat"``) continue to
+    match while multi-channel persona scopes stay strictly isolated.
+    """
+    if table not in _SOCIAL_CHANNEL_TABLES:
+        raise ValueError(f"unsupported table: {table}")
+    from ai import memory_scope
+    scope = memory_scope.current()
+    rows = db.fetch_all(f"SELECT DISTINCT channel FROM {table} WHERE channel IS NOT NULL")
+    return [str(r["channel"]) for r in rows if memory_scope.for_channel(str(r["channel"])) == scope]
+
+
 def owner_digest(db, hours: float = 24.0, limit: int = 6) -> str:
     """For the owner's chat: what she said in groups lately (the owner may know about her group life; the reverse
     never happens). Empty when nothing."""
     since = (datetime.fromisoformat(db.now()[:19]) - timedelta(hours=hours)).isoformat(timespec="seconds")
-    rows = db.fetch_all("SELECT c.title, c.peer_id, m.content, m.created_at FROM social_messages m "
-                        "JOIN social_conversations c ON c.id = m.conversation_id WHERE m.is_self = 1 AND c.kind = 'group' "
-                        "AND substr(replace(m.created_at, ' ', 'T'), 1, 19) >= ? ORDER BY m.id DESC LIMIT ?",
-                        (since, limit))
-    posts = db.fetch_all("SELECT content, created_at FROM social_posts WHERE status = 'sent' "
-                         "AND substr(replace(created_at, ' ', 'T'), 1, 19) >= ? ORDER BY id DESC LIMIT 3", (since,))
+    conv_channels = scope_social_channels(db, "social_conversations")
+    if conv_channels:
+        ph = ",".join("?" * len(conv_channels))
+        rows = db.fetch_all(
+            f"SELECT c.title, c.peer_id, m.content, m.created_at FROM social_messages m "
+            f"JOIN social_conversations c ON c.id = m.conversation_id WHERE m.is_self = 1 AND c.kind = 'group' "
+            f"AND c.channel IN ({ph}) "
+            f"AND substr(replace(m.created_at, ' ', 'T'), 1, 19) >= ? ORDER BY m.id DESC LIMIT ?",
+            (*conv_channels, since, limit),
+        )
+    else:
+        rows = []
+    post_channels = scope_social_channels(db, "social_posts")
+    if post_channels:
+        ph = ",".join("?" * len(post_channels))
+        posts = db.fetch_all(
+            f"SELECT content, created_at FROM social_posts WHERE status = 'sent' "
+            f"AND channel IN ({ph}) "
+            f"AND substr(replace(created_at, ' ', 'T'), 1, 19) >= ? ORDER BY id DESC LIMIT 3",
+            (*post_channels, since),
+        )
+    else:
+        posts = []
     from ai import context_cut                         # 2026-10-30: nothing from before a 翻篇 / the start of a test
     cut = max([t for t in (context_cut.owner_since(), context_cut.social_since()) if t] or [""])
     rows = [r for r in rows if str(r["created_at"]) >= cut]

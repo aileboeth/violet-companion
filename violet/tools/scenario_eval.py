@@ -60,7 +60,7 @@ RESET_TABLES = (
     "event_memories", "core_memories", "memory_revisions", "memory_jobs",
     "interaction_preferences", "preference_observations", "topic_mentions", "profile_questions",
     "owner_memes", "persona_dynamic",
-    "life_events", "life_plans", "life_threads", "life_revisions", "life_engine_runs",
+    "life_events", "life_plans", "life_threads", "life_revisions", "life_engine_runs", "story_arcs",
     "web_findings", "web_requests", "media_assets", "image_tasks", "image_calls",
     "social_media", "social_messages", "social_decisions", "social_people", "social_posts",
     "social_done", "social_conversations",
@@ -350,6 +350,7 @@ def prepare(env_file: Path | None, work: Path, servers: list[dict[str, Any]], mo
         "DEBOUNCE_NORMAL": "0.05", "DEBOUNCE_EXTRA": "0.1", "VIOLET_ASYNC_MEMORY": "0", "VIOLET_STARTUP_MESSAGE": "",
         "VIOLET_SEND_RETRY_DELAY_SECONDS": "0", "VIOLET_VOICE": "1", "VIOLET_STICKERS": "1", "DEBUG_MODE": "0",
         "VIOLET_SOCIAL_QUIET_SECONDS": "0.5", "VIOLET_MCP_AUTO_CLASSIFY": "1",
+        "VIOLET_STORY_MODE": "off", "VIOLET_DECISION_MODE": "off",
     })
     if mock:
         env.update({"LLM_API_KEY": "mock", "LLM_API_URL": "http://127.0.0.1:9/v1", "CHAT_LLM_MODEL": "mock",

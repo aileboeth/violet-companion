@@ -165,7 +165,7 @@ _HISTORY_ANCHORS: dict[tuple[str, str], Any] = {}      # (database, mode) -> id 
 # 2026-11-26: "relationship" moved back into stable system prefix (no running minute counter exists anymore),
 # keeping the per-turn 〔背景〕 block right above the owner's message lean so their words stay in focus.
 VOLATILE_SECTIONS = {"situation", "commitments", "recall", "restricted", "onboarding", "base",
-                     "persona_dynamic", "violet_life", "external_info", "social", "ai_experience",
+                     "persona_dynamic", "violet_life", "story", "external_info", "social", "ai_experience",
                      "memes"}
 
 
@@ -655,11 +655,23 @@ class ContextEngine:
                 sections.append(self._ai_ability_section())
         else:
             sections.append(self._life_section(mode, user_message, call_context, LifeStore(self.db)))
+            if not getattr(core, "is_blank", False):
+                sections += self._story_sections(core)
         if mode == "chat":
             sections.append(self._web_section(user_message, call_context))
             sections.append(self._social_section())
             sections.append(self._sticker_section())
         return sections
+
+    def _story_sections(self, core) -> list[_Section]:
+        """2026-11-26: active story arc + recent resolved shared memories (volatile, keeps system prefix cached)."""
+        try:
+            from ai.story_store import StoryStore
+            blocks = StoryStore(self.db).context_blocks(core)
+        except Exception:                                   # noqa: BLE001 -- never break a reply
+            logger.debug("story context unavailable", exc_info=True)
+            return []
+        return [_Section("story", 3, header, lines, footer) for header, lines, footer in blocks if lines]
 
     def _about_owner_section(self) -> _Section:
         """2026-11-12: what the owner filled in about themselves (ai/about_owner.py), on every owner turn."""
@@ -686,11 +698,18 @@ class ContextEngine:
                                      (context_cut.owner_floor(day),))["n"]       # 翻篇: from the cut
             if talk:
                 lines.append(f"- 今天你和主人一共聊了 {talk} 条消息")
-            for r in self.db.fetch_all("SELECT c.title, c.peer_id, c.kind, COUNT(*) AS n FROM social_messages m JOIN "
-                                       "social_conversations c ON c.id = m.conversation_id WHERE m.is_self = 1 AND "
-                                       "m.created_at >= ? GROUP BY c.id ORDER BY n DESC LIMIT 3", (since,)):
-                where = f"QQ 群「{r['title'] or r['peer_id']}」" if r["kind"] == "group" else f"和 {r['title'] or r['peer_id']} 私聊时"
-                lines.append(f"- 最近一天你在{where}说了 {r['n']} 句话")
+            from ai.social.engine import scope_social_channels
+            social_chs = scope_social_channels(self.db, "social_conversations")
+            if social_chs:
+                ph = ",".join("?" * len(social_chs))
+                for r in self.db.fetch_all(
+                    f"SELECT c.title, c.peer_id, c.kind, COUNT(*) AS n FROM social_messages m JOIN "
+                    f"social_conversations c ON c.id = m.conversation_id WHERE m.is_self = 1 AND "
+                    f"c.channel IN ({ph}) AND m.created_at >= ? GROUP BY c.id ORDER BY n DESC LIMIT 3",
+                    (*social_chs, since),
+                ):
+                    where = f"QQ 群「{r['title'] or r['peer_id']}」" if r["kind"] == "group" else f"和 {r['title'] or r['peer_id']} 私聊时"
+                    lines.append(f"- 最近一天你在{where}说了 {r['n']} 句话")
             kept = self.db.fetch_one("SELECT COUNT(*) AS n FROM stickers WHERE created_at >= ?", (since,))["n"]
             if kept:
                 lines.append(f"- 最近一天你收藏了 {kept} 个表情包")
@@ -736,8 +755,15 @@ class ContextEngine:
                 able.append("查看主人手机的一些状态（前台应用、电量等，只读）")
         except Exception:                                   # noqa: BLE001
             pass
-        if self.db.fetch_one("SELECT COUNT(*) AS n FROM social_conversations WHERE mode != 'off'")["n"]:
-            able.append("在主人允许的 QQ 群里聊天")
+        from ai.social.engine import scope_social_channels
+        social_chs = scope_social_channels(self.db, "social_conversations")
+        if social_chs:
+            ph = ",".join("?" * len(social_chs))
+            if self.db.fetch_one(
+                f"SELECT COUNT(*) AS n FROM social_conversations WHERE mode != 'off' AND channel IN ({ph})",
+                tuple(social_chs),
+            )["n"]:
+                able.append("在主人允许的 QQ 群里聊天")
         if env_bool("VIOLET_QZONE_ENABLED", False):
             able.append("偶尔发 QQ 空间动态")
         able.append("记住和主人聊过的事、按约定提醒主人")

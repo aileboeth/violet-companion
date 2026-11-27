@@ -46,6 +46,7 @@ PY_PARTS = {
     "ai/chat.py": {"calls": {"node_skip": 1, "node_queue": 1}},          # the flow page's step notes
     "ai/social/store.py": {"names": {"MODE_TEXT"}},                       # how she takes part in a group
     "ai/stickers.py": {"names": {"SOURCES"}},                             # where a sticker came from
+    "ai/story_store.py": {"names": {"STATUS_LABELS", "STORY_HIDDEN_TITLE"}},  # story arc status pills & hidden title
     "ai/tool_manager.py": {"names": {"problem"}},                         # the web tools' status on the tools page
 }
 # shown on the persona page: each template's title and summary
@@ -250,6 +251,9 @@ def python_strings(path: Path, part: dict | None = None) -> list[str]:
         for node in ast.walk(tree):
             if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id in part.get("names", ())
                                                     for t in node.targets):
+                picked.append(node.value)
+            elif (isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name)
+                  and node.target.id in part.get("names", ()) and node.value is not None):
                 picked.append(node.value)
             if isinstance(node, ast.Call) and isinstance(node.func, (ast.Attribute, ast.Name)):
                 name = node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id

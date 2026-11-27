@@ -156,7 +156,7 @@ def signature(db, adapter) -> str | None:
     from ai.social.engine import _persona_text
     from ai.social.qzone import _material
     with memory_scope.use(memory_scope.for_channel(ch)):
-        lines = [f"现在是 {db.now()[:16].replace('T', ' ')}。", mood.note(db) or "",
+        lines = [f"现在是 {db.now()[:16].replace('T', ' ')}。", mood.note(db, include_cause=False) or "",
                  "", "【你最近的生活】", *(_material(db) or ["（这几天没有记下特别的事）"]), "", "决定改不改，只输出 JSON。"]
         try:
             decision, _model, _ = llm.call_decide(

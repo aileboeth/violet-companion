@@ -209,6 +209,21 @@ VIOLET_LIFE_CHECK_INTERVAL_SECONDS=600
 VIOLET_LIFE_GENERATION_MODE=template
 # llm 模式使用的模型（为空 = 退回模板措辞）
 VIOLET_LIFE_LLM_MODEL=
+# 故事线模式：off（关闭）| light（轻起伏）| drama（小说感，默认；默认 Violet 保持轻起伏，结局始终 HE）
+VIOLET_STORY_MODE=drama
+# 故事线推进节奏：slow（慢热，默认）| normal（标准）| fast（快速测试）
+VIOLET_STORY_PACE=slow
+# 故事线自定义题材偏好或避雷（可选，留空按人设自由发挥）
+VIOLET_STORY_PREFERENCE=
+# 故事线导演每日最多调用次数（0 = 按推进节奏默认上限）
+VIOLET_STORY_MAX_CALLS_PER_DAY=0
+# 第一层回合决断模式（方案 A）：smart（智能混合双层，默认：普通闲聊零延迟直出，剧情/复杂回合先决断再聊天）| always（每轮同步双层）| off（关闭前置决断）
+VIOLET_DECISION_MODE=smart
+# 第一层回合决断与故事大纲专用模型（可选，如 gpt-6-luna / gpt-5-mini；留空则自动复用 Memory / Chat 模型）
+VIOLET_DECISION_MODEL=
+# 第一层同步决断的超时上限（秒，超时自动跳过回退为单层直出）与每日上限
+VIOLET_DECISION_TIMEOUT_SECONDS=15
+VIOLET_DECISION_MAX_CALLS_PER_DAY=120
 # 语义一致性复核：off（默认）| on。只复核规则无法确定的“自身经历”句子；模型只给判断和证据，不能改生活记录。
 VIOLET_SEMANTIC_GUARD=off
 VIOLET_SEMANTIC_GUARD_MODEL=

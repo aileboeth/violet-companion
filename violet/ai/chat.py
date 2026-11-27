@@ -205,6 +205,8 @@ CONSISTENCY_HINTS = {
                              "需要的话让对方到时候自己看一眼；不要答应晚点 / 回头再查",
     # 2026-11-25
     "same_day_contradiction": "这句和你今天前面自己说过的话自相矛盾，请按前面已经说过的事实保持一致",
+    # 2026-11-27
+    "unbacked_media_send": "这一轮并没有真正发出照片、图片、截图或文件，不要说已经发给对方了；把想让对方知道的细节用文字直接说出来就好",
 }
 
 
@@ -238,7 +240,7 @@ def _review(guard, semantic, text: str) -> list[Any]:
 
 
 def guard_reply(content: str, regenerate=None, entity: str = "reply", turn_used_web: bool = False,
-                turn_used_schedule: bool = False) -> tuple[str, list[Any]]:
+                turn_used_schedule: bool = False, turn_sent_media: bool = False) -> tuple[str, list[Any]]:
     """Keep Violet's text consistent with her recorded life and persona (phase 4, 5A).
 
     1. rules (ai/consistency.py);
@@ -265,6 +267,7 @@ def guard_reply(content: str, regenerate=None, entity: str = "reply", turn_used_
         guard.check_weather = entity == "reply"          # phase 8.9.4: a proactive weather task has real data
         guard.turn_used_web = turn_used_web               # phase 9.3: "刚查了一下" is backed by this turn's search
         guard.turn_used_schedule = turn_used_schedule     # phase 9.4.2: "看了下你的课表" is this turn's lookup
+        guard.turn_sent_media = turn_sent_media           # 2026-11-27: media/image actually sent in this turn
         semantic = SemanticGuard(violetdb)
         violations = _review(guard, semantic, written(content))
     except Exception:
@@ -577,6 +580,31 @@ def _run_pipeline(
         recalled_memories = [m for m in recalled_memories if m.get("id") != forget["memory_id"]]
 
     direct = direct_tools(catalog)
+    decision_res: dict[str, Any] = {"ran": False, "reason": "testing" if testing else "skipped", "note": ""}
+    if not testing:
+        try:
+            from ai import turn_decision
+            run_dec, dec_reason = turn_decision.should_decide(violetdb, user_message)
+            if run_dec:
+                visualize_step("Turn Decision", "第一层回合决断（剧情进展与工具建议）")
+                _ps.node_start("Decision", input_data={"user_message": user_message, "trigger_reason": dec_reason})
+                decision_res = turn_decision.decide_turn(
+                    violetdb,
+                    user_message,
+                    direct_tools=direct,
+                    prechecked=(True, dec_reason),
+                )
+                _ps.node_done(
+                    "Decision",
+                    "Chat",
+                    output_data={k: v for k, v in decision_res.items() if k != "note"},
+                )
+            else:
+                decision_res = {"ran": False, "reason": dec_reason, "note": ""}
+        except Exception as exc:                            # noqa: BLE001
+            logger.debug("turn decision skipped: %s", exc)
+            decision_res = {"ran": False, "reason": "error", "error": str(exc)[:120], "note": ""}
+
     visualize_step("Chat Generation", "生成回复消息")
     _ps.node_start("Chat", input_data={"user_message": user_message, "recalled_memories_count": len(recalled_memories)})
     chat_context = {
@@ -589,6 +617,7 @@ def _run_pipeline(
         "tool_note": direct_note(direct),
         "abilities_note": abilities_note(catalog, direct),
         "phone_note": _phone_line_for_chat(),  # only with VIOLET_PHONE_CONTEXT_CHAT (default off)
+        "decision_note": decision_res.get("note") or None,
     }
     actions: list[dict[str, Any]] = []
     tool_notes = None
@@ -617,7 +646,10 @@ def _run_pipeline(
                 return any(isinstance(m, dict) and m.get("role") == "tool"
                            and str(m.get("content") or "").startswith(f"【外部工具数据｜来源 {server}/")
                            for m in chat_result.get("messages") or [])
-            guard_flags = {"turn_used_web": used("violet-web")}
+            guard_flags = {
+                "turn_used_web": used("violet-web"),
+                "turn_sent_media": bool(chat_result.get("image_asset_ids")),
+            }
             if used("violet-schedule"):
                 guard_flags["turn_used_schedule"] = True
             first = chat_result
@@ -660,6 +692,7 @@ def _run_pipeline(
         _ps.pipeline_end(error="; ".join(f"{k}: {v}" for k, v in errors.items())[:500] if errors else None)
         return {"chat": chat_result, "memory": memory_result, "recalled_memories": recalled_memories,
                 "user_raised_memory_ids": user_raised, "actions": actions, "tool_notes": tool_notes,
+                "decision": {k: v for k, v in decision_res.items() if k != "note"},
                 "errors": errors, "chat_failed": bool(chat_result.get("failed"))}
 
     if defer_memory or testing:
@@ -697,6 +730,12 @@ def _run_pipeline(
         memory_result = {"content": json.dumps({"should_save": False, "reason": f"MemoryAgent failed: {exc}"},
                                                ensure_ascii=False), "messages": [], "raw": {}, "error": str(exc)}
     _ps.node_done("Memory", output_data={"messages": memory_result.get("messages", []), "content": memory_result.get("content")})
+    if not chat_result.get("failed") and assistant_reply.strip():
+        try:
+            from ai import story_recorder
+            story_recorder.after_turn(violetdb, user_message, assistant_reply)
+        except Exception:                                   # noqa: BLE001
+            logger.debug("sync story post-turn hook failed", exc_info=True)
     return result(memory_result)
 
 

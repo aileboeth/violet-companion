@@ -148,9 +148,13 @@ _LOCK = threading.Lock()
 _INSTRUCTIONS: dict[str, tuple[str, frozenset[int]]] = {}     # name -> (normalized text, hashes of its windows)
 _HEADERS: list[str] | None = None
 
-# internal JSON an agent produces (Intent's routing, tool calls, chat-completion messages)
-_INTERNAL_KEYS = {"route", "user_intent", "should_reply", "tool_query", "active_task_id", "tool_calls",
-                  "tool_call_id", "function", "role", "should_save", "should_act", "action_type", "memory_ops"}
+# internal JSON an agent produces (Intent's routing, tool calls, chat-completion messages, story/turn-decision JSON)
+_INTERNAL_KEYS = {
+    "route", "user_intent", "should_reply", "tool_query", "active_task_id", "tool_calls",
+    "tool_call_id", "function", "role", "should_save", "should_act", "action_type", "memory_ops",
+    "story_relevance", "act_action", "response_plan", "reveal_limit", "reveal_boundary",
+    "premise_cast", "he_direction", "next_turn_brief", "open_hook", "canon_beats",
+}
 _INTERNAL_KEY_RE = re.compile(r'"(%s)"\s*:' % "|".join(sorted(_INTERNAL_KEYS)))
 _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*([\s\S]*?)(?:```|$)", re.I)
 _REASONING = re.compile(r"</?(?:think|thought|thinking)>|<\|im_(start|end)\|>|<\|(system|assistant|user)\|>", re.I)

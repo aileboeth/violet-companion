@@ -405,7 +405,7 @@ class ChatAgent(BaseAgent):
                          f"对方当时的原话：{commitment.get('evidence') or '无'}。消息里必须明确提到要提醒的事。")
         if context.get("proactive_result"):
             notes.append(f"主动触达决策（这是系统触发，不是对方的消息）：\n{context['proactive_result']}")
-        for key in ("proactive_note", "phone_note", "forget_note"):
+        for key in ("proactive_note", "phone_note", "forget_note", "decision_note"):
             if context.get(key):
                 notes.append(context[key])
 

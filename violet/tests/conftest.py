@@ -44,6 +44,9 @@ os.environ.update({
     "VIOLET_PHONE_EVENTS": "0",
     # phase 8.9: Violet's ordinary day depends on the date; tests that need it enable it with a fixed clock
     "VIOLET_DAILY_LIFE": "0",
+    # 2026-11-26: interactive story engine & Layer 1 turn decision use AuxLLM when enabled; dedicated tests opt in explicitly
+    "VIOLET_STORY_MODE": "off",
+    "VIOLET_DECISION_MODE": "off",
     # web access is off unless a test turns it on; no real search backend is ever configured
     "VIOLET_WEB_ENABLED": "0",
     "VIOLET_WEB_SEARCH_PROVIDER": "none",
@@ -151,6 +154,8 @@ _TABLES = (
     "mood_state", "sticker_blocklist",
     # 2026-11-12: the memes the owner taught her
     "owner_memes",
+    # 2026-11-26: interactive story arcs
+    "story_arcs",
 )
 
 

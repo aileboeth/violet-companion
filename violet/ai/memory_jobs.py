@@ -203,6 +203,12 @@ class MemoryWorker:
         # last_error of an earlier failed attempt is kept on purpose (traceability).
         self.db.update_memory_job(job["id"], status="done", finished_at=self.db.now(),
                                   progress=_progress_json(progress, job["attempts"], written, "complete"))
+        # 2026-11-26: async post-turn story recorder & chat-driven story director check (zero reply latency)
+        try:
+            from ai import story_recorder
+            story_recorder.after_turn(self.db, job["user_message"], job.get("assistant_reply") or "")
+        except Exception:                                   # noqa: BLE001
+            logger.debug("story post-turn hook failed", exc_info=True)
 
     def _loop(self) -> None:
         while not self._stop.is_set():

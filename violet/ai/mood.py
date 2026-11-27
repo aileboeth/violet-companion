@@ -239,8 +239,12 @@ def _words(value: float) -> str:
     return "有点不高兴"
 
 
-def note(db) -> str:
-    """The line for the prompts, or "" when she is calm."""
+def note(db, include_cause: bool = True) -> str:
+    """The line for the prompts, or "" when she is calm.
+
+    ``include_cause=False`` omits the private ``cause`` text (e.g. resolved story titles or owner-private
+    ``note_feeling`` reasons) for untrusted social and public signature prompts.
+    """
     from ai import test_mode
     if not enabled() or test_mode.active():
         return ""
@@ -248,7 +252,7 @@ def note(db) -> str:
     value = mood["value"]
     if abs(value) < THRESHOLD:
         return ""
-    why = f"（因为{mood['cause']}）" if mood.get("cause") else ""
+    why = f"（因为{mood['cause']}）" if (include_cause and mood.get("cause")) else ""
     if value > 0:
         how = "说话可以更轻快、更爱开玩笑一点，也更愿意配个表情包。"
     else:

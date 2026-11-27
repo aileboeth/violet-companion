@@ -1327,7 +1327,7 @@ $("#set-save").addEventListener("click", async () => {
 loaders.history = async () => {
   try {
     const rows = await api("GET", "/api/control/settings/history");
-    $("#hist-list").replaceChildren(...(rows.length ? rows.map((r) => h("div", { class: "card" },
+    $("#set-hist-list").replaceChildren(...(rows.length ? rows.map((r) => h("div", { class: "card" },
       h("div", { class: "row" }, h("strong", { text: `第 ${r.revision} 次 · ${new Date(r.at * 1000).toLocaleString()} · ${r.actor}` }),
         h("button", { class: "ghost", onclick: () => rollback(r.revision), text: "回滚到这次之后的状态" })),
       r.reason ? h("div", { class: "note", text: "原因：" + r.reason }) : null,

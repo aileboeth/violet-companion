@@ -279,6 +279,10 @@ class VioletDatabase:
         # 2026-11-12: what the owner taught her a meme of theirs means (ai/memes.py)
         from ai.memes import SCHEMA as meme_schema
         self.conn.executescript(meme_schema)
+        # 2026-11-26 (phase 2): upfront multi-act adaptable outline & next-turn director brief on story_arcs
+        self._ensure_column("story_arcs", "outline", "TEXT NOT NULL DEFAULT '{}'")
+        self._ensure_column("story_arcs", "current_act", "INTEGER NOT NULL DEFAULT 1")
+        self._ensure_column("story_arcs", "next_turn_brief", "TEXT NOT NULL DEFAULT ''")
         self.conn.commit()
 
     def _create_tables_locked(self) -> None:
@@ -694,6 +698,36 @@ class VioletDatabase:
                 detail TEXT,
                 ran_at TEXT NOT NULL
             );
+
+            -- 2026-11-26: interactive multi-turn story arcs (per persona scope, at most one active at a time).
+            CREATE TABLE IF NOT EXISTS story_arcs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                arc_key TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'seed',
+                title TEXT NOT NULL,
+                tone TEXT NOT NULL DEFAULT 'drama',
+                stage_min INTEGER NOT NULL DEFAULT 1,
+                status TEXT NOT NULL DEFAULT 'seeded',
+                premise TEXT NOT NULL DEFAULT '',
+                he_direction TEXT NOT NULL DEFAULT '',
+                outline TEXT NOT NULL DEFAULT '{}',
+                current_act INTEGER NOT NULL DEFAULT 1,
+                next_turn_brief TEXT NOT NULL DEFAULT '',
+                canon_beats TEXT NOT NULL DEFAULT '[]',
+                revealed_beats TEXT NOT NULL DEFAULT '[]',
+                open_hook TEXT NOT NULL DEFAULT '',
+                user_role TEXT NOT NULL DEFAULT '',
+                resolved_summary TEXT,
+                proactive_shared_step TEXT,
+                turns_engaged INTEGER NOT NULL DEFAULT 0,
+                turns_ignored INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                last_advanced_at TEXT NOT NULL,
+                cooldown_until TEXT,
+                resolved_at TEXT,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_story_arcs_status ON story_arcs(status, updated_at);
 
             -- Consistency problems that need a human (never silently "fixed" by inventing facts).
             CREATE TABLE IF NOT EXISTS consistency_flags (

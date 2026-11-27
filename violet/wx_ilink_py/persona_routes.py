@@ -327,6 +327,35 @@ def register_persona_routes(app: Flask, violetdb, all_agents=None) -> None:
         owner_lines = about_owner.lines()
         if owner_lines:
             notes.append(owner_lines)
+        story_mode_req = str(data.get("story_mode") or "").strip()
+        story_title_used = ""
+        if story_mode_req and story_mode_req != "off" and not (core.is_ai or core.is_blank):
+            from ai.story_store import StoryStore, format_active_arc_block
+            arc_for_sb = None
+            if story_mode_req == "active":
+                arc_for_sb = StoryStore(violetdb).active_arc()
+            elif story_mode_req.startswith("seed:"):
+                skey = story_mode_req[5:].strip()
+                seed = next((s for s in core.story_seeds if str(s.get("key") or "") == skey), None)
+                if seed:
+                    st_status = str(data.get("story_status") or "active").strip()
+                    if st_status not in ("seeded", "active", "climax"):
+                        st_status = "active"
+                    arc_for_sb = {
+                        "title": seed.get("title", ""),
+                        "status": st_status,
+                        "premise": seed.get("premise", ""),
+                        "open_hook": seed.get("initial_hook", ""),
+                        "he_direction": seed.get("he_direction", ""),
+                        "canon_beats": [seed.get("initial_hook", "")] if st_status != "seeded" and seed.get("initial_hook") else [],
+                        "revealed_beats": [],
+                        "user_role": "",
+                    }
+            if arc_for_sb:
+                story_title_used = str(arc_for_sb.get("title") or "")
+                sh, sl, sf = format_active_arc_block(arc_for_sb)
+                if sl:
+                    notes.append("\n".join([sh, *sl, *([sf] if sf else [])]))
         notes.append(f"现在是 {violetdb.now()[:16].replace('T', ' ')}（试聊预览，不保存记录）。")
 
         messages = compose(stable, history, notes, message)
@@ -382,6 +411,7 @@ def register_persona_routes(app: Flask, violetdb, all_agents=None) -> None:
             "persona_title": title,
             "stage_label": stage_label,
             "stage_index": stage_idx,
+            "story_title": story_title_used,
             "prompt_chars": sum(p["chars"] for p in prompt_parts),
             "prompt_parts": prompt_parts,
             "usage": usage,
@@ -491,3 +521,91 @@ def register_persona_routes(app: Flask, violetdb, all_agents=None) -> None:
     def life_flag_resolve(flag_id: int):
         store.resolve_flag(flag_id)
         return ok({"ok": True})
+
+    # -- 2026-11-26: interactive story arcs (spoiler-safe by default; scoped per persona) ----------------------------
+    def _story_payload(spoiler: bool = False) -> dict:
+        from ai.settings import env_str
+        from ai.story_store import StoryStore, configured_mode, effective_mode, story_pace, story_preference
+        from ai.turn_decision import decision_mode
+        core = PersonaCore.load()
+        sstore = StoryStore(violetdb)
+        return {
+            "mode": configured_mode(),
+            "effective_mode": effective_mode(core),
+            "pace": story_pace(),
+            "preference": story_preference(),
+            "decision_mode": decision_mode(),
+            "decision_model": env_str("VIOLET_DECISION_MODEL", "").strip(),
+            "persona_ceiling": core.story_ceiling,
+            "persona_supported": not (core.is_ai or core.is_blank),
+            "spoiler": bool(spoiler),
+            "active": StoryStore.public_view(sstore.active_arc(), spoiler=spoiler),
+            "resolved": [StoryStore.public_view(r, spoiler=False) for r in sstore.recent_resolved(limit=10)],
+        }
+
+    @app.get("/api/persona/story")
+    def persona_story_get():
+        spoiler = str(request.args.get("spoiler") or "").strip().lower() in ("1", "true", "yes")
+        return ok(_story_payload(spoiler=spoiler))
+
+    @app.post("/api/persona/story/config")
+    def persona_story_config():
+        from ai.control_config import StoreError, ValidationError, reload_env, store as config_store
+        data = body()
+        updates = {}
+        if "mode" in data:
+            updates["VIOLET_STORY_MODE"] = str(data.get("mode") or "")
+        if "pace" in data:
+            updates["VIOLET_STORY_PACE"] = str(data.get("pace") or "")
+        if "preference" in data:
+            updates["VIOLET_STORY_PREFERENCE"] = str(data.get("preference") or "")
+        if "decision_mode" in data:
+            updates["VIOLET_DECISION_MODE"] = str(data.get("decision_mode") or "")
+        if "decision_model" in data:
+            updates["VIOLET_DECISION_MODEL"] = str(data.get("decision_model") or "")
+        if not updates:
+            return bad("没有要保存的项")
+        try:
+            config_store().save(updates, actor="dashboard", reason="story panel", apply=reload_env)
+        except (ValidationError, StoreError) as exc:
+            return bad(str(exc))
+        spoiler = bool(data.get("spoiler"))
+        return ok({"ok": True, **_story_payload(spoiler=spoiler)})
+
+    @app.post("/api/persona/story/advance")
+    def persona_story_advance():
+        from ai.story_director import StoryDirector
+        data = body()
+        core = PersonaCore.load()
+        if core.is_ai or core.is_blank:
+            return bad("当前人设不启用虚拟故事线")
+        res = StoryDirector(violetdb, core=core).advance_arc(force=True)
+        if res.get("outcome") == "off":
+            return bad("故事线已关闭，请先开启剧情模式")
+        return ok({"outcome": res.get("outcome"), "used_llm": bool(res.get("used_llm")),
+                   **_story_payload(spoiler=bool(data.get("spoiler")))})
+
+    @app.post("/api/persona/story/resolve")
+    def persona_story_resolve():
+        from ai.story_director import StoryDirector
+        data = body()
+        res = StoryDirector(violetdb).resolve_now()
+        if res.get("outcome") == "no_active_arc":
+            return bad("当前没有进行中的故事线")
+        return ok({"outcome": res.get("outcome"), "used_llm": bool(res.get("used_llm")),
+                   **_story_payload(spoiler=bool(data.get("spoiler")))})
+
+    @app.post("/api/persona/story/new")
+    def persona_story_new():
+        from ai.story_director import StoryDirector
+        data = body()
+        core = PersonaCore.load()
+        if core.is_ai or core.is_blank:
+            return bad("当前人设不启用虚拟故事线")
+        res = StoryDirector(violetdb, core=core).start_new_arc(force=True, prefer_free=bool(data.get("prefer_free")))
+        if res.get("outcome") == "off":
+            return bad("故事线已关闭，请先开启剧情模式")
+        if res.get("outcome") == "no_model_for_freeform":
+            return bad("请先在模型服务页配置模型后再开启自由原创故事线")
+        return ok({"outcome": res.get("outcome"), "used_llm": bool(res.get("used_llm")),
+                   **_story_payload(spoiler=bool(data.get("spoiler")))})

@@ -69,7 +69,10 @@ def _node(run: dict[str, Any], node: str) -> dict[str, Any]:
         run["nodes"][node] = {"status": "pending", "input": None, "output": None, "started_at": None,
                               "finished_at": None, "note": None}
         if node not in run["order"]:
-            run["order"].append(node)
+            if node == "Decision":
+                run["order"].insert(0, node)
+            else:
+                run["order"].append(node)
     return run["nodes"][node]
 
 
